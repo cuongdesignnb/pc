@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Laravel
+backend/storage/*.key
+backend/storage/logs/*
+backend/.phpunit.result.cache
+backend/Homestead.json
+backend/Homestead.yaml
+backend/npm-debug.log
+backend/yarn-error.log
+
+# Nuxt
+frontend/.nuxt/
+frontend/.output/
+frontend/dist/
+frontend/.data/
+frontend/logs/
+
+# Docker
+docker/mysql/data/
+
+# Build
+*.log

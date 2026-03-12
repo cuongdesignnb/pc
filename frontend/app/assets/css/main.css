@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* ========== Main Banner Carousel Transitions ========== */
+
+/* Slide Next (left) */
+.slide-next-enter-active,
+.slide-next-leave-active {
+  transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-next-enter-from {
+  transform: translateX(100%);
+  opacity: 0;
+}
+.slide-next-enter-to {
+  transform: translateX(0);
+  opacity: 1;
+}
+.slide-next-leave-from {
+  transform: translateX(0);
+  opacity: 1;
+}
+.slide-next-leave-to {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
+/* Slide Prev (right) */
+.slide-prev-enter-active,
+.slide-prev-leave-active {
+  transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-prev-enter-from {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+.slide-prev-enter-to {
+  transform: translateX(0);
+  opacity: 1;
+}
+.slide-prev-leave-from {
+  transform: translateX(0);
+  opacity: 1;
+}
+.slide-prev-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+/* Side Banners — Vertical Slide (top to bottom) */
+.side-slide-enter-active {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.side-slide-leave-active {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: absolute;
+  width: 100%;
+}
+.side-slide-enter-from {
+  transform: translateY(-30px);
+  opacity: 0;
+}
+.side-slide-enter-to {
+  transform: translateY(0);
+  opacity: 1;
+}
+.side-slide-leave-from {
+  transform: translateY(0);
+  opacity: 1;
+}
+.side-slide-leave-to {
+  transform: translateY(30px);
+  opacity: 0;
+}
+
+/* Side ticker container fix */
+.side-ticker {
+  position: relative;
+}
+
+/* ========== Scroll Reveal Animations ========== */
+
+/* Base state — hidden before reveal */
+[data-reveal] {
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+/* Fade up (default) */
+.reveal-up,
+[data-reveal="up"] {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal-up.is-visible,
+[data-reveal="up"].is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Fade in */
+.reveal-fade,
+[data-reveal="fade"] {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.reveal-fade.is-visible,
+[data-reveal="fade"].is-visible {
+  opacity: 1;
+}
+
+/* Scale up */
+[data-reveal="scale"] {
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-reveal="scale"].is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Slide from left */
+[data-reveal="left"] {
+  opacity: 0;
+  transform: translateX(-30px);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-reveal="left"].is-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Slide from right */
+[data-reveal="right"] {
+  opacity: 0;
+  transform: translateX(30px);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-reveal="right"].is-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Hero entrance — plays on load */
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes heroSlideRight {
+  from { opacity: 0; transform: translateX(30px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.hero-animate {
+  animation: heroFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.hero-animate-delay-1 {
+  animation: heroFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+.hero-animate-delay-2 {
+  animation: heroFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+.hero-side-1 {
+  animation: heroSlideRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+.hero-side-2 {
+  animation: heroSlideRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+.hero-side-3 {
+  animation: heroSlideRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+/* Floating glow for hero background */
+@keyframes floatGlow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(12px, -12px) scale(1.08); }
+}
+.float-glow {
+  animation: floatGlow 6s ease-in-out infinite;
+}
+.float-glow-alt {
+  animation: floatGlow 8s ease-in-out 2s infinite reverse;
+}
+
+/* Product card hover lift */
+.card-hover {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.12);
+}
+
+/* Subtle pulse for badges */
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+.badge-pulse {
+  animation: badgePulse 2s ease-in-out infinite;
+}
