@@ -1,8 +1,8 @@
 # Hướng Dẫn Deploy PC Shop lên aaPanel
 
 > **Server IP**: 194.233.66.28  
-> **Frontend**: domain 1 (Nuxt 3 - Trang khách hàng) — ví dụ: `pcjs.example.com`  
-> **Backend**: domain 2 (Laravel - Admin + API) — ví dụ: `pcadmin.example.com`  
+> **Frontend**: `pcjs.cuongdesign.net` (Nuxt 3 - Trang khách hàng)  
+> **Backend**: `adminpc.cuongdesign.net` (Laravel - Admin + API)  
 > Mỗi domain là 1 site riêng trên aaPanel, folder riêng.
 
 ---
@@ -14,12 +14,12 @@
 Cài đặt các phần mềm cần thiết trong **App Store**:
 - **Nginx** (bản mới nhất)
 - **MySQL 5.7** hoặc **8.0**
-- **PHP 8.2** (cần extensions: `fileinfo`, `redis`, `mbstring`, `pdo_mysql`, `openssl`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`)
+- **PHP 8.3** (BẮT BUỘC - packages yêu cầu 8.3+. Extensions: `fileinfo`, `redis`, `mbstring`, `pdo_mysql`, `openssl`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`)
 - **PM2 Manager** (trong App Store aaPanel)
 
 ### 1.2 Cài PHP Extensions
 
-Vào **App Store > PHP 8.2 > Settings > Install Extensions**, cài thêm:
+Vào **App Store > PHP 8.3 > Settings > Install Extensions**, cài thêm:
 - `fileinfo` (bắt buộc cho Laravel)
 - `redis` (nếu dùng Redis)
 
@@ -45,16 +45,16 @@ npm install -g pm2
 ### 2.1 Site Backend (Admin + API)
 
 Vào **Website > Add Site**:
-- **Domain**: `pcadmin.YOUR_DOMAIN` (domain thực tế của bạn)
-- **Document Root**: để mặc định (`/www/wwwroot/pcadmin.YOUR_DOMAIN`)
-- **PHP Version**: PHP 8.2
+- **Domain**: `adminpc.cuongdesign.net`
+- **Document Root**: để mặc định (`/www/wwwroot/adminpc.cuongdesign.net`)
+- **PHP Version**: PHP 8.3
 - **Database**: MySQL → tên DB: `pc_shop`, user: `pc_user`
 
 ### 2.2 Site Frontend (Trang khách hàng)
 
 Vào **Website > Add Site**:
-- **Domain**: `pcjs.YOUR_DOMAIN` (domain thực tế của bạn)
-- **Document Root**: để mặc định (`/www/wwwroot/pcjs.YOUR_DOMAIN`)
+- **Domain**: `pcjs.cuongdesign.net`
+- **Document Root**: để mặc định (`/www/wwwroot/pcjs.cuongdesign.net`)
 - **PHP Version**: **Static** (không cần PHP)
 
 ---
@@ -63,22 +63,18 @@ Vào **Website > Add Site**:
 
 ```bash
 # Xóa file mặc định aaPanel tạo sẵn
-cd /www/wwwroot/pcadmin.YOUR_DOMAIN
+cd /www/wwwroot/adminpc.cuongdesign.net
 rm -rf .htaccess 404.html index.html .user.ini
 
-# Clone chỉ phần backend bằng sparse checkout
-git init
-git remote add origin https://github.com/cuongdesignnb/pc.git
-git config core.sparseCheckout true
-echo "backend/*" > .git/info/sparse-checkout
-git pull origin main
-
-# Di chuyển nội dung backend ra ngoài (aaPanel cần public/ ở gốc site)
-mv backend/* .
-mv backend/.* . 2>/dev/null
-rmdir backend
+# Clone repo vào thư mục tạm rồi copy backend
+cd /tmp
+git clone https://github.com/cuongdesignnb/pc.git pc_temp
+cp -rf /tmp/pc_temp/backend/* /www/wwwroot/adminpc.cuongdesign.net/
+cp -rf /tmp/pc_temp/backend/.* /www/wwwroot/adminpc.cuongdesign.net/ 2>/dev/null
+rm -rf /tmp/pc_temp
 
 # Cài dependencies
+cd /www/wwwroot/adminpc.cuongdesign.net
 composer install --no-dev --optimize-autoloader
 ```
 
@@ -89,21 +85,21 @@ composer install --no-dev --optimize-autoloader
 ### 4.1 Tạo file .env
 
 ```bash
-cd /www/wwwroot/pcadmin.YOUR_DOMAIN
-cp .env.production .env
+cd /www/wwwroot/adminpc.cuongdesign.net
+cp .env.server .env
 nano .env
 ```
 
-**Sửa các dòng này (thay YOUR_DOMAIN bằng domain thực):**
+**Sửa các dòng quan trọng:**
 ```env
-APP_URL=https://pcadmin.YOUR_DOMAIN
+APP_URL=https://adminpc.cuongdesign.net
 
 DB_HOST=127.0.0.1
 DB_DATABASE=pc_shop
 DB_USERNAME=pc_user
 DB_PASSWORD=MẬT_KHẨU_Ở_BƯỚC_2.1
 
-SANCTUM_STATEFUL_DOMAINS=pcjs.YOUR_DOMAIN
+SANCTUM_STATEFUL_DOMAINS=pcjs.cuongdesign.net
 SESSION_DOMAIN=null
 ```
 
@@ -121,20 +117,20 @@ php artisan view:cache
 ### 4.3 Phân quyền
 
 ```bash
-chown -R www:www /www/wwwroot/pcadmin.YOUR_DOMAIN
-chmod -R 755 /www/wwwroot/pcadmin.YOUR_DOMAIN
-chmod -R 775 /www/wwwroot/pcadmin.YOUR_DOMAIN/storage
-chmod -R 775 /www/wwwroot/pcadmin.YOUR_DOMAIN/bootstrap/cache
+chown -R www:www /www/wwwroot/adminpc.cuongdesign.net
+chmod -R 755 /www/wwwroot/adminpc.cuongdesign.net
+chmod -R 775 /www/wwwroot/adminpc.cuongdesign.net/storage
+chmod -R 775 /www/wwwroot/adminpc.cuongdesign.net/bootstrap/cache
 ```
 
 ### 4.4 Chỉnh Document Root trên aaPanel
 
-Vào **Website > pcadmin.YOUR_DOMAIN > Site directory**:  
+Vào **Website > adminpc.cuongdesign.net > Site directory**:  
 Đổi **Running directory** thành `/public`
 
 ### 4.5 Cấu hình Nginx Backend
 
-Vào **Website > pcadmin.YOUR_DOMAIN > Config**, tìm block `location /` và **thay thành**:
+Vào **Website > adminpc.cuongdesign.net > Config**, tìm block `location /` và **thay thành**:
 
 ```nginx
 location / {
@@ -142,13 +138,13 @@ location / {
 }
 
 location /api {
-    add_header 'Access-Control-Allow-Origin' 'https://pcjs.YOUR_DOMAIN' always;
+    add_header 'Access-Control-Allow-Origin' 'https://pcjs.cuongdesign.net' always;
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Requested-With, X-Cart-Session' always;
     add_header 'Access-Control-Allow-Credentials' 'true' always;
 
     if ($request_method = 'OPTIONS') {
-        add_header 'Access-Control-Allow-Origin' 'https://pcjs.YOUR_DOMAIN' always;
+        add_header 'Access-Control-Allow-Origin' 'https://pcjs.cuongdesign.net' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Requested-With, X-Cart-Session' always;
         add_header 'Access-Control-Max-Age' 1728000;
@@ -163,7 +159,7 @@ location /api {
 
 ### 4.6 Cài SSL cho Backend
 
-Vào **Website > pcadmin.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
+Vào **Website > adminpc.cuongdesign.net > SSL > Let's Encrypt** → Xin chứng chỉ
 
 ---
 
@@ -171,20 +167,17 @@ Vào **Website > pcadmin.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng ch�
 
 ```bash
 # Xóa file mặc định aaPanel tạo sẵn
-cd /www/wwwroot/pcjs.YOUR_DOMAIN
+cd /www/wwwroot/pcjs.cuongdesign.net
 rm -rf .htaccess 404.html index.html .user.ini
 
-# Clone chỉ phần frontend bằng sparse checkout
-git init
-git remote add origin https://github.com/cuongdesignnb/pc.git
-git config core.sparseCheckout true
-echo "frontend/*" > .git/info/sparse-checkout
-git pull origin main
+# Clone repo vào thư mục tạm rồi copy frontend
+cd /tmp
+git clone https://github.com/cuongdesignnb/pc.git pc_temp2
+cp -rf /tmp/pc_temp2/frontend/* /www/wwwroot/pcjs.cuongdesign.net/
+cp -rf /tmp/pc_temp2/frontend/.* /www/wwwroot/pcjs.cuongdesign.net/ 2>/dev/null
+rm -rf /tmp/pc_temp2
 
-# Di chuyển nội dung frontend ra ngoài
-mv frontend/* .
-mv frontend/.* . 2>/dev/null
-rmdir frontend
+cd /www/wwwroot/pcjs.cuongdesign.net
 ```
 
 ---
@@ -194,15 +187,15 @@ rmdir frontend
 ### 6.1 Cấu hình .env
 
 ```bash
-cd /www/wwwroot/pcjs.YOUR_DOMAIN
-cp .env.production .env
+cd /www/wwwroot/pcjs.cuongdesign.net
+cp .env.server .env
 nano .env
 ```
 
-**Sửa domain thực tế:**
+**Sửa nội dung:**
 ```env
-NUXT_PUBLIC_API_BASE=https://pcadmin.YOUR_DOMAIN/api/v1
-NUXT_API_PROXY_TARGET=https://pcadmin.YOUR_DOMAIN
+NUXT_PUBLIC_API_BASE=https://adminpc.cuongdesign.net/api/v1
+NUXT_API_PROXY_TARGET=https://adminpc.cuongdesign.net
 NUXT_PUBLIC_APP_NAME="PC Shop"
 ```
 
@@ -223,7 +216,7 @@ module.exports = {
     name: 'pcshop-frontend',
     port: 3000,
     script: '.output/server/index.mjs',
-    cwd: '/www/wwwroot/pcjs.YOUR_DOMAIN',
+    cwd: '/www/wwwroot/pcjs.cuongdesign.net',
     env: {
       NODE_ENV: 'production',
       NITRO_PORT: 3000,
@@ -240,7 +233,7 @@ pm2 startup
 
 ### 6.4 Cấu hình Nginx Reverse Proxy
 
-Vào **Website > pcjs.YOUR_DOMAIN > Config**, **thay toàn bộ** block `location /`:
+Vào **Website > pcjs.cuongdesign.net > Config**, **thay toàn bộ** block `location /`:
 
 ```nginx
 location / {
@@ -258,7 +251,7 @@ location / {
 
 ### 6.5 Cài SSL
 
-Vào **Website > pcjs.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
+Vào **Website > pcjs.cuongdesign.net > SSL > Let's Encrypt** → Xin chứng chỉ
 
 ---
 
@@ -266,9 +259,9 @@ Vào **Website > pcjs.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
 
 | URL | Kết quả mong đợi |
 |-----|-------------------|
-| `https://pcjs.YOUR_DOMAIN` | Trang chủ PC Shop (khách hàng) |
-| `https://pcadmin.YOUR_DOMAIN/admin` | Trang quản trị Admin |
-| `https://pcadmin.YOUR_DOMAIN/api/v1/products` | JSON danh sách sản phẩm |
+| `https://pcjs.cuongdesign.net` | Trang chủ PC Shop (khách hàng) |
+| `https://adminpc.cuongdesign.net/admin` | Trang quản trị Admin |
+| `https://adminpc.cuongdesign.net/api/v1/products` | JSON danh sách sản phẩm |
 
 ---
 
@@ -276,12 +269,13 @@ Vào **Website > pcjs.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
 
 ### Cập nhật Backend:
 ```bash
-cd /www/wwwroot/pcadmin.YOUR_DOMAIN
-git pull origin main
-# Vì sparse checkout, file sẽ nằm trong backend/, cần copy ra:
-cp -rf backend/* .
-cp -rf backend/.* . 2>/dev/null
+cd /tmp
+git clone https://github.com/cuongdesignnb/pc.git pc_update
+cp -rf /tmp/pc_update/backend/* /www/wwwroot/adminpc.cuongdesign.net/
+cp -rf /tmp/pc_update/backend/.* /www/wwwroot/adminpc.cuongdesign.net/ 2>/dev/null
+rm -rf /tmp/pc_update
 
+cd /www/wwwroot/adminpc.cuongdesign.net
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 php artisan config:cache
@@ -291,12 +285,13 @@ php artisan view:cache
 
 ### Cập nhật Frontend:
 ```bash
-cd /www/wwwroot/pcjs.YOUR_DOMAIN
-git pull origin main
-# Vì sparse checkout, file sẽ nằm trong frontend/, cần copy ra:
-cp -rf frontend/* .
-cp -rf frontend/.* . 2>/dev/null
+cd /tmp
+git clone https://github.com/cuongdesignnb/pc.git pc_update2
+cp -rf /tmp/pc_update2/frontend/* /www/wwwroot/pcjs.cuongdesign.net/
+cp -rf /tmp/pc_update2/frontend/.* /www/wwwroot/pcjs.cuongdesign.net/ 2>/dev/null
+rm -rf /tmp/pc_update2
 
+cd /www/wwwroot/pcjs.cuongdesign.net
 npm install
 npm run build
 pm2 restart pcshop-frontend
@@ -306,7 +301,7 @@ pm2 restart pcshop-frontend
 
 ## Ghi chú quan trọng
 
-1. **Thay `YOUR_DOMAIN`** bằng domain thực tế ở TẤT CẢ các bước
+1. Domain đã cấu hình: `pcjs.cuongdesign.net` (frontend) + `adminpc.cuongdesign.net` (backend)
 2. **Admin login**: sau khi `php artisan migrate --seed`, kiểm tra file seeder để biết tài khoản admin mặc định
 3. **SePay**: cấu hình `SEPAY_*` trong `.env` backend để thanh toán hoạt động
 4. **Upload ảnh**: đảm bảo `storage:link` đã chạy và thư mục `storage` có quyền ghi
