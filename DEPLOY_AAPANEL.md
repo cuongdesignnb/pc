@@ -1,8 +1,9 @@
 # Hướng Dẫn Deploy PC Shop lên aaPanel
 
 > **Server IP**: 194.233.66.28  
-> **Frontend**: `pcjs.YOUR_DOMAIN` (Nuxt 3 - Trang khách hàng)  
-> **Backend**: `pcadmin.YOUR_DOMAIN` (Laravel - Admin + API)
+> **Frontend**: domain 1 (Nuxt 3 - Trang khách hàng) — ví dụ: `pcjs.example.com`  
+> **Backend**: domain 2 (Laravel - Admin + API) — ví dụ: `pcadmin.example.com`  
+> Mỗi domain là 1 site riêng trên aaPanel, folder riêng.
 
 ---
 
@@ -14,8 +15,7 @@ Cài đặt các phần mềm cần thiết trong **App Store**:
 - **Nginx** (bản mới nhất)
 - **MySQL 5.7** hoặc **8.0**
 - **PHP 8.2** (cần extensions: `fileinfo`, `redis`, `mbstring`, `pdo_mysql`, `openssl`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`)
-- **Node.js** (v18 hoặc v20 - cài qua Node.js Version Manager)
-- **PM2** (quản lý Node process)
+- **PM2 Manager** (trong App Store aaPanel)
 
 ### 1.2 Cài PHP Extensions
 
@@ -23,61 +23,91 @@ Vào **App Store > PHP 8.2 > Settings > Install Extensions**, cài thêm:
 - `fileinfo` (bắt buộc cho Laravel)
 - `redis` (nếu dùng Redis)
 
-### 1.3 Cài Composer
+### 1.3 Cài Composer & Node.js
 
 ```bash
+# Composer
 curl -sS https://getcomposer.org/installer | php
 mv composer.phar /usr/local/bin/composer
+
+# Node.js 20 (nếu chưa có)
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# PM2
+npm install -g pm2
 ```
 
 ---
 
-## BƯỚC 2: Clone dự án
+## BƯỚC 2: Tạo 2 Site trên aaPanel
 
-```bash
-cd /www/wwwroot
-git clone https://github.com/cuongdesignnb/pc.git
-```
+### 2.1 Site Backend (Admin + API)
+
+Vào **Website > Add Site**:
+- **Domain**: `pcadmin.YOUR_DOMAIN` (domain thực tế của bạn)
+- **Document Root**: để mặc định (`/www/wwwroot/pcadmin.YOUR_DOMAIN`)
+- **PHP Version**: PHP 8.2
+- **Database**: MySQL → tên DB: `pc_shop`, user: `pc_user`
+
+### 2.2 Site Frontend (Trang khách hàng)
+
+Vào **Website > Add Site**:
+- **Domain**: `pcjs.YOUR_DOMAIN` (domain thực tế của bạn)
+- **Document Root**: để mặc định (`/www/wwwroot/pcjs.YOUR_DOMAIN`)
+- **PHP Version**: **Static** (không cần PHP)
 
 ---
 
-## BƯỚC 3: Setup Backend (Laravel)
-
-### 3.1 Cài dependencies
+## BƯỚC 3: Pull code Backend
 
 ```bash
-cd /www/wwwroot/pc/backend
+# Xóa file mặc định aaPanel tạo sẵn
+cd /www/wwwroot/pcadmin.YOUR_DOMAIN
+rm -rf .htaccess 404.html index.html .user.ini
+
+# Clone chỉ phần backend bằng sparse checkout
+git init
+git remote add origin https://github.com/cuongdesignnb/pc.git
+git config core.sparseCheckout true
+echo "backend/*" > .git/info/sparse-checkout
+git pull origin main
+
+# Di chuyển nội dung backend ra ngoài (aaPanel cần public/ ở gốc site)
+mv backend/* .
+mv backend/.* . 2>/dev/null
+rmdir backend
+
+# Cài dependencies
 composer install --no-dev --optimize-autoloader
 ```
 
-### 3.2 Cấu hình .env
+---
+
+## BƯỚC 4: Cấu hình Backend
+
+### 4.1 Tạo file .env
 
 ```bash
+cd /www/wwwroot/pcadmin.YOUR_DOMAIN
 cp .env.production .env
 nano .env
 ```
 
-**Sửa các giá trị quan trọng:**
+**Sửa các dòng này (thay YOUR_DOMAIN bằng domain thực):**
 ```env
 APP_URL=https://pcadmin.YOUR_DOMAIN
 
 DB_HOST=127.0.0.1
 DB_DATABASE=pc_shop
 DB_USERNAME=pc_user
-DB_PASSWORD=mật_khẩu_database_ở_bước_3.3
+DB_PASSWORD=MẬT_KHẨU_Ở_BƯỚC_2.1
 
 SANCTUM_STATEFUL_DOMAINS=pcjs.YOUR_DOMAIN
-SESSION_DOMAIN=.YOUR_DOMAIN
+SESSION_DOMAIN=null
 ```
 
-### 3.3 Tạo Database
-
-Vào **aaPanel > Databases > Add Database**:
-- Database name: `pc_shop`
-- Username: `pc_user`
-- Password: (tự đặt, copy vào .env)
-
-### 3.4 Khởi tạo Laravel
+### 4.2 Khởi tạo Laravel
 
 ```bash
 php artisan key:generate
@@ -88,37 +118,30 @@ php artisan route:cache
 php artisan view:cache
 ```
 
-### 3.5 Phân quyền
+### 4.3 Phân quyền
 
 ```bash
-chown -R www:www /www/wwwroot/pc/backend
-chmod -R 755 /www/wwwroot/pc/backend
-chmod -R 775 /www/wwwroot/pc/backend/storage
-chmod -R 775 /www/wwwroot/pc/backend/bootstrap/cache
+chown -R www:www /www/wwwroot/pcadmin.YOUR_DOMAIN
+chmod -R 755 /www/wwwroot/pcadmin.YOUR_DOMAIN
+chmod -R 775 /www/wwwroot/pcadmin.YOUR_DOMAIN/storage
+chmod -R 775 /www/wwwroot/pcadmin.YOUR_DOMAIN/bootstrap/cache
 ```
 
----
+### 4.4 Chỉnh Document Root trên aaPanel
 
-## BƯỚC 4: Tạo Site Backend trên aaPanel
+Vào **Website > pcadmin.YOUR_DOMAIN > Site directory**:  
+Đổi **Running directory** thành `/public`
 
-### 4.1 Vào **Website > Add Site**
-- Domain: `pcadmin.YOUR_DOMAIN`
-- Document Root: `/www/wwwroot/pc/backend/public`
-- PHP Version: **PHP 8.2**
-- Database: (đã tạo ở bước 3.3)
+### 4.5 Cấu hình Nginx Backend
 
-### 4.2 Cấu hình Nginx cho Backend
-
-Vào **Website > pcadmin.YOUR_DOMAIN > Config** (Nginx config), **thay toàn bộ** nội dung `location /` thành:
+Vào **Website > pcadmin.YOUR_DOMAIN > Config**, tìm block `location /` và **thay thành**:
 
 ```nginx
 location / {
     try_files $uri $uri/ /index.php?$query_string;
 }
 
-# CORS cho API - cho phép frontend gọi
 location /api {
-    # CORS headers
     add_header 'Access-Control-Allow-Origin' 'https://pcjs.YOUR_DOMAIN' always;
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Requested-With, X-Cart-Session' always;
@@ -138,20 +161,40 @@ location /api {
 }
 ```
 
-### 4.3 Cài SSL
+### 4.6 Cài SSL cho Backend
 
-Vào **Website > pcadmin.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ miễn phí
+Vào **Website > pcadmin.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
 
 ---
 
-## BƯỚC 5: Setup Frontend (Nuxt 3)
-
-### 5.1 Cài dependencies & build
+## BƯỚC 5: Pull code Frontend
 
 ```bash
-cd /www/wwwroot/pc/frontend
+# Xóa file mặc định aaPanel tạo sẵn
+cd /www/wwwroot/pcjs.YOUR_DOMAIN
+rm -rf .htaccess 404.html index.html .user.ini
 
-# Cấu hình .env production
+# Clone chỉ phần frontend bằng sparse checkout
+git init
+git remote add origin https://github.com/cuongdesignnb/pc.git
+git config core.sparseCheckout true
+echo "frontend/*" > .git/info/sparse-checkout
+git pull origin main
+
+# Di chuyển nội dung frontend ra ngoài
+mv frontend/* .
+mv frontend/.* . 2>/dev/null
+rmdir frontend
+```
+
+---
+
+## BƯỚC 6: Cấu hình & Build Frontend
+
+### 6.1 Cấu hình .env
+
+```bash
+cd /www/wwwroot/pcjs.YOUR_DOMAIN
 cp .env.production .env
 nano .env
 ```
@@ -163,25 +206,24 @@ NUXT_API_PROXY_TARGET=https://pcadmin.YOUR_DOMAIN
 NUXT_PUBLIC_APP_NAME="PC Shop"
 ```
 
-```bash
-# Cài dependencies
-npm install
+### 6.2 Build
 
-# Build production
+```bash
+npm install
 npm run build
 ```
 
-### 5.2 Chạy bằng PM2
+### 6.3 Chạy bằng PM2
 
 ```bash
-# Tạo file ecosystem
+# Tạo file PM2 config
 cat > ecosystem.config.cjs << 'EOF'
 module.exports = {
   apps: [{
     name: 'pcshop-frontend',
     port: 3000,
     script: '.output/server/index.mjs',
-    cwd: '/www/wwwroot/pc/frontend',
+    cwd: '/www/wwwroot/pcjs.YOUR_DOMAIN',
     env: {
       NODE_ENV: 'production',
       NITRO_PORT: 3000,
@@ -191,19 +233,12 @@ module.exports = {
 }
 EOF
 
-# Chạy
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
 
-### 5.3 Tạo Site Frontend trên aaPanel
-
-Vào **Website > Add Site**:
-- Domain: `pcjs.YOUR_DOMAIN`
-- Chọn: **Static** (không cần PHP)
-
-### 5.4 Cấu hình Nginx Reverse Proxy cho Frontend
+### 6.4 Cấu hình Nginx Reverse Proxy
 
 Vào **Website > pcjs.YOUR_DOMAIN > Config**, **thay toàn bộ** block `location /`:
 
@@ -221,17 +256,17 @@ location / {
 }
 ```
 
-### 5.5 Cài SSL
+### 6.5 Cài SSL
 
 Vào **Website > pcjs.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
 
 ---
 
-## BƯỚC 6: Kiểm tra
+## BƯỚC 7: Kiểm tra
 
 | URL | Kết quả mong đợi |
 |-----|-------------------|
-| `https://pcjs.YOUR_DOMAIN` | Trang chủ PC Shop |
+| `https://pcjs.YOUR_DOMAIN` | Trang chủ PC Shop (khách hàng) |
 | `https://pcadmin.YOUR_DOMAIN/admin` | Trang quản trị Admin |
 | `https://pcadmin.YOUR_DOMAIN/api/v1/products` | JSON danh sách sản phẩm |
 
@@ -239,22 +274,29 @@ Vào **Website > pcjs.YOUR_DOMAIN > SSL > Let's Encrypt** → Xin chứng chỉ
 
 ## Cập nhật code sau này
 
-Khi có thay đổi code mới:
-
+### Cập nhật Backend:
 ```bash
-cd /www/wwwroot/pc
+cd /www/wwwroot/pcadmin.YOUR_DOMAIN
 git pull origin main
+# Vì sparse checkout, file sẽ nằm trong backend/, cần copy ra:
+cp -rf backend/* .
+cp -rf backend/.* . 2>/dev/null
 
-# Backend
-cd backend
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
+```
 
-# Frontend
-cd ../frontend
+### Cập nhật Frontend:
+```bash
+cd /www/wwwroot/pcjs.YOUR_DOMAIN
+git pull origin main
+# Vì sparse checkout, file sẽ nằm trong frontend/, cần copy ra:
+cp -rf frontend/* .
+cp -rf frontend/.* . 2>/dev/null
+
 npm install
 npm run build
 pm2 restart pcshop-frontend
@@ -264,7 +306,7 @@ pm2 restart pcshop-frontend
 
 ## Ghi chú quan trọng
 
-1. **Thay `YOUR_DOMAIN`** bằng domain thực tế ở TẤT CẢ các bước trên
+1. **Thay `YOUR_DOMAIN`** bằng domain thực tế ở TẤT CẢ các bước
 2. **Admin login**: sau khi `php artisan migrate --seed`, kiểm tra file seeder để biết tài khoản admin mặc định
 3. **SePay**: cấu hình `SEPAY_*` trong `.env` backend để thanh toán hoạt động
 4. **Upload ảnh**: đảm bảo `storage:link` đã chạy và thư mục `storage` có quyền ghi
