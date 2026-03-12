@@ -73,9 +73,9 @@ cp -rf /tmp/pc_temp/backend/* /www/wwwroot/adminpc.cuongdesign.net/
 cp -rf /tmp/pc_temp/backend/.* /www/wwwroot/adminpc.cuongdesign.net/ 2>/dev/null
 rm -rf /tmp/pc_temp
 
-# Cài dependencies
+# Cài dependencies (--ignore-platform-reqs vì một số package yêu cầu PHP 8.3)
 cd /www/wwwroot/adminpc.cuongdesign.net
-composer install --no-dev --optimize-autoloader
+composer install --no-dev --optimize-autoloader --ignore-platform-reqs
 ```
 
 ---
@@ -276,7 +276,7 @@ cp -rf /tmp/pc_update/backend/.* /www/wwwroot/adminpc.cuongdesign.net/ 2>/dev/nu
 rm -rf /tmp/pc_update
 
 cd /www/wwwroot/adminpc.cuongdesign.net
-composer install --no-dev --optimize-autoloader
+composer install --no-dev --optimize-autoloader --ignore-platform-reqs
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
