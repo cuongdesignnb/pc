@@ -87,31 +87,31 @@ useSeoMeta({
           <!-- Nav -->
           <nav class="space-y-1">
             <NuxtLink 
-              to="/account" 
+              to="/tai-khoan" 
               class="flex items-center gap-3 px-4 py-2 rounded-lg font-medium bg-primary-50 text-primary-700"
             >
               📊 Tổng quan
             </NuxtLink>
             <NuxtLink 
-              to="/account/orders" 
+              to="/tai-khoan/don-hang" 
               class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               📦 Đơn hàng
             </NuxtLink>
             <NuxtLink 
-              to="/account/builds" 
+              to="/tai-khoan/cau-hinh" 
               class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               🖥️ Cấu hình đã lưu
             </NuxtLink>
             <NuxtLink 
-              to="/account/profile" 
+              to="/tai-khoan/ho-so" 
               class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               👤 Thông tin cá nhân
             </NuxtLink>
             <NuxtLink 
-              to="/account/password" 
+              to="/tai-khoan/mat-khau" 
               class="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               🔒 Đổi mật khẩu
@@ -154,7 +154,7 @@ useSeoMeta({
         <div class="bg-white rounded-xl shadow-sm p-6">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold">Đơn hàng gần đây</h2>
-            <NuxtLink to="/account/orders" class="text-primary-600 hover:underline">
+            <NuxtLink to="/tai-khoan/don-hang" class="text-primary-600 hover:underline">
               Xem tất cả →
             </NuxtLink>
           </div>

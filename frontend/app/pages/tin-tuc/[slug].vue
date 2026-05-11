@@ -41,7 +41,7 @@ useSeoMeta({
       <nav class="mb-6 text-sm">
         <NuxtLink to="/" class="text-gray-500 hover:text-primary-600">Trang chủ</NuxtLink>
         <span class="mx-2 text-gray-400">/</span>
-        <NuxtLink to="/blog" class="text-gray-500 hover:text-primary-600">Blog</NuxtLink>
+        <NuxtLink to="/tin-tuc" class="text-gray-500 hover:text-primary-600">Tin tức</NuxtLink>
         <span v-if="post.category" class="mx-2 text-gray-400">/</span>
         <span v-if="post.category" class="text-gray-500">{{ post.category.name }}</span>
       </nav>
@@ -129,7 +129,7 @@ useSeoMeta({
               <NuxtLink 
                 v-for="related in relatedPosts" 
                 :key="related.id"
-                :to="`/blog/${related.slug}`"
+                :to="`/tin-tuc/${related.slug}`"
                 class="flex gap-3 hover:opacity-80"
               >
                 <div class="w-20 h-16 bg-gray-100 rounded flex-shrink-0">
@@ -150,10 +150,10 @@ useSeoMeta({
 
           <!-- Back to Blog -->
           <NuxtLink 
-            to="/blog" 
+            to="/tin-tuc" 
             class="block text-center px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
-            ← Quay lại Blog
+            ← Quay lại Tin tức
           </NuxtLink>
         </aside>
       </div>

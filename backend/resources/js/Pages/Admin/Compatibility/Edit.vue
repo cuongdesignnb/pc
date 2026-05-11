@@ -25,33 +25,33 @@ function submit() { form.put(`/admin/compatibility/${r.id}`); }
 <template>
 <AdminLayout title="Sửa quy tắc tương thích">
     <div class="max-w-2xl">
-        <div class="flex items-center justify-between mb-6"><h3 class="text-lg font-semibold text-gray-900">Sửa quy tắc #{{ rule.id }}</h3><Link href="/admin/compatibility" class="text-sm text-gray-500 hover:text-gray-700">← Quay lại</Link></div>
-        <form @submit.prevent="submit" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+        <div class="flex items-center justify-between mb-6"><h3 class="text-lg font-semibold text-slate-200">Sửa quy tắc #{{ rule.id }}</h3><Link href="/admin/compatibility" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link></div>
+        <form @submit.prevent="submit" class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
             <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">Loại nguồn *</label><select v-model="form.source_type_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="t in componentTypes" :value="t.id">{{ t.name }}</option></select></div>
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">Loại đích *</label><select v-model="form.target_type_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="t in componentTypes" :value="t.id">{{ t.name }}</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Loại nguồn *</label><select v-model="form.source_type_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="t in componentTypes" :value="t.id">{{ t.name }}</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Loại đích *</label><select v-model="form.target_type_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="t in componentTypes" :value="t.id">{{ t.name }}</option></select></div>
             </div>
             <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">Thông số nguồn *</label><select v-model="form.source_spec_key" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="sk in sourceSpecKeys" :value="sk.key">{{ sk.label }} ({{ sk.key }})</option></select></div>
-                <div><label class="block text-sm font-medium text-gray-700 mb-1">Thông số đích *</label><select v-model="form.target_spec_key" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="sk in targetSpecKeys" :value="sk.key">{{ sk.label }} ({{ sk.key }})</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Thông số nguồn *</label><select v-model="form.source_spec_key" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="sk in sourceSpecKeys" :value="sk.key">{{ sk.label }} ({{ sk.key }})</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Thông số đích *</label><select v-model="form.target_spec_key" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="sk in targetSpecKeys" :value="sk.key">{{ sk.label }} ({{ sk.key }})</option></select></div>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Loại quy tắc *</label>
-                <select v-model="form.rule_type" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <label class="block text-sm font-medium text-slate-300 mb-1">Loại quy tắc *</label>
+                <select v-model="form.rule_type" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
                     <option v-for="rt in ruleTypes" :value="rt.value">{{ rt.label }}</option>
                 </select>
-                <p class="text-xs text-gray-500 mt-1">{{ ruleTypes.find(rt => rt.value === form.rule_type)?.desc }}</p>
+                <p class="text-xs text-slate-400 mt-1">{{ ruleTypes.find(rt => rt.value === form.rule_type)?.desc }}</p>
             </div>
             <div v-if="form.rule_type === 'power_check'">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Công suất dự phòng (W)</label>
-                <input v-model="form.power_headroom" type="number" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="VD: 150">
-                <p class="text-xs text-gray-500 mt-1">Số watt dự phòng thêm để đảm bảo nguồn đủ mạnh. Khuyến nghị: 100-200W</p>
+                <label class="block text-sm font-medium text-slate-300 mb-1">Công suất dự phòng (W)</label>
+                <input v-model="form.power_headroom" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="VD: 150">
+                <p class="text-xs text-slate-400 mt-1">Số watt dự phòng thêm để đảm bảo nguồn đủ mạnh. Khuyến nghị: 100-200W</p>
             </div>
-            <div><label class="block text-sm font-medium text-gray-700 mb-1">Thông báo lỗi</label><input v-model="form.message" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="VD: CPU và Mainboard không cùng socket"><p class="text-xs text-gray-500 mt-1">Thông báo hiển thị cho khách khi 2 linh kiện không tương thích</p></div>
-            <label class="flex items-center gap-2 text-sm"><input v-model="form.is_active" type="checkbox" class="rounded border-gray-300 text-indigo-600"> Kích hoạt</label>
+            <div><label class="block text-sm font-medium text-slate-300 mb-1">Thông báo lỗi</label><input v-model="form.message" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="VD: CPU và Mainboard không cùng socket"><p class="text-xs text-slate-400 mt-1">Thông báo hiển thị cho khách khi 2 linh kiện không tương thích</p></div>
+            <label class="flex items-center gap-2 text-sm"><input v-model="form.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Kích hoạt</label>
             <div class="flex justify-end gap-3 pt-2">
-                <Link href="/admin/compatibility" class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg">Hủy</Link>
-                <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50">Lưu</button>
+                <Link href="/admin/compatibility" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>
+                <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium disabled:opacity-50">Lưu</button>
             </div>
         </form>
     </div>

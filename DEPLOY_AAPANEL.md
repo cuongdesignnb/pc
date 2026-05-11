@@ -12,6 +12,7 @@
 ### 1.1 Vào aaPanel (`http://194.233.66.28:8888`)
 
 Cài đặt các phần mềm cần thiết trong **App Store**:
+
 - **Nginx** (bản mới nhất)
 - **MySQL 5.7** hoặc **8.0**
 - **PHP 8.3** (BẮT BUỘC - packages yêu cầu 8.3+. Extensions: `fileinfo`, `redis`, `mbstring`, `pdo_mysql`, `openssl`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`)
@@ -20,6 +21,7 @@ Cài đặt các phần mềm cần thiết trong **App Store**:
 ### 1.2 Cài PHP Extensions
 
 Vào **App Store > PHP 8.3 > Settings > Install Extensions**, cài thêm:
+
 - `fileinfo` (bắt buộc cho Laravel)
 - `redis` (nếu dùng Redis)
 
@@ -45,6 +47,7 @@ npm install -g pm2
 ### 2.1 Site Backend (Admin + API)
 
 Vào **Website > Add Site**:
+
 - **Domain**: `adminpc.cuongdesign.net`
 - **Document Root**: để mặc định (`/www/wwwroot/adminpc.cuongdesign.net`)
 - **PHP Version**: PHP 8.3
@@ -53,6 +56,7 @@ Vào **Website > Add Site**:
 ### 2.2 Site Frontend (Trang khách hàng)
 
 Vào **Website > Add Site**:
+
 - **Domain**: `pcjs.cuongdesign.net`
 - **Document Root**: để mặc định (`/www/wwwroot/pcjs.cuongdesign.net`)
 - **PHP Version**: **Static** (không cần PHP)
@@ -91,6 +95,7 @@ nano .env
 ```
 
 **Sửa các dòng quan trọng:**
+
 ```env
 APP_URL=https://adminpc.cuongdesign.net
 
@@ -193,6 +198,7 @@ nano .env
 ```
 
 **Sửa nội dung:**
+
 ```env
 NUXT_PUBLIC_API_BASE=https://adminpc.cuongdesign.net/api/v1
 NUXT_API_PROXY_TARGET=https://adminpc.cuongdesign.net
@@ -257,17 +263,18 @@ Vào **Website > pcjs.cuongdesign.net > SSL > Let's Encrypt** → Xin chứng ch
 
 ## BƯỚC 7: Kiểm tra
 
-| URL | Kết quả mong đợi |
-|-----|-------------------|
-| `https://pcjs.cuongdesign.net` | Trang chủ PC Shop (khách hàng) |
-| `https://adminpc.cuongdesign.net/admin` | Trang quản trị Admin |
-| `https://adminpc.cuongdesign.net/api/v1/products` | JSON danh sách sản phẩm |
+| URL                                               | Kết quả mong đợi               |
+| ------------------------------------------------- | ------------------------------ |
+| `https://pcjs.cuongdesign.net`                    | Trang chủ PC Shop (khách hàng) |
+| `https://adminpc.cuongdesign.net/admin`           | Trang quản trị Admin           |
+| `https://adminpc.cuongdesign.net/api/v1/products` | JSON danh sách sản phẩm        |
 
 ---
 
 ## Cập nhật code sau này
 
 ### Cập nhật Backend:
+
 ```bash
 cd /tmp
 git clone https://github.com/cuongdesignnb/pc.git pc_update
@@ -284,6 +291,7 @@ php artisan view:cache
 ```
 
 ### Cập nhật Frontend:
+
 ```bash
 cd /tmp
 git clone https://github.com/cuongdesignnb/pc.git pc_update2

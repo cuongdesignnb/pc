@@ -9,6 +9,8 @@ class Review extends Model
 {
     protected $fillable = [
         'user_id',
+        'guest_name',
+        'guest_email',
         'product_id',
         'order_id',
         'rating',

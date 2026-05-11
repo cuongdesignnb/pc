@@ -132,20 +132,20 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
 <template>
     <AdminLayout title="Chỉnh sửa Menu">
         <div class="flex items-center gap-3 mb-6">
-            <Link href="/admin/menus" class="text-gray-400 hover:text-gray-600">← Quay lại</Link>
-            <h1 class="text-2xl font-bold text-gray-900">{{ menu.name }}</h1>
+            <Link href="/admin/menus" class="text-slate-500 hover:text-slate-400">← Quay lại</Link>
+            <h1 class="text-2xl font-bold text-slate-200">{{ menu.name }}</h1>
             <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{{ menu.location }}</span>
         </div>
 
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <!-- Column 1: Menu Tree -->
             <div class="xl:col-span-2">
-                <div class="bg-white rounded-xl shadow-sm">
-                    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                        <h3 class="font-semibold text-gray-900">Cấu trúc Menu</h3>
+                <div class="bg-slate-900 rounded-xl shadow-none">
+                    <div class="px-6 py-4 border-b border-slate-800/40 flex items-center justify-between">
+                        <h3 class="font-semibold text-slate-200">Cấu trúc Menu</h3>
                         <button
                             @click="openAddItem(null)"
-                            class="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                            class="text-sm px-3 py-1.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
                         >
                             + Thêm item cấp 1
                         </button>
@@ -154,58 +154,58 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
                     <div class="p-4">
                         <div v-if="menu.items?.length" class="space-y-1">
                             <!-- Level 1 -->
-                            <div v-for="item in menu.items" :key="item.id" class="border border-gray-200 rounded-lg overflow-hidden">
-                                <div class="flex items-center gap-2 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
-                                    <span class="text-gray-300 cursor-move">⠿</span>
+                            <div v-for="item in menu.items" :key="item.id" class="border border-slate-800/60 rounded-lg overflow-hidden">
+                                <div class="flex items-center gap-2 px-4 py-3 bg-slate-800/40 hover:bg-slate-800/60 transition-colors">
+                                    <span class="text-slate-500 cursor-move">⠿</span>
                                     <span v-if="item.icon" class="text-lg">{{ item.icon }}</span>
-                                    <span class="font-medium text-gray-900 flex-1">{{ item.title }}</span>
+                                    <span class="font-medium text-slate-200 flex-1">{{ item.title }}</span>
                                     <span v-if="item.badge_text" :class="['text-[10px] font-bold px-1.5 py-0.5 rounded text-white', `bg-${item.badge_color || 'red'}-500`]">
                                         {{ item.badge_text }}
                                     </span>
                                     <span v-if="item.is_mega" class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">MEGA</span>
-                                    <span v-if="!item.is_active" class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Tắt</span>
-                                    <span class="text-xs text-gray-400">{{ item.url }}</span>
-                                    <button @click="openAddItem(item.id)" class="text-xs text-indigo-600 hover:text-indigo-800 px-1">+Con</button>
+                                    <span v-if="!item.is_active" class="text-[10px] bg-slate-800/60 text-slate-400 px-1.5 py-0.5 rounded">Tắt</span>
+                                    <span class="text-xs text-slate-500">{{ item.url }}</span>
+                                    <button @click="openAddItem(item.id)" class="text-xs text-cyan-500 hover:text-indigo-800 px-1">+Con</button>
                                     <button @click="openEditItem(item)" class="text-xs text-blue-600 hover:text-blue-800 px-1">Sửa</button>
-                                    <button @click="deleteItem(item)" class="text-xs text-red-500 hover:text-red-700 px-1">Xóa</button>
+                                    <button @click="deleteItem(item)" class="text-xs text-red-400 hover:text-red-700 px-1">Xóa</button>
                                 </div>
 
                                 <!-- Level 2  -->
-                                <div v-if="item.children?.length" class="bg-white">
-                                    <div v-for="child in item.children" :key="child.id" class="border-t border-gray-100">
+                                <div v-if="item.children?.length" class="bg-slate-900">
+                                    <div v-for="child in item.children" :key="child.id" class="border-t border-slate-800/40">
                                         <div class="flex items-center gap-2 px-4 py-2.5 pl-10 hover:bg-blue-50/50 transition-colors">
-                                            <span class="text-gray-300 cursor-move text-sm">⠿</span>
+                                            <span class="text-slate-500 cursor-move text-sm">⠿</span>
                                             <span v-if="child.icon" class="text-base">{{ child.icon }}</span>
-                                            <span class="font-medium text-sm text-gray-800 flex-1">{{ child.title }}</span>
+                                            <span class="font-medium text-sm text-slate-200 flex-1">{{ child.title }}</span>
                                             <span v-if="child.badge_text" :class="['text-[9px] font-bold px-1 py-0.5 rounded text-white', `bg-${child.badge_color || 'red'}-500`]">
                                                 {{ child.badge_text }}
                                             </span>
-                                            <span class="text-xs text-gray-400">{{ child.url }}</span>
-                                            <button @click="openAddItem(child.id)" class="text-xs text-indigo-600 hover:text-indigo-800 px-1">+Con</button>
+                                            <span class="text-xs text-slate-500">{{ child.url }}</span>
+                                            <button @click="openAddItem(child.id)" class="text-xs text-cyan-500 hover:text-indigo-800 px-1">+Con</button>
                                             <button @click="openEditItem(child)" class="text-xs text-blue-600 hover:text-blue-800 px-1">Sửa</button>
-                                            <button @click="deleteItem(child)" class="text-xs text-red-500 hover:text-red-700 px-1">Xóa</button>
+                                            <button @click="deleteItem(child)" class="text-xs text-red-400 hover:text-red-700 px-1">Xóa</button>
                                         </div>
 
                                         <!-- Level 3 -->
                                         <div v-if="child.children?.length">
-                                            <div v-for="deep in child.children" :key="deep.id" class="border-t border-gray-50">
-                                                <div class="flex items-center gap-2 px-4 py-2 pl-16 hover:bg-indigo-50/50 transition-colors">
-                                                    <span class="text-gray-300 cursor-move text-sm">⠿</span>
-                                                    <span class="text-sm text-gray-700 flex-1">{{ deep.title }}</span>
-                                                    <span class="text-xs text-gray-400">{{ deep.url }}</span>
-                                                    <button @click="openAddItem(deep.id)" class="text-xs text-indigo-600 hover:text-indigo-800 px-1">+Con</button>
+                                            <div v-for="deep in child.children" :key="deep.id" class="border-t border-slate-800">
+                                                <div class="flex items-center gap-2 px-4 py-2 pl-16 hover:bg-cyan-500/10/50 transition-colors">
+                                                    <span class="text-slate-500 cursor-move text-sm">⠿</span>
+                                                    <span class="text-sm text-slate-300 flex-1">{{ deep.title }}</span>
+                                                    <span class="text-xs text-slate-500">{{ deep.url }}</span>
+                                                    <button @click="openAddItem(deep.id)" class="text-xs text-cyan-500 hover:text-indigo-800 px-1">+Con</button>
                                                     <button @click="openEditItem(deep)" class="text-xs text-blue-600 hover:text-blue-800 px-1">Sửa</button>
-                                                    <button @click="deleteItem(deep)" class="text-xs text-red-500 hover:text-red-700 px-1">Xóa</button>
+                                                    <button @click="deleteItem(deep)" class="text-xs text-red-400 hover:text-red-700 px-1">Xóa</button>
                                                 </div>
 
                                                 <!-- Level 4 -->
                                                 <div v-if="deep.children?.length">
-                                                    <div v-for="l4 in deep.children" :key="l4.id" class="border-t border-gray-50">
+                                                    <div v-for="l4 in deep.children" :key="l4.id" class="border-t border-slate-800">
                                                         <div class="flex items-center gap-2 px-4 py-1.5 pl-24 hover:bg-purple-50/50 transition-colors">
-                                                            <span class="text-xs text-gray-600 flex-1">{{ l4.title }}</span>
-                                                            <span class="text-xs text-gray-400">{{ l4.url }}</span>
+                                                            <span class="text-xs text-slate-400 flex-1">{{ l4.title }}</span>
+                                                            <span class="text-xs text-slate-500">{{ l4.url }}</span>
                                                             <button @click="openEditItem(l4)" class="text-xs text-blue-600 hover:text-blue-800 px-1">Sửa</button>
-                                                            <button @click="deleteItem(l4)" class="text-xs text-red-500 hover:text-red-700 px-1">Xóa</button>
+                                                            <button @click="deleteItem(l4)" class="text-xs text-red-400 hover:text-red-700 px-1">Xóa</button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -215,9 +215,9 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
                                 </div>
                             </div>
                         </div>
-                        <div v-else class="text-center py-12 text-gray-400">
+                        <div v-else class="text-center py-12 text-slate-500">
                             <p class="text-lg mb-2">Menu chưa có item nào</p>
-                            <button @click="openAddItem(null)" class="text-indigo-600 hover:text-indigo-800 font-medium">
+                            <button @click="openAddItem(null)" class="text-cyan-500 hover:text-indigo-800 font-medium">
                                 + Thêm item đầu tiên
                             </button>
                         </div>
@@ -227,52 +227,52 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
 
             <!-- Column 2: Menu Settings -->
             <div class="space-y-6">
-                <div class="bg-white rounded-xl shadow-sm p-6">
-                    <h3 class="font-semibold text-gray-900 mb-4">Cài đặt Menu</h3>
+                <div class="bg-slate-900 rounded-xl shadow-none p-6">
+                    <h3 class="font-semibold text-slate-200 mb-4">Cài đặt Menu</h3>
                     <form @submit.prevent="saveSettings" class="space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tên</label>
-                            <input v-model="settingsForm.name" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Tên</label>
+                            <input v-model="settingsForm.name" type="text" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Vị trí</label>
-                            <select v-model="settingsForm.location" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Vị trí</label>
+                            <select v-model="settingsForm.location" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                                 <option v-for="loc in locations" :key="loc.value" :value="loc.value">{{ loc.label }}</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
-                            <textarea v-model="settingsForm.description" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" />
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Mô tả</label>
+                            <textarea v-model="settingsForm.description" rows="2" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50" />
                         </div>
                         <div class="flex items-center gap-2">
-                            <input type="checkbox" v-model="settingsForm.is_active" id="settings_active" class="rounded border-gray-300 text-indigo-600">
-                            <label for="settings_active" class="text-sm text-gray-700">Hoạt động</label>
+                            <input type="checkbox" v-model="settingsForm.is_active" id="settings_active" class="rounded border-slate-700/50 text-cyan-500">
+                            <label for="settings_active" class="text-sm text-slate-300">Hoạt động</label>
                         </div>
-                        <button type="submit" :disabled="settingsForm.processing" class="w-full py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                        <button type="submit" :disabled="settingsForm.processing" class="w-full py-2 bg-cyan-600 text-white text-sm font-medium rounded-lg hover:bg-cyan-700 disabled:opacity-50">
                             Lưu cài đặt
                         </button>
                     </form>
                 </div>
 
                 <!-- Quick stats -->
-                <div class="bg-white rounded-xl shadow-sm p-6">
-                    <h3 class="font-semibold text-gray-900 mb-3">Thống kê</h3>
+                <div class="bg-slate-900 rounded-xl shadow-none p-6">
+                    <h3 class="font-semibold text-slate-200 mb-3">Thống kê</h3>
                     <div class="space-y-2 text-sm">
-                        <div class="flex justify-between"><span class="text-gray-500">Tổng items</span><span class="font-medium">{{ flatItems.length }}</span></div>
-                        <div class="flex justify-between"><span class="text-gray-500">Cấp 1</span><span class="font-medium">{{ menu.items?.length || 0 }}</span></div>
-                        <div class="flex justify-between"><span class="text-gray-500">Mega Menu</span><span class="font-medium">{{ menu.items?.filter(i => i.is_mega).length || 0 }}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Tổng items</span><span class="font-medium">{{ flatItems.length }}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Cấp 1</span><span class="font-medium">{{ menu.items?.length || 0 }}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">Mega Menu</span><span class="font-medium">{{ menu.items?.filter(i => i.is_mega).length || 0 }}</span></div>
                     </div>
                 </div>
 
                 <!-- Quick add from categories -->
-                <div class="bg-white rounded-xl shadow-sm p-6">
-                    <h3 class="font-semibold text-gray-900 mb-3">Thêm nhanh từ danh mục</h3>
+                <div class="bg-slate-900 rounded-xl shadow-none p-6">
+                    <h3 class="font-semibold text-slate-200 mb-3">Thêm nhanh từ danh mục</h3>
                     <div class="space-y-1 max-h-60 overflow-y-auto">
-                        <div v-for="cat in flatCategories" :key="cat.id" class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50">
-                            <span class="text-sm text-gray-700">{{ cat.name }}</span>
+                        <div v-for="cat in flatCategories" :key="cat.id" class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-slate-800/40">
+                            <span class="text-sm text-slate-300">{{ cat.name }}</span>
                             <button
                                 @click="openAddItem(null); itemForm.title = cat.name.replace(/^—+\s/, ''); itemForm.type = 'category'; itemForm.category_id = cat.id;"
-                                class="text-xs text-indigo-600 hover:text-indigo-800"
+                                class="text-xs text-cyan-500 hover:text-indigo-800"
                             >+ Thêm</button>
                         </div>
                     </div>
@@ -291,22 +291,22 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
                 leave-to-class="opacity-0"
             >
                 <div v-if="showItemModal" class="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-20 px-4" @click.self="showItemModal = false">
-                    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-xl">
-                            <h3 class="font-semibold text-gray-900">{{ editingItem ? 'Sửa Menu Item' : 'Thêm Menu Item' }}</h3>
-                            <button @click="showItemModal = false" class="text-gray-400 hover:text-gray-600">✕</button>
+                    <div class="bg-slate-900 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+                        <div class="px-6 py-4 border-b border-slate-800/40 flex items-center justify-between sticky top-0 bg-slate-900 rounded-t-xl">
+                            <h3 class="font-semibold text-slate-200">{{ editingItem ? 'Sửa Menu Item' : 'Thêm Menu Item' }}</h3>
+                            <button @click="showItemModal = false" class="text-slate-500 hover:text-slate-400">✕</button>
                         </div>
 
                         <form @submit.prevent="submitItem" class="p-6 space-y-4">
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="col-span-2">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tiêu đề *</label>
-                                    <input v-model="itemForm.title" type="text" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Tên hiển thị">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề *</label>
+                                    <input v-model="itemForm.title" type="text" required class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50" placeholder="Tên hiển thị">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Loại</label>
-                                    <select v-model="itemForm.type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Loại</label>
+                                    <select v-model="itemForm.type" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                                         <option value="custom">Tùy chỉnh (URL)</option>
                                         <option value="category">Danh mục</option>
                                         <option value="page">Trang</option>
@@ -314,61 +314,61 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
                                 </div>
 
                                 <div v-if="itemForm.type === 'category'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Danh mục</label>
-                                    <select v-model="itemForm.category_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Danh mục</label>
+                                    <select v-model="itemForm.category_id" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                                         <option :value="null">-- Chọn --</option>
                                         <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                                     </select>
                                 </div>
 
                                 <div v-if="itemForm.type !== 'category'" class="col-span-2">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">URL</label>
-                                    <input v-model="itemForm.url" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="/categories/cpu">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">URL</label>
+                                    <input v-model="itemForm.url" type="text" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50" placeholder="/categories/cpu">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Menu cha</label>
-                                    <select v-model="itemForm.parent_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Menu cha</label>
+                                    <select v-model="itemForm.parent_id" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                                         <option :value="null">— Cấp cao nhất —</option>
                                         <option v-for="fi in flatItems" :key="fi.id" :value="fi.id">{{ fi.title }}</option>
                                     </select>
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Thứ tự</label>
-                                    <input v-model.number="itemForm.sort_order" type="number" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Thứ tự</label>
+                                    <input v-model.number="itemForm.sort_order" type="number" min="0" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Icon (emoji)</label>
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Icon (emoji)</label>
                                     <div class="flex gap-2">
-                                        <input v-model="itemForm.icon" type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="🖥️">
+                                        <input v-model="itemForm.icon" type="text" class="flex-1 px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50" placeholder="🖥️">
                                     </div>
                                     <div class="flex flex-wrap gap-1 mt-1.5">
                                         <button
                                             v-for="e in emojiList" :key="e" type="button"
                                             @click="itemForm.icon = e"
-                                            class="text-lg w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100"
+                                            class="text-lg w-7 h-7 flex items-center justify-center rounded hover:bg-slate-800/60"
                                             :class="{ 'bg-indigo-100 ring-1 ring-indigo-300': itemForm.icon === e }"
                                         >{{ e }}</button>
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Target</label>
-                                    <select v-model="itemForm.target" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Target</label>
+                                    <select v-model="itemForm.target" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50">
                                         <option value="_self">Cùng tab</option>
                                         <option value="_blank">Tab mới</option>
                                     </select>
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Badge text</label>
-                                    <input v-model="itemForm.badge_text" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="HOT, Mới, Sale...">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Badge text</label>
+                                    <input v-model="itemForm.badge_text" type="text" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50" placeholder="HOT, Mới, Sale...">
                                 </div>
 
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Badge color</label>
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Badge color</label>
                                     <div class="flex gap-2">
                                         <button
                                             v-for="bc in badgeColorOptions" :key="bc.value" type="button"
@@ -376,7 +376,7 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
                                             :class="[
                                                 'w-7 h-7 rounded-full border-2 transition-all',
                                                 bc.class,
-                                                itemForm.badge_color === bc.value ? 'border-gray-900 scale-110' : 'border-transparent'
+                                                itemForm.badge_color === bc.value ? 'border-slate-300 scale-110' : 'border-transparent'
                                             ]"
                                             :title="bc.label"
                                         />
@@ -384,35 +384,35 @@ const emojiList = ['🏠','🖥️','💻','🔧','🎧','⚙️','📰','🎮',
                                 </div>
 
                                 <div class="col-span-2">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mô tả (hiện dưới tiêu đề trong mega menu)</label>
-                                    <input v-model="itemForm.description" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Mô tả ngắn gọn">
+                                    <label class="block text-sm font-medium text-slate-300 mb-1">Mô tả (hiện dưới tiêu đề trong mega menu)</label>
+                                    <input v-model="itemForm.description" type="text" class="w-full px-3 py-2 border border-slate-700/50 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500/50" placeholder="Mô tả ngắn gọn">
                                 </div>
 
                                 <div class="col-span-2 flex items-center gap-6">
                                     <label class="flex items-center gap-2">
-                                        <input type="checkbox" v-model="itemForm.is_active" class="rounded border-gray-300 text-indigo-600">
-                                        <span class="text-sm text-gray-700">Hoạt động</span>
+                                        <input type="checkbox" v-model="itemForm.is_active" class="rounded border-slate-700/50 text-cyan-500">
+                                        <span class="text-sm text-slate-300">Hoạt động</span>
                                     </label>
                                     <label class="flex items-center gap-2">
-                                        <input type="checkbox" v-model="itemForm.is_mega" class="rounded border-gray-300 text-purple-600">
-                                        <span class="text-sm text-gray-700">Mega Menu</span>
+                                        <input type="checkbox" v-model="itemForm.is_mega" class="rounded border-slate-700/50 text-purple-600">
+                                        <span class="text-sm text-slate-300">Mega Menu</span>
                                     </label>
                                     <div v-if="itemForm.is_mega" class="flex items-center gap-2">
-                                        <label class="text-sm text-gray-700">Số cột:</label>
-                                        <input v-model.number="itemForm.mega_columns" type="number" min="1" max="6" class="w-16 px-2 py-1 border border-gray-300 rounded-lg text-sm">
+                                        <label class="text-sm text-slate-300">Số cột:</label>
+                                        <input v-model.number="itemForm.mega_columns" type="number" min="1" max="6" class="w-16 px-2 py-1 border border-slate-700/50 rounded-lg text-sm">
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="flex items-center gap-3 pt-3 border-t border-gray-100">
+                            <div class="flex items-center gap-3 pt-3 border-t border-slate-800/40">
                                 <button
                                     type="submit"
                                     :disabled="itemForm.processing"
-                                    class="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                                    class="px-5 py-2 bg-cyan-600 text-white text-sm font-medium rounded-lg hover:bg-cyan-700 disabled:opacity-50"
                                 >
                                     {{ editingItem ? 'Cập nhật' : 'Thêm item' }}
                                 </button>
-                                <button type="button" @click="showItemModal = false" class="text-sm text-gray-500 hover:text-gray-700">Hủy</button>
+                                <button type="button" @click="showItemModal = false" class="text-sm text-slate-400 hover:text-slate-300">Hủy</button>
                             </div>
                         </form>
                     </div>

@@ -366,7 +366,7 @@ onMounted(() => {
               <NuxtLink
                 v-for="(sec, i) in sideSections"
                 :key="sec.category.id"
-                :to="`/categories/${sec.category.slug}`"
+                :to="`/${sec.category.slug}`"
                 :prefetch="false"
                 class="flex-1 relative rounded-2xl overflow-hidden p-6 flex flex-col justify-end min-h-[120px] group hover:shadow-xl transition-all bg-gradient-to-br"
                 :class="[getColor(i).gradient, `hero-side-${i + 1}`]"
@@ -386,7 +386,7 @@ onMounted(() => {
                   <NuxtLink
                     v-for="(sec, i) in visibleSideSections"
                     :key="sec.category.id"
-                    :to="`/categories/${sec.category.slug}`"
+                    :to="`/${sec.category.slug}`"
                     :prefetch="false"
                     class="flex-1 relative rounded-2xl lg:rounded-none overflow-hidden p-6 flex flex-col justify-end min-h-[120px] group hover:shadow-xl transition-all bg-gradient-to-br lg:first:rounded-t-2xl lg:last:rounded-b-2xl"
                     :class="getColor((sideSlideIndex + i) % sectionColors.length).gradient"
@@ -411,7 +411,7 @@ onMounted(() => {
             </template>
 
             <!-- Fallback: if no sections -->
-            <NuxtLink v-if="sideSections.length === 0" to="/configurator"
+            <NuxtLink v-if="sideSections.length === 0" to="/cau-hinh"
               class="flex-1 relative rounded-2xl overflow-hidden bg-gradient-to-br from-amber-400 to-yellow-500 p-6 flex flex-col justify-end min-h-[100px] group hover:shadow-xl transition-shadow"
             >
               <h3 class="text-gray-900 text-xl font-bold">Build PC Online</h3>
@@ -430,7 +430,7 @@ onMounted(() => {
           <NuxtLink
             v-for="(cat, ci) in allSubcats.slice(0, 20)"
             :key="cat.id"
-            :to="`/categories/${cat.slug}`"
+            :to="`/${cat.slug}`"
             :prefetch="false"
             data-reveal="scale"
             class="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-gray-50 transition-colors group"
@@ -491,7 +491,7 @@ onMounted(() => {
                 {{ child.name }}
               </button>
               <NuxtLink
-                :to="`/categories/${section.category.slug}`"
+                :to="`/${section.category.slug}`"
                 :prefetch="false"
                 class="text-primary-600 hover:text-primary-700 font-medium text-sm flex items-center gap-1 ml-auto"
               >
@@ -506,7 +506,7 @@ onMounted(() => {
             <NuxtLink
               v-for="product in filteredProducts(section, sIdx)"
               :key="product.id"
-              :to="`/products/${product.slug}`"
+              :to="`/${section.category.slug}/${product.slug}`"
               :prefetch="false"
               data-product-card
               :class="['card-hover bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-primary-200 transition-all group', revealedSections.has(sIdx) ? '' : 'reveal-up']"
@@ -544,7 +544,7 @@ onMounted(() => {
 
           <div v-if="filteredProducts(section, sIdx).length === 0" class="text-center py-8 text-gray-400">
             <p>Chưa có sản phẩm trong danh mục con này.</p>
-            <NuxtLink :to="`/categories/${section.category.slug}`" class="text-primary-600 hover:underline text-sm mt-2 inline-block">
+            <NuxtLink :to="`/${section.category.slug}`" class="text-primary-600 hover:underline text-sm mt-2 inline-block">
               Xem tất cả {{ section.category.name }}
             </NuxtLink>
           </div>
@@ -560,7 +560,7 @@ onMounted(() => {
           Chọn từng linh kiện, kiểm tra tương thích tự động, so sánh giá và TDP.
           Hoàn toàn miễn phí, không cần đăng ký.
         </p>
-        <NuxtLink to="/configurator">
+        <NuxtLink to="/cau-hinh">
           <UButton size="xl" class="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold px-8 shadow-xl shadow-purple-500/25">
             Bắt đầu build ngay
           </UButton>
@@ -630,7 +630,7 @@ onMounted(() => {
             <h2 class="text-2xl font-bold text-gray-900">Tin tức nổi bật</h2>
             <p class="text-gray-500 text-sm mt-1">Cập nhật tin tức công nghệ mới nhất</p>
           </div>
-          <NuxtLink to="/blog" class="text-indigo-600 hover:text-indigo-700 font-medium text-sm flex items-center gap-1">
+          <NuxtLink to="/tin-tuc" class="text-indigo-600 hover:text-indigo-700 font-medium text-sm flex items-center gap-1">
             Xem tất cả
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
           </NuxtLink>
@@ -640,7 +640,7 @@ onMounted(() => {
             <NuxtLink
               v-for="post in [...(featuredPosts || []), ...(featuredPosts || [])]" 
               :key="post.id" 
-              :to="`/blog/${post.slug}`"
+              :to="`/tin-tuc/${post.slug}`"
               class="post-card flex-shrink-0 group"
             >
               <div class="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-300">

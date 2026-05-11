@@ -78,8 +78,12 @@ export interface ComponentType {
 export interface Review {
   id: number
   user?: User
+  guest_name?: string | null
+  guest_email?: string | null
   rating: number
-  comment: string
+  title?: string | null
+  body?: string | null
+  admin_reply?: string | null
   created_at: string
 }
 

@@ -3,7 +3,7 @@ export default defineNuxtRouteMiddleware((to, from) => {
   
   if (!token.value) {
     return navigateTo({
-      path: '/auth/login',
+      path: '/dang-nhap',
       query: { redirect: to.fullPath },
     })
   }

@@ -111,6 +111,24 @@ services:
       - pc_network
 
   # ===================
+  # PHPMYADMIN
+  # ===================
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: pc_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: root_secret
+    depends_on:
+      - mysql
+    networks:
+      - pc_network
+
+  # ===================
   # MAILPIT (Dev Email)
   # ===================
   mailpit:

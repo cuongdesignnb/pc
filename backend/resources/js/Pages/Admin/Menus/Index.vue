@@ -18,47 +18,47 @@ const locationLabels = {
     <AdminLayout title="Quản lý Menu">
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-gray-900">Quản lý Menu</h1>
-                <p class="text-sm text-gray-500 mt-1">Tạo và quản lý các menu cho website</p>
+                <h1 class="text-2xl font-bold text-slate-200">Quản lý Menu</h1>
+                <p class="text-sm text-slate-400 mt-1">Tạo và quản lý các menu cho website</p>
             </div>
             <Link
                 href="/admin/menus/create"
-                class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                class="inline-flex items-center px-4 py-2 bg-cyan-600 text-white text-sm font-medium rounded-lg hover:bg-cyan-700 transition-colors"
             >
                 + Tạo Menu mới
             </Link>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
+        <div class="bg-slate-900 rounded-xl shadow-none overflow-hidden">
+            <table class="min-w-full divide-y divide-slate-800/40">
+                <thead class="bg-slate-800/40">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tên Menu</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vị trí</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số item</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Thao tác</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Tên Menu</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Vị trí</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Số item</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase">Trạng thái</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-slate-400 uppercase">Thao tác</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200">
-                    <tr v-for="menu in menus" :key="menu.id" class="hover:bg-gray-50">
+                <tbody class="divide-y divide-slate-800/40">
+                    <tr v-for="menu in menus" :key="menu.id" class="hover:bg-slate-800/40">
                         <td class="px-6 py-4">
-                            <div class="font-medium text-gray-900">{{ menu.name }}</div>
-                            <div class="text-xs text-gray-400">{{ menu.slug }}</div>
+                            <div class="font-medium text-slate-200">{{ menu.name }}</div>
+                            <div class="text-xs text-slate-500">{{ menu.slug }}</div>
                         </td>
                         <td class="px-6 py-4">
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                 {{ locationLabels[menu.location] || menu.location }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 text-sm text-gray-600">
+                        <td class="px-6 py-4 text-sm text-slate-400">
                             {{ menu.all_items_count }} items
                         </td>
                         <td class="px-6 py-4">
                             <span
                                 :class="[
                                     'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                                    menu.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                    menu.is_active ? 'bg-green-100 text-green-800' : 'bg-slate-800/60 text-slate-400'
                                 ]"
                             >
                                 {{ menu.is_active ? 'Hoạt động' : 'Tắt' }}
@@ -67,7 +67,7 @@ const locationLabels = {
                         <td class="px-6 py-4 text-right space-x-2">
                             <Link
                                 :href="`/admin/menus/${menu.id}/edit`"
-                                class="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                                class="text-cyan-500 hover:text-indigo-800 text-sm font-medium"
                             >
                                 Chỉnh sửa
                             </Link>
@@ -83,7 +83,7 @@ const locationLabels = {
                         </td>
                     </tr>
                     <tr v-if="!menus?.length">
-                        <td colspan="5" class="px-6 py-12 text-center text-gray-400">
+                        <td colspan="5" class="px-6 py-12 text-center text-slate-500">
                             Chưa có menu nào. Hãy tạo menu đầu tiên!
                         </td>
                     </tr>

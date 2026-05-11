@@ -101,7 +101,10 @@ class ProductController extends Controller
             'brand',
             'componentType',
             'images',
-            'reviews.user',
+            'reviews' => fn ($query) => $query
+                ->where('is_approved', true)
+                ->latest()
+                ->with(['user:id,name']),
         ])
             ->where('slug', $slug)
             ->where('is_active', true)

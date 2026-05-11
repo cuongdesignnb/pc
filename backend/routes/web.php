@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BannerController;
+use App\Http\Controllers\Admin\FilterController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CompatibilityController;
@@ -16,12 +18,15 @@ use App\Http\Controllers\Admin\PostCategoryController;
 use App\Http\Controllers\Admin\PostController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ReviewController;
+use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect('/admin');
 });
 
 // ─── Payment routes (SePay Gateway) ─────────────────────────────────────────
@@ -38,12 +43,24 @@ Route::prefix('payment')->name('payment.')->group(function () {
     Route::post('/ipn', [PaymentController::class, 'ipn'])->name('ipn');
 });
 
-// Admin routes
-Route::prefix('admin')->middleware(['web'])->name('admin.')->group(function () {
+// ─── Admin Auth Routes (guest only) ─────────────────────────────────────────
+Route::prefix('admin')->name('admin.')->group(function () {
+    Route::get('login', [AuthController::class, 'showLogin'])->name('login');
+    Route::post('login', [AuthController::class, 'login'])->name('login.submit');
+});
+
+// ─── Admin Protected Routes ─────────────────────────────────────────────────
+Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group(function () {
+    // Logout
+    Route::post('logout', [AuthController::class, 'logout'])->name('logout');
+
+    // Dashboard
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // Products
     Route::resource('products', ProductController::class);
+    Route::get('products-export', [ProductController::class, 'export'])->name('products.export');
+    Route::post('products-import', [ProductController::class, 'import'])->name('products.import');
 
     // Categories
     Route::resource('categories', CategoryController::class);
@@ -63,11 +80,20 @@ Route::prefix('admin')->middleware(['web'])->name('admin.')->group(function () {
     // Component Types
     Route::resource('component-types', ComponentTypeController::class);
 
+    // Filters
+    Route::resource('filters', FilterController::class);
+
+    // Category filter assignment
+    Route::get('categories/{category}/filters', [CategoryController::class, 'editFilters'])->name('categories.filters.edit');
+    Route::put('categories/{category}/filters', [CategoryController::class, 'updateFilters'])->name('categories.filters.update');
+
     // Compatibility Rules
     Route::resource('compatibility', CompatibilityController::class);
 
     // Posts
     Route::resource('posts', PostController::class);
+    Route::get('posts-export', [PostController::class, 'export'])->name('posts.export');
+    Route::post('posts-import', [PostController::class, 'import'])->name('posts.import');
     Route::resource('post-categories', PostCategoryController::class);
 
     // Pages
@@ -106,4 +132,25 @@ Route::prefix('admin')->middleware(['web'])->name('admin.')->group(function () {
     // Settings
     Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
     Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
+
+    // AI Articles
+    Route::get('ai-articles', [AiArticleController::class, 'index'])->name('ai-articles.index');
+    Route::get('ai-articles/create', [AiArticleController::class, 'create'])->name('ai-articles.create');
+    Route::post('ai-articles', [AiArticleController::class, 'store'])->name('ai-articles.store');
+    Route::get('ai-articles/{aiArticle}', [AiArticleController::class, 'show'])->name('ai-articles.show');
+    Route::post('ai-articles/{aiArticle}/run', [AiArticleController::class, 'run'])->name('ai-articles.run');
+    Route::delete('ai-articles/{aiArticle}', [AiArticleController::class, 'destroy'])->name('ai-articles.destroy');
+    Route::post('ai-articles/generate-single', [AiArticleController::class, 'generateSingle'])->name('ai-articles.generate-single');
+
+    // ─── User & Role Management (restricted to users with permission) ────
+    Route::middleware('permission:users.view')->group(function () {
+        Route::resource('users', UserController::class);
+    });
+
+    Route::middleware('permission:roles.view')->group(function () {
+        Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
+        Route::post('roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
+        Route::delete('roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+    });
 });

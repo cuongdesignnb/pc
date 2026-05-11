@@ -18,7 +18,7 @@ class CartController extends Controller
     {
         $cart = $this->getOrCreateCart($request);
 
-        $cart->load(['items.product.images', 'items.product.brand']);
+        $cart->load(['items.product.images', 'items.product.brand', 'items.product.category']);
 
         return response()->json([
             'cart' => $cart,

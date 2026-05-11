@@ -50,7 +50,7 @@ function cancelClose() {
 
 function resolveUrl(item: MenuItemData): string {
   if (item.type === 'category' && item.category) {
-    return '/categories/' + item.category.slug
+    return '/' + item.category.slug
   }
   return item.url ?? '#'
 }

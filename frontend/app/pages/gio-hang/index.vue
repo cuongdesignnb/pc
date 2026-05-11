@@ -15,6 +15,7 @@ interface CartItem {
     sale_price: number | null
     quantity: number
     images?: { url: string }[]
+    category?: { slug: string } | null
   }
 }
 
@@ -113,7 +114,7 @@ useSeoMeta({
     <div v-else-if="cartItems.length === 0" class="text-center py-12">
       <p class="text-6xl mb-4">🛒</p>
       <p class="text-xl text-gray-500 mb-6">Giỏ hàng của bạn đang trống</p>
-      <UButton to="/products" size="lg">Tiếp tục mua sắm</UButton>
+      <UButton to="/" size="lg">Tiếp tục mua sắm</UButton>
     </div>
 
     <div v-else class="grid lg:grid-cols-3 gap-8">
@@ -125,7 +126,7 @@ useSeoMeta({
           class="bg-white rounded-xl shadow-sm p-4 flex gap-4"
         >
           <!-- Product Image -->
-          <NuxtLink :to="`/products/${item.product.slug}`" class="flex-shrink-0">
+          <NuxtLink :to="`/${item.product.category?.slug || 'san-pham'}/${item.product.slug}`" class="flex-shrink-0">
             <div class="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden">
               <img 
                 v-if="item.product.images?.[0]" 
@@ -141,7 +142,7 @@ useSeoMeta({
 
           <!-- Product Info -->
           <div class="flex-1 min-w-0">
-            <NuxtLink :to="`/products/${item.product.slug}`">
+            <NuxtLink :to="`/${item.product.category?.slug || 'san-pham'}/${item.product.slug}`">
               <h3 class="font-semibold hover:text-primary-600 line-clamp-2">
                 {{ item.product.name }}
               </h3>
@@ -202,7 +203,7 @@ useSeoMeta({
           >
             Xóa toàn bộ giỏ hàng
           </UButton>
-          <NuxtLink to="/products" class="text-primary-600 hover:underline">
+          <NuxtLink to="/" class="text-primary-600 hover:underline">
             Tiếp tục mua sắm →
           </NuxtLink>
         </div>
@@ -231,7 +232,7 @@ useSeoMeta({
             </div>
           </div>
 
-          <UButton to="/checkout" size="lg" block>
+          <UButton to="/thanh-toan" size="lg" block>
             Tiến hành thanh toán
           </UButton>
 

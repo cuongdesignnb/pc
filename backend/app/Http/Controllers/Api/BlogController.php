@@ -51,7 +51,7 @@ class BlogController extends Controller
      */
     public function show(string $slug)
     {
-        $post = Post::with(['category', 'author', 'tags'])
+        $post = Post::with(['category', 'author'])
             ->where('slug', $slug)
             ->where('status', 'published')
             ->firstOrFail();
