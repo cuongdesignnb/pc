@@ -7,7 +7,6 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\ComponentType;
 use App\Models\Product;
-use App\Models\ProductImage;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
 use Illuminate\Http\Request;
@@ -96,7 +95,7 @@ class ProductController extends Controller
 
         // Check slug collision with categories
         if (Category::where('slug', $validated['slug'])->exists()) {
-            return back()->withErrors(['slug' => 'Slug "' . $validated['slug'] . '" đã được sử dụng bởi một danh mục.'])->withInput();
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs'])->toArray();
@@ -104,14 +103,14 @@ class ProductController extends Controller
 
         // Save images
         $sortOrder = 0;
-        if (!empty($validated['thumbnail'])) {
+        if (! empty($validated['thumbnail'])) {
             $product->images()->create([
                 'url' => $validated['thumbnail'],
                 'is_primary' => true,
                 'sort_order' => $sortOrder++,
             ]);
         }
-        if (!empty($validated['gallery'])) {
+        if (! empty($validated['gallery'])) {
             foreach ($validated['gallery'] as $url) {
                 if ($url !== ($validated['thumbnail'] ?? '')) {
                     $product->images()->create([
@@ -124,9 +123,9 @@ class ProductController extends Controller
         }
 
         // Save compatibility specifications
-        if (!empty($validated['compatibility_specs'])) {
+        if (! empty($validated['compatibility_specs'])) {
             foreach ($validated['compatibility_specs'] as $spec) {
-                if (!empty($spec['value'])) {
+                if (! empty($spec['value'])) {
                     $specKey = SpecificationKey::find($spec['specification_key_id']);
                     $data = [
                         'product_id' => $product->id,
@@ -149,6 +148,7 @@ class ProductController extends Controller
     public function edit(Product $product)
     {
         $product->load(['category', 'brand', 'componentType', 'images', 'specifications.specificationKey']);
+        $product->makeVisible('stock_quantity');
 
         return Inertia::render('Admin/Products/Edit', [
             'product' => $product,
@@ -162,8 +162,8 @@ class ProductController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:products,slug,' . $product->id,
-            'sku' => 'required|string|max:100|unique:products,sku,' . $product->id,
+            'slug' => 'required|string|max:255|unique:products,slug,'.$product->id,
+            'sku' => 'required|string|max:100|unique:products,sku,'.$product->id,
             'category_id' => 'required|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'component_type_id' => 'nullable|exists:component_types,id',
@@ -190,23 +190,26 @@ class ProductController extends Controller
 
         // Check slug collision with categories
         if (Category::where('slug', $validated['slug'])->exists()) {
-            return back()->withErrors(['slug' => 'Slug "' . $validated['slug'] . '" đã được sử dụng bởi một danh mục.'])->withInput();
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs'])->toArray();
+        if ($product->inventory_source === 'kiot') {
+            unset($productData['price'], $productData['stock_quantity']);
+        }
         $product->update($productData);
 
         // Rebuild images
         $product->images()->delete();
         $sortOrder = 0;
-        if (!empty($validated['thumbnail'])) {
+        if (! empty($validated['thumbnail'])) {
             $product->images()->create([
                 'url' => $validated['thumbnail'],
                 'is_primary' => true,
                 'sort_order' => $sortOrder++,
             ]);
         }
-        if (!empty($validated['gallery'])) {
+        if (! empty($validated['gallery'])) {
             foreach ($validated['gallery'] as $url) {
                 if ($url !== ($validated['thumbnail'] ?? '')) {
                     $product->images()->create([
@@ -220,9 +223,9 @@ class ProductController extends Controller
 
         // Rebuild compatibility specifications
         $product->specifications()->delete();
-        if (!empty($validated['compatibility_specs'])) {
+        if (! empty($validated['compatibility_specs'])) {
             foreach ($validated['compatibility_specs'] as $spec) {
-                if (!empty($spec['value'])) {
+                if (! empty($spec['value'])) {
                     $specKey = SpecificationKey::find($spec['specification_key_id']);
                     $data = [
                         'product_id' => $product->id,
@@ -260,11 +263,15 @@ class ProductController extends Controller
                     ->orWhere('sku', 'like', "%{$request->search}%");
             });
         }
-        if ($request->category_id) $query->where('category_id', $request->category_id);
-        if ($request->brand_id) $query->where('brand_id', $request->brand_id);
+        if ($request->category_id) {
+            $query->where('category_id', $request->category_id);
+        }
+        if ($request->brand_id) {
+            $query->where('brand_id', $request->brand_id);
+        }
 
         $products = $query->get();
-        $filename = 'san-pham-' . date('Y-m-d-His') . '.csv';
+        $filename = 'san-pham-'.date('Y-m-d-His').'.csv';
 
         return response()->streamDownload(function () use ($products) {
             $handle = fopen('php://output', 'w');
@@ -293,7 +300,7 @@ class ProductController extends Controller
             fclose($handle);
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
     }
 
@@ -308,12 +315,15 @@ class ProductController extends Controller
 
         // Skip BOM
         $bom = fread($handle, 3);
-        if ($bom !== "\xEF\xBB\xBF") rewind($handle);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
 
         // Read header
         $header = fgetcsv($handle);
-        if (!$header || count($header) < 5) {
+        if (! $header || count($header) < 5) {
             fclose($handle);
+
             return back()->with('error', 'File CSV không đúng định dạng');
         }
 
@@ -324,7 +334,9 @@ class ProductController extends Controller
 
         while (($row = fgetcsv($handle)) !== false) {
             $line++;
-            if (count($row) < 5) continue;
+            if (count($row) < 5) {
+                continue;
+            }
 
             try {
                 $id = trim($row[0] ?? '');
@@ -332,7 +344,9 @@ class ProductController extends Controller
                 $sku = trim($row[2] ?? '');
                 $slug = trim($row[3] ?? '') ?: Str::slug($name);
 
-                if (!$name) continue;
+                if (! $name) {
+                    continue;
+                }
 
                 // Find category by name
                 $categoryName = trim($row[4] ?? '');
@@ -349,7 +363,7 @@ class ProductController extends Controller
                     'category_id' => $category?->id,
                     'brand_id' => $brand?->id,
                     'price' => floatval($row[6] ?? 0),
-                    'sale_price' => !empty($row[7]) ? floatval($row[7]) : null,
+                    'sale_price' => ! empty($row[7]) ? floatval($row[7]) : null,
                     'stock_quantity' => intval($row[8] ?? 0),
                     'is_active' => ($row[9] ?? 'active') === 'active',
                     'is_featured' => boolval($row[10] ?? false),
@@ -360,21 +374,25 @@ class ProductController extends Controller
                     'meta_description' => $row[16] ?? null,
                 ];
 
-                if ($id && Product::find($id)) {
-                    Product::where('id', $id)->update($data);
+                if ($id && ($existingProduct = Product::find($id))) {
+                    if ($existingProduct->inventory_source === 'kiot') {
+                        unset($data['price'], $data['stock_quantity']);
+                        $errors[] = "Dòng {$line}: giá cơ sở và tồn kho được bỏ qua vì sản phẩm do KIOT quản lý.";
+                    }
+                    $existingProduct->update($data);
                     $updated++;
                 } else {
                     // Ensure unique slug
                     $baseSlug = $data['slug'];
                     $counter = 1;
                     while (Product::where('slug', $data['slug'])->exists() || Category::where('slug', $data['slug'])->exists()) {
-                        $data['slug'] = $baseSlug . '-' . $counter++;
+                        $data['slug'] = $baseSlug.'-'.$counter++;
                     }
                     // Ensure unique SKU
                     $baseSku = $data['sku'];
                     $counter = 1;
                     while (Product::where('sku', $data['sku'])->exists()) {
-                        $data['sku'] = $baseSku . '-' . $counter++;
+                        $data['sku'] = $baseSku.'-'.$counter++;
                     }
                     $product = Product::create($data);
 
@@ -393,7 +411,7 @@ class ProductController extends Controller
 
         $msg = "Import xong: {$created} sản phẩm mới, {$updated} cập nhật.";
         if (count($errors) > 0) {
-            $msg .= ' Lỗi: ' . implode('; ', array_slice($errors, 0, 5));
+            $msg .= ' Lỗi: '.implode('; ', array_slice($errors, 0, 5));
         }
 
         return back()->with('success', $msg);

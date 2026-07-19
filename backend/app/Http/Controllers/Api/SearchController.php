@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Product;
 use App\Models\Post;
+use App\Models\Product;
 use Illuminate\Http\Request;
 
 class SearchController extends Controller
@@ -17,23 +17,23 @@ class SearchController extends Controller
             return response()->json(['products' => [], 'posts' => []]);
         }
 
-        $products = Product::where('is_active', true)
+        $products = Product::sellableOnline()
             ->where(function ($query) use ($q) {
                 $query->where('name', 'LIKE', "%{$q}%")
                     ->orWhere('sku', 'LIKE', "%{$q}%");
             })
-            ->with(['category:id,slug,name', 'images' => fn($img) => $img->orderBy('sort_order')->limit(1)])
+            ->with(['category:id,slug,name', 'images' => fn ($img) => $img->orderBy('sort_order')->limit(1)])
             ->select('id', 'name', 'slug', 'price', 'sale_price', 'category_id')
             ->limit(6)
             ->get()
-            ->map(fn($p) => [
+            ->map(fn ($p) => [
                 'id' => $p->id,
                 'name' => $p->name,
                 'slug' => $p->slug,
                 'price' => $p->price,
                 'sale_price' => $p->sale_price,
                 'image' => $p->images->first()?->url,
-                'url' => '/' . ($p->category?->slug ?? 'san-pham') . '/' . $p->slug,
+                'url' => '/'.($p->category?->slug ?? 'san-pham').'/'.$p->slug,
             ]);
 
         $posts = Post::where('status', 'published')
@@ -43,11 +43,11 @@ class SearchController extends Controller
             ->limit(4)
             ->latest('published_at')
             ->get()
-            ->map(fn($p) => [
+            ->map(fn ($p) => [
                 'id' => $p->id,
                 'title' => $p->title,
                 'slug' => $p->slug,
-                'url' => '/tin-tuc/' . $p->slug,
+                'url' => '/tin-tuc/'.$p->slug,
                 'category' => $p->category?->name,
             ]);
 

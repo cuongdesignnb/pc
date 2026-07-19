@@ -32,8 +32,8 @@ class CategoryController extends Controller
     public function homepageSections(): JsonResponse
     {
         $parents = Category::with(['children' => function ($q) {
-                $q->where('is_active', true)->orderBy('sort_order');
-            }])
+            $q->where('is_active', true)->orderBy('sort_order');
+        }])
             ->whereNull('parent_id')
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -49,7 +49,7 @@ class CategoryController extends Controller
 
             // Count products
             $productCount = Product::whereIn('category_id', $catIds)
-                ->where('is_active', true)
+                ->sellableOnline()
                 ->count();
 
             if ($productCount === 0) {
@@ -59,7 +59,7 @@ class CategoryController extends Controller
             // Get sample products (newest 8)
             $products = Product::with(['category', 'brand', 'images'])
                 ->whereIn('category_id', $catIds)
-                ->where('is_active', true)
+                ->sellableOnline()
                 ->orderByDesc('is_featured')
                 ->orderByDesc('created_at')
                 ->limit(8)
@@ -67,21 +67,21 @@ class CategoryController extends Controller
 
             $sections[] = [
                 'category' => [
-                    'id'          => $parent->id,
-                    'name'        => $parent->name,
-                    'slug'        => $parent->slug,
+                    'id' => $parent->id,
+                    'name' => $parent->name,
+                    'slug' => $parent->slug,
                     'description' => $parent->description,
-                    'image'       => $parent->image,
-                    'icon'        => $parent->icon,
+                    'image' => $parent->image,
+                    'icon' => $parent->icon,
                 ],
-                'children'      => $parent->children->map(fn ($c) => [
-                    'id'   => $c->id,
+                'children' => $parent->children->map(fn ($c) => [
+                    'id' => $c->id,
                     'name' => $c->name,
                     'slug' => $c->slug,
                     'icon' => $c->icon,
                 ]),
                 'product_count' => $productCount,
-                'products'      => $products,
+                'products' => $products,
             ];
         }
 
@@ -94,8 +94,8 @@ class CategoryController extends Controller
     public function show(string $slug, Request $request): JsonResponse
     {
         $category = Category::with(['children' => function ($q) {
-                $q->where('is_active', true)->orderBy('sort_order');
-            }, 'parent'])
+            $q->where('is_active', true)->orderBy('sort_order');
+        }, 'parent'])
             ->where('slug', $slug)
             ->where('is_active', true)
             ->firstOrFail();
@@ -128,7 +128,7 @@ class CategoryController extends Controller
         // ---- Build product query with filters ----
         $query = Product::with(['category', 'brand', 'images'])
             ->whereIn('category_id', $catIdsArr)
-            ->where('is_active', true);
+            ->sellableOnline();
 
         // Sub-category filter
         if ($request->filled('sub_category')) {
@@ -153,8 +153,10 @@ class CategoryController extends Controller
 
         // Dynamic filter matching from assigned filters
         foreach ($assignedFilters as $filter) {
-            $paramKey = 'f_' . $filter->slug; // e.g. f_cpu=intel-core-i5,intel-core-i7
-            if (!$request->filled($paramKey)) continue;
+            $paramKey = 'f_'.$filter->slug; // e.g. f_cpu=intel-core-i5,intel-core-i7
+            if (! $request->filled($paramKey)) {
+                continue;
+            }
 
             $selectedSlugs = explode(',', $request->input($paramKey));
 
@@ -162,7 +164,9 @@ class CategoryController extends Controller
             $selectedValues = $filter->activeValues
                 ->whereIn('slug', $selectedSlugs);
 
-            if ($selectedValues->isEmpty()) continue;
+            if ($selectedValues->isEmpty()) {
+                continue;
+            }
 
             switch ($filter->match_field) {
                 case 'specifications_text':
@@ -254,13 +258,13 @@ class CategoryController extends Controller
         // Sorting
         $sort = $request->input('sort', 'newest');
         match ($sort) {
-            'price_asc'  => $query->orderByRaw('COALESCE(sale_price, price) ASC'),
+            'price_asc' => $query->orderByRaw('COALESCE(sale_price, price) ASC'),
             'price_desc' => $query->orderByRaw('COALESCE(sale_price, price) DESC'),
-            'name_asc'   => $query->orderBy('name', 'asc'),
-            'name_desc'  => $query->orderBy('name', 'desc'),
-            'popular'    => $query->orderByDesc('sold_count'),
-            'rating'     => $query->orderByDesc('views_count'),
-            default      => $query->orderByDesc('created_at'),
+            'name_asc' => $query->orderBy('name', 'asc'),
+            'name_desc' => $query->orderBy('name', 'desc'),
+            'popular' => $query->orderByDesc('sold_count'),
+            'rating' => $query->orderByDesc('views_count'),
+            default => $query->orderByDesc('created_at'),
         };
 
         $products = $query->paginate($request->input('per_page', 20));
@@ -269,7 +273,7 @@ class CategoryController extends Controller
 
         // Brands available in this category
         $brandIds = Product::whereIn('category_id', $catIdsArr)
-            ->where('is_active', true)
+            ->sellableOnline()
             ->whereNotNull('brand_id')
             ->distinct()
             ->pluck('brand_id');
@@ -280,7 +284,7 @@ class CategoryController extends Controller
 
         // Price range for this category
         $priceStats = Product::whereIn('category_id', $catIdsArr)
-            ->where('is_active', true)
+            ->sellableOnline()
             ->selectRaw('MIN(COALESCE(sale_price, price)) as min_price, MAX(COALESCE(sale_price, price)) as max_price')
             ->first();
 
@@ -288,18 +292,18 @@ class CategoryController extends Controller
         $filterGroups = [];
         foreach ($assignedFilters as $filter) {
             $group = [
-                'id'         => $filter->id,
-                'name'       => $filter->name,
-                'slug'       => $filter->slug,
-                'type'       => $filter->type,
+                'id' => $filter->id,
+                'name' => $filter->name,
+                'slug' => $filter->slug,
+                'type' => $filter->type,
                 'match_field' => $filter->match_field,
-                'values'     => [],
+                'values' => [],
             ];
 
             foreach ($filter->activeValues as $val) {
                 // Count products matching this filter value
                 $countQuery = Product::whereIn('category_id', $catIdsArr)
-                    ->where('is_active', true);
+                    ->sellableOnline();
 
                 switch ($filter->match_field) {
                     case 'specifications_text':
@@ -334,7 +338,7 @@ class CategoryController extends Controller
 
                 $group['values'][] = [
                     'label' => $val->label,
-                    'slug'  => $val->slug,
+                    'slug' => $val->slug,
                     'count' => $countQuery->count(),
                 ];
             }
@@ -366,9 +370,9 @@ class CategoryController extends Controller
                     if ($values->isNotEmpty()) {
                         $specFilters[] = [
                             'key_id' => $specKey->id,
-                            'label'  => $specKey->label,
-                            'unit'   => $specKey->unit,
-                            'type'   => $specKey->data_type,
+                            'label' => $specKey->label,
+                            'unit' => $specKey->unit,
+                            'type' => $specKey->data_type,
                             'values' => $values,
                         ];
                     }
@@ -379,16 +383,15 @@ class CategoryController extends Controller
         return response()->json([
             'category' => $category,
             'products' => $products,
-            'filters'  => [
-                'brands'        => $brands,
-                'price_range'   => [
+            'filters' => [
+                'brands' => $brands,
+                'price_range' => [
                     'min' => (int) ($priceStats->min_price ?? 0),
                     'max' => (int) ($priceStats->max_price ?? 0),
                 ],
-                'groups'        => $filterGroups,
-                'specs'         => $specFilters, // Legacy fallback
+                'groups' => $filterGroups,
+                'specs' => $specFilters, // Legacy fallback
             ],
         ]);
     }
 }
-

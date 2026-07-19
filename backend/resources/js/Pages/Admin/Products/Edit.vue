@@ -55,6 +55,8 @@ const specKeys = computed(() => {
     return selectedComponentType.value?.specification_keys || [];
 });
 
+const isKiot = computed(() => props.product.inventory_source === 'kiot');
+
 // Build compatibility spec entries from spec keys + existing values
 function buildCompatibilitySpecs() {
     const keys = specKeys.value;
@@ -144,12 +146,25 @@ function submit() { form.put(`/admin/products/${props.product.id}`); }
             <!-- Giá & Kho -->
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Giá & Kho</h4>
+                <p v-if="isKiot" class="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200">
+                    Giá cơ sở và tồn kho được đồng bộ từ KIOT. Giá khuyến mại vẫn do website quản lý.
+                </p>
                 <div class="grid grid-cols-4 gap-4">
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá gốc *</label><input v-model="form.price" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
+                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá gốc *</label><input v-model="form.price" :disabled="isKiot" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá sale</label><input v-model="form.sale_price" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label><input v-model="form.stock_quantity" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
+                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label><input v-model="form.stock_quantity" :disabled="isKiot" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 </div>
+                <dl v-if="isKiot" class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm md:grid-cols-4">
+                    <div><dt class="text-slate-500">Barcode</dt><dd class="mt-1 text-slate-200">{{ product.barcode || '—' }}</dd></div>
+                    <div><dt class="text-slate-500">KIOT Product ID</dt><dd class="mt-1 text-slate-200">{{ product.kiot_product_id || '—' }}</dd></div>
+                    <div><dt class="text-slate-500">Tồn vật lý</dt><dd class="mt-1 text-slate-200">{{ product.kiot_physical_quantity ?? '—' }}</dd></div>
+                    <div><dt class="text-slate-500">Đang giữ</dt><dd class="mt-1 text-slate-200">{{ product.kiot_reserved_quantity ?? '—' }}</dd></div>
+                    <div><dt class="text-slate-500">Khả dụng</dt><dd class="mt-1 text-slate-200">{{ product.kiot_available_quantity ?? '—' }}</dd></div>
+                    <div><dt class="text-slate-500">Có Serial/IMEI</dt><dd class="mt-1 text-slate-200">{{ product.kiot_has_serial ? 'Có' : 'Không' }}</dd></div>
+                    <div><dt class="text-slate-500">Trạng thái sync</dt><dd class="mt-1 text-slate-200">{{ product.kiot_sync_status }}</dd></div>
+                    <div><dt class="text-slate-500">Đồng bộ lúc</dt><dd class="mt-1 text-slate-200">{{ product.kiot_synced_at ? new Date(product.kiot_synced_at).toLocaleString('vi-VN') : '—' }}</dd></div>
+                </dl>
             </div>
 
             <!-- Thông số kỹ thuật -->

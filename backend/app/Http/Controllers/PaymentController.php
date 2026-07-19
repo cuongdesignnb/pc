@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
@@ -16,6 +18,7 @@ class PaymentController extends Controller
     {
         $order = Order::where('order_number', $invoice)
             ->where('payment_status', 'unpaid')
+            ->where('kiot_sync_status', 'synced')
             ->firstOrFail();
 
         $sepay = config('services.sepay');
@@ -70,37 +73,46 @@ class PaymentController extends Controller
      */
     public function ipn(Request $request)
     {
-        Log::channel('daily')->info('SePay Gateway IPN received', $request->all());
-
         $data = $request->json()->all();
 
         // Verify the notification type
         if (isset($data['notification_type']) && $data['notification_type'] === 'ORDER_PAID') {
             $invoiceNumber = $data['order']['order_invoice_number'] ?? null;
+            $transactionId = $data['transaction']['id'] ?? null;
+
+            if ($transactionId && Transaction::where('sepay_transaction_id', $transactionId)->exists()) {
+                return response()->json(['success' => true, 'duplicate' => true]);
+            }
 
             if ($invoiceNumber) {
                 $order = Order::where('order_number', $invoiceNumber)
                     ->where('payment_status', 'unpaid')
+                    ->where('kiot_sync_status', 'synced')
                     ->first();
 
                 if ($order) {
-                    $order->update([
-                        'payment_status' => 'paid',
-                        'order_status' => 'confirmed',
-                        'paid_at' => now(),
-                    ]);
-
-                    // Create transaction record if transaction data is available
-                    if (isset($data['transaction'])) {
-                        $order->transaction()->create([
-                            'sepay_transaction_id' => $data['transaction']['id'] ?? 0,
-                            'gateway' => 'sepay_gateway',
-                            'amount' => $data['order']['order_amount'] ?? $order->total,
-                            'reference_code' => $data['transaction']['reference_code'] ?? null,
-                            'content' => json_encode($data),
-                            'transaction_date' => now(),
+                    DB::transaction(function () use ($order, $data, $transactionId) {
+                        $locked = Order::lockForUpdate()->findOrFail($order->id);
+                        if ($transactionId && Transaction::where('sepay_transaction_id', $transactionId)->exists()) {
+                            return;
+                        }
+                        $locked->update([
+                            'payment_status' => 'paid',
+                            'order_status' => 'confirmed',
+                            'paid_at' => now(),
                         ]);
-                    }
+
+                        if ($transactionId) {
+                            $locked->transaction()->create([
+                                'sepay_transaction_id' => $transactionId,
+                                'gateway' => 'sepay_gateway',
+                                'amount' => $data['order']['order_amount'] ?? $locked->total,
+                                'reference_code' => $data['transaction']['reference_code'] ?? null,
+                                'content' => 'ORDER_PAID',
+                                'transaction_date' => now(),
+                            ]);
+                        }
+                    });
 
                     Log::info('SePay Gateway IPN: Order paid', [
                         'order_number' => $invoiceNumber,

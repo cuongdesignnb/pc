@@ -18,7 +18,7 @@ class ProductController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Product::with(['category', 'brand', 'images'])
-            ->where('is_active', true);
+            ->sellableOnline();
 
         // Search
         if ($request->search) {
@@ -83,7 +83,7 @@ class ProductController extends Controller
     public function featured(): JsonResponse
     {
         $products = Product::with(['category', 'brand', 'images'])
-            ->where('is_active', true)
+            ->sellableOnline()
             ->where('is_featured', true)
             ->limit(8)
             ->get();
@@ -107,7 +107,7 @@ class ProductController extends Controller
                 ->with(['user:id,name']),
         ])
             ->where('slug', $slug)
-            ->where('is_active', true)
+            ->sellableOnline()
             ->firstOrFail();
 
         // Append parsed specifications
@@ -117,7 +117,7 @@ class ProductController extends Controller
         $related = Product::with(['images'])
             ->where('category_id', $product->category_id)
             ->where('id', '!=', $product->id)
-            ->where('is_active', true)
+            ->sellableOnline()
             ->limit(4)
             ->get();
 
@@ -133,7 +133,7 @@ class ProductController extends Controller
     public function byComponentType(string $slug): JsonResponse
     {
         $products = Product::with(['brand', 'images'])
-            ->where('is_active', true)
+            ->sellableOnline()
             ->whereHas('componentType', function ($q) use ($slug) {
                 $q->where('slug', $slug);
             })
@@ -150,11 +150,11 @@ class ProductController extends Controller
     {
         $product = Product::with(['componentType', 'specifications.specificationKey'])
             ->where('slug', $slug)
-            ->where('is_active', true)
+            ->sellableOnline()
             ->firstOrFail();
 
         // Product must have a component type for compatibility
-        if (!$product->component_type_id) {
+        if (! $product->component_type_id) {
             return response()->json(['suggestions' => []]);
         }
 
@@ -186,7 +186,7 @@ class ProductController extends Controller
 
         // Get candidate products for each related type
         $candidateProducts = Product::with(['brand', 'images', 'specifications.specificationKey'])
-            ->where('is_active', true)
+            ->sellableOnline()
             ->whereIn('component_type_id', $relatedTypeIds)
             ->get()
             ->groupBy('component_type_id');
@@ -195,7 +195,9 @@ class ProductController extends Controller
 
         foreach ($relatedTypeIds as $typeId) {
             $type = $componentTypes->get($typeId);
-            if (!$type) continue;
+            if (! $type) {
+                continue;
+            }
 
             $candidates = $candidateProducts->get($typeId, collect());
             $compatible = [];
@@ -234,7 +236,7 @@ class ProductController extends Controller
                 }
             }
 
-            if (!empty($compatible)) {
+            if (! empty($compatible)) {
                 $suggestions[] = [
                     'component_type' => $type,
                     'products' => $compatible,
@@ -256,7 +258,7 @@ class ProductController extends Controller
         $targetSpec = $targetProduct->specifications
             ->first(fn ($s) => $s->specificationKey?->key === $rule->target_spec_key);
 
-        if (!$sourceSpec || !$targetSpec) {
+        if (! $sourceSpec || ! $targetSpec) {
             return null;
         }
 
@@ -271,7 +273,7 @@ class ProductController extends Controller
                 break;
             case 'must_fit':
                 $allowedValues = $rule->allowed_values[$sourceValue] ?? [];
-                if (!in_array($targetValue, $allowedValues)) {
+                if (! in_array($targetValue, $allowedValues)) {
                     return ['type' => 'error', 'message' => $rule->message];
                 }
                 break;

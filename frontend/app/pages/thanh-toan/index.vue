@@ -2,6 +2,7 @@
 const config = useRuntimeConfig();
 const router = useRouter();
 const { getHeaders: getCartHeaders } = useCartSession();
+const checkoutIdempotencyKey = ref("");
 
 // Form data
 const form = reactive({
@@ -32,6 +33,9 @@ const wards = ref<any[]>([]);
 
 // Fetch provinces on mount (SSR disabled for checkout)
 onMounted(async () => {
+  const storageKey = "pc-checkout-idempotency-key";
+  checkoutIdempotencyKey.value = sessionStorage.getItem(storageKey) || crypto.randomUUID();
+  sessionStorage.setItem(storageKey, checkoutIdempotencyKey.value);
   try {
     const data = await $fetch<any[]>(
       `${config.public.apiBase}/locations/provinces`,
@@ -77,6 +81,7 @@ const placeOrder = async () => {
       headers: getCartHeaders(),
       body: {
         ...form,
+        checkout_idempotency_key: checkoutIdempotencyKey.value,
         items: cartItems.value.map((item: any) => ({
           product_id: item.product_id,
           quantity: item.quantity,
@@ -85,6 +90,7 @@ const placeOrder = async () => {
     });
 
     orderResult.value = response.order;
+    sessionStorage.removeItem("pc-checkout-idempotency-key");
     toast.add({
       title: "Đặt hàng thành công!",
       description: `Mã đơn hàng: #${response.order.id}`,
@@ -93,10 +99,10 @@ const placeOrder = async () => {
     });
 
     // If SePay payment, show QR code for bank transfer
-    if (form.payment_method === "sepay" && response.payment) {
+    if (form.payment_method === "sepay" && response.payment && response.order.can_pay) {
       paymentData.value = response.payment;
     } else {
-      // COD - redirect to success page
+      // COD or an order still waiting for KIOT confirmation.
       router.push(`/don-hang/${response.order.id}/thanh-cong`);
     }
   } catch (error: any) {
@@ -178,7 +184,8 @@ const isFormValid = computed(() => {
     form.customer_email.trim() &&
     form.customer_phone.trim() &&
     form.shipping_address.trim() &&
-    form.shipping_city.trim()
+    form.shipping_city.trim() &&
+    checkoutIdempotencyKey.value
   );
 });
 
@@ -193,7 +200,6 @@ useSeoMeta({
 
     <!-- Empty cart -->
     <div v-if="cartItems.length === 0" class="text-center py-12">
-      <p class="text-6xl mb-4">🛒</p>
       <p class="text-xl text-gray-500 mb-6">Giỏ hàng trống</p>
       <UButton to="/" size="lg">Mua sắm ngay</UButton>
     </div>
@@ -264,12 +270,12 @@ useSeoMeta({
           </div>
 
           <p class="text-sm text-red-500 mb-4">
-            ⚠️ Vui lòng ghi đúng nội dung chuyển khoản để thanh toán được xác
+            Vui lòng ghi đúng nội dung chuyển khoản để thanh toán được xác
             nhận tự động
           </p>
 
           <div class="flex items-center justify-center gap-2 text-gray-500">
-            <span class="animate-spin">⏳</span>
+            <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-primary-600"></span>
             <span>Đang chờ thanh toán...</span>
           </div>
 
@@ -283,7 +289,6 @@ useSeoMeta({
         </template>
 
         <template v-else>
-          <div class="text-6xl mb-4">✅</div>
           <h2 class="text-2xl font-bold text-green-600 mb-2">
             Thanh toán thành công!
           </h2>
@@ -421,7 +426,7 @@ useSeoMeta({
                   Quét mã QR để thanh toán nhanh chóng
                 </p>
               </div>
-              <span class="text-3xl">📱</span>
+              <span class="rounded bg-primary-100 px-2 py-1 text-sm font-semibold text-primary-700">QR</span>
             </label>
 
             <label
@@ -443,7 +448,7 @@ useSeoMeta({
                   Thanh toán bằng tiền mặt khi giao hàng
                 </p>
               </div>
-              <span class="text-3xl">💵</span>
+              <span class="rounded bg-gray-100 px-2 py-1 text-sm font-semibold text-gray-700">COD</span>
             </label>
           </div>
         </div>
