@@ -3,6 +3,7 @@ const config = useRuntimeConfig();
 const router = useRouter();
 const { getHeaders: getCartHeaders } = useCartSession();
 const checkoutIdempotencyKey = ref("");
+const orderAccessToken = ref("");
 
 // Form data
 const form = reactive({
@@ -36,6 +37,9 @@ onMounted(async () => {
   const storageKey = "pc-checkout-idempotency-key";
   checkoutIdempotencyKey.value = sessionStorage.getItem(storageKey) || crypto.randomUUID();
   sessionStorage.setItem(storageKey, checkoutIdempotencyKey.value);
+  const accessTokenStorageKey = "pc-checkout-order-access-token";
+  orderAccessToken.value = sessionStorage.getItem(accessTokenStorageKey) || crypto.randomUUID();
+  sessionStorage.setItem(accessTokenStorageKey, orderAccessToken.value);
   try {
     const data = await $fetch<any[]>(
       `${config.public.apiBase}/locations/provinces`,
@@ -82,6 +86,7 @@ const placeOrder = async () => {
       body: {
         ...form,
         checkout_idempotency_key: checkoutIdempotencyKey.value,
+        order_access_token: orderAccessToken.value,
         items: cartItems.value.map((item: any) => ({
           product_id: item.product_id,
           quantity: item.quantity,
@@ -90,7 +95,9 @@ const placeOrder = async () => {
     });
 
     orderResult.value = response.order;
+    sessionStorage.setItem(`pc-order-access-token:${response.order.id}`, orderAccessToken.value);
     sessionStorage.removeItem("pc-checkout-idempotency-key");
+    sessionStorage.removeItem("pc-checkout-order-access-token");
     toast.add({
       title: "Đặt hàng thành công!",
       description: `Mã đơn hàng: #${response.order.id}`,
@@ -106,6 +113,12 @@ const placeOrder = async () => {
       router.push(`/don-hang/${response.order.id}/thanh-cong`);
     }
   } catch (error: any) {
+    if (error.data?.integration_status === "rejected") {
+      checkoutIdempotencyKey.value = crypto.randomUUID();
+      orderAccessToken.value = crypto.randomUUID();
+      sessionStorage.setItem("pc-checkout-idempotency-key", checkoutIdempotencyKey.value);
+      sessionStorage.setItem("pc-checkout-order-access-token", orderAccessToken.value);
+    }
     toast.add({
       title: "Lỗi đặt hàng",
       description: error.data?.message || "Có lỗi xảy ra. Vui lòng thử lại.",
@@ -128,6 +141,7 @@ const checkPaymentStatus = async () => {
   try {
     const response = await $fetch<any>(
       `${config.public.apiBase}/orders/${orderResult.value.id}/check-payment`,
+      { headers: { "X-Order-Access-Token": orderAccessToken.value } },
     );
 
     if (response.paid) {

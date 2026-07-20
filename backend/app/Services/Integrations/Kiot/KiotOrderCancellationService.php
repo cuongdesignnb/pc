@@ -19,10 +19,18 @@ class KiotOrderCancellationService
             return $order;
         }
 
-        if ($order->kiot_sync_status === 'not_required' || ! config('integrations.kiot.order_sync_enabled')) {
+        if ($order->kiot_sync_status === 'not_required') {
             $order->update(['order_status' => 'cancelled', 'kiot_sync_status' => 'cancelled']);
 
             return $order->fresh();
+        }
+        if (! config('integrations.kiot.enabled') || ! config('integrations.kiot.order_sync_enabled')) {
+            throw new KiotIntegrationException(
+                'INTEGRATION_DISABLED',
+                'Không thể hủy đơn KIOT khi tích hợp đang tắt.',
+                'configuration_failure',
+                503,
+            );
         }
 
         $createEvent = IntegrationOutboxEvent::where('integration', 'kiot')

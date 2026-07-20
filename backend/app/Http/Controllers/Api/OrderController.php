@@ -7,12 +7,11 @@ use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Models\Cart;
 use App\Models\Order;
-use App\Models\Transaction;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
+use App\Services\Payments\SepayPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
@@ -30,10 +29,8 @@ class OrderController extends Controller
 
     public function show(Request $request, Order $order): JsonResponse
     {
-        if ($order->user_id && $order->user_id !== $request->user()?->id) {
-            abort(403, 'Unauthorized');
-        }
-        $order->load(['items.product', 'transaction']);
+        $this->authorizeOrderAccess($request, $order);
+        $order->load('items');
 
         return response()->json(array_merge($this->present($order), [
             'payment' => $order->canPay() ? $this->generateSepayPaymentData($order) : null,
@@ -44,6 +41,7 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'checkout_idempotency_key' => 'required|uuid',
+            'order_access_token' => 'required|uuid',
             'customer_name' => 'required|string|max:255',
             'customer_email' => 'required|email|max:255',
             'customer_phone' => 'required|string|max:20',
@@ -59,7 +57,7 @@ class OrderController extends Controller
         ]);
 
         try {
-            $result = $orders->create($validated, $request->user()?->id);
+            $result = $orders->create($validated, $this->authenticatedUserId($request));
         } catch (KiotIntegrationException $exception) {
             return response()->json(['message' => $exception->getMessage(), 'error_code' => $exception->errorCode], $exception->httpStatus ?? 503);
         }
@@ -92,8 +90,10 @@ class OrderController extends Controller
         ], $status);
     }
 
-    public function checkPayment(Order $order): JsonResponse
+    public function checkPayment(Request $request, Order $order): JsonResponse
     {
+        $this->authorizeOrderAccess($request, $order);
+
         return response()->json([
             'paid' => $order->payment_status === 'paid',
             'payment_status' => $order->payment_status, 'order_status' => $order->order_status,
@@ -104,7 +104,7 @@ class OrderController extends Controller
         ]);
     }
 
-    public function sepayCallback(Request $request): JsonResponse
+    public function sepayCallback(Request $request, SepayPaymentService $payments): JsonResponse
     {
         $request->validate([
             'id' => 'required|integer',
@@ -116,53 +116,43 @@ class OrderController extends Controller
         ]);
 
         $webhookKey = config('services.sepay.webhook_key');
-        if ($webhookKey && $request->header('Authorization') !== "Apikey {$webhookKey}") {
+        if (! is_string($webhookKey) || $webhookKey === '') {
+            Log::error('SePay IPN rejected: webhook authentication is not configured');
+
+            return response()->json(['success' => false, 'message' => 'Webhook is not configured'], 503);
+        }
+        $authorization = (string) $request->header('Authorization');
+        $providedKey = str_starts_with($authorization, 'Apikey ') ? substr($authorization, 7) : '';
+        if ($providedKey === '' || ! hash_equals($webhookKey, $providedKey)) {
             Log::warning('SePay IPN rejected: invalid API key');
 
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
 
-        $transactionId = $request->input('id');
-        if ($transactionId && Transaction::where('sepay_transaction_id', $transactionId)->exists()) {
-            return response()->json(['success' => true, 'duplicate' => true]);
-        }
+        $transactionId = (int) $request->input('id');
         $content = (string) $request->input('content', '');
         if (! preg_match('/DH\d{12}/', $content, $matches)) {
             return response()->json(['success' => true, 'message' => 'No matching order']);
         }
 
-        $order = Order::where('order_number', $matches[0])->first();
-        if (! $order || $order->kiot_sync_status !== 'synced') {
-            return response()->json(['success' => true, 'message' => 'Order is not accepted by KIOT']);
-        }
-        if ((int) $request->input('transferAmount', 0) < (int) $order->total) {
-            return response()->json(['success' => true, 'message' => 'Amount mismatch']);
-        }
+        $result = $payments->record(
+            'sepay_webhook',
+            $transactionId,
+            $matches[0],
+            (int) $request->input('transferAmount'),
+            $request->input('referenceNumber'),
+        );
 
-        DB::transaction(function () use ($request, $order, $transactionId, $content) {
-            $locked = Order::lockForUpdate()->findOrFail($order->id);
-            if ($transactionId && Transaction::where('sepay_transaction_id', $transactionId)->exists()) {
-                return;
-            }
-            $locked->update(['payment_status' => 'paid', 'order_status' => 'confirmed', 'paid_at' => now()]);
-            Transaction::create([
-                'order_id' => $locked->id, 'sepay_transaction_id' => $transactionId,
-                'gateway' => $request->input('gateway', 'sepay'), 'amount' => $request->input('transferAmount'),
-                'reference_code' => $request->input('referenceNumber'), 'content' => $content,
-                'transaction_date' => $request->filled('transactionDate') ? \Carbon\Carbon::parse($request->input('transactionDate')) : now(),
-            ]);
-        });
-
-        Log::info('SePay payment confirmed', ['order_id' => $order->id, 'order_number' => $order->order_number]);
-
-        return response()->json(['success' => true]);
+        return response()->json([
+            'success' => true,
+            'duplicate' => $result['duplicate'],
+            'payment_status' => $result['processed'] ? 'paid' : 'pending_reconciliation',
+        ]);
     }
 
     public function cancel(Request $request, Order $order, KiotOrderCancellationService $cancellation): JsonResponse
     {
-        if ($order->user_id !== $request->user()->id) {
-            abort(403, 'Unauthorized');
-        }
+        $this->authorizeOrderAccess($request, $order);
         $validated = $request->validate(['reason' => 'nullable|string|max:500']);
         if (! $order->canCancel()) {
             return response()->json(['message' => 'Không thể hủy đơn hàng này'], 422);
@@ -183,18 +173,65 @@ class OrderController extends Controller
 
     private function present(Order $order): array
     {
-        return array_merge($order->toArray(), [
+        $result = [
+            'id' => $order->id,
+            'order_number' => $order->order_number,
+            'subtotal' => $order->subtotal,
+            'discount' => $order->discount,
+            'shipping_fee' => $order->shipping_fee,
+            'total' => $order->total,
+            'payment_status' => $order->payment_status,
+            'payment_method' => $order->payment_method,
+            'order_status' => $order->order_status,
+            'shipping_name' => $order->shipping_name,
+            'shipping_phone' => $order->shipping_phone,
+            'customer_email' => $order->customer_email,
+            'shipping_address' => $order->shipping_address,
+            'shipping_city' => $order->shipping_city,
+            'shipping_district' => $order->shipping_district,
+            'shipping_ward' => $order->shipping_ward,
+            'notes' => $order->notes,
+            'created_at' => $order->created_at,
             'kiot_sync_status' => $order->kiot_sync_status,
             'kiot_order_code' => $order->kiot_order_code,
             'kiot_sync_error_code' => $order->kiot_sync_error_code,
             'can_pay' => $order->canPay(), 'can_cancel' => $order->canCancel(),
-        ]);
+        ];
+        if ($order->relationLoaded('items')) {
+            $result['items'] = $order->items->map(fn ($item) => [
+                'id' => $item->id,
+                'product_id' => $item->product_id,
+                'product_name' => $item->product_name,
+                'sku' => $item->sku,
+                'quantity' => $item->quantity,
+                'price' => $item->price,
+                'total' => $item->total,
+            ])->values()->all();
+        }
+
+        return $result;
+    }
+
+    private function authorizeOrderAccess(Request $request, Order $order): void
+    {
+        $userId = $this->authenticatedUserId($request);
+        $authorized = $order->user_id !== null
+            ? $userId === (int) $order->user_id
+            : $order->matchesAccessToken($request->header('X-Order-Access-Token'));
+
+        abort_unless($authorized, 404);
+    }
+
+    private function authenticatedUserId(Request $request): ?int
+    {
+        return $request->user('sanctum')?->id ?? $request->user()?->id;
     }
 
     private function clearCart(Request $request): void
     {
-        $query = $request->user()
-            ? Cart::where('user_id', $request->user()->id)
+        $userId = $this->authenticatedUserId($request);
+        $query = $userId
+            ? Cart::where('user_id', $userId)
             : Cart::where('session_id', $request->header('X-Cart-Session') ?? session()->getId());
         $query->delete();
     }

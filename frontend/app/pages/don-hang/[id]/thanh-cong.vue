@@ -2,11 +2,28 @@
 const config = useRuntimeConfig()
 const route = useRoute()
 const orderId = route.params.id as string
+const order = ref<any>(null)
+const loading = ref(true)
+const accessDenied = ref(false)
+const orderAccessToken = ref('')
 
-const { data: order, refresh } = await useFetch<any>(
-  `${config.public.apiBase}/orders/${orderId}`,
-  { default: () => null },
-)
+const orderHeaders = () => orderAccessToken.value
+  ? { 'X-Order-Access-Token': orderAccessToken.value }
+  : {}
+
+const refresh = async () => {
+  try {
+    order.value = await $fetch<any>(`${config.public.apiBase}/orders/${orderId}`, {
+      headers: orderHeaders(),
+    })
+    accessDenied.value = false
+  } catch {
+    order.value = null
+    accessDenied.value = true
+  } finally {
+    loading.value = false
+  }
+}
 
 const statusLabels: Record<string, string> = {
   pending: 'Đang ghi nhận đơn hàng',
@@ -25,11 +42,29 @@ const isWaiting = computed(() => ['pending', 'sending', 'retrying', 'cancel_pend
 
 let interval: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
+  orderAccessToken.value = sessionStorage.getItem(`pc-order-access-token:${orderId}`) || ''
+  refresh()
   interval = setInterval(async () => {
     if (isWaiting.value) await refresh()
   }, 5000)
 })
 onUnmounted(() => { if (interval) clearInterval(interval) })
+
+const cancelling = ref(false)
+const cancelOrder = async () => {
+  if (!order.value?.can_cancel || cancelling.value) return
+  cancelling.value = true
+  try {
+    const response = await $fetch<any>(`${config.public.apiBase}/orders/${orderId}/cancel`, {
+      method: 'POST',
+      headers: orderHeaders(),
+      body: { reason: 'Khách hàng yêu cầu hủy' },
+    })
+    order.value = response.order
+  } finally {
+    cancelling.value = false
+  }
+}
 
 useSeoMeta({ title: 'Trạng thái đơn hàng - PC Shop' })
 </script>
@@ -37,7 +72,8 @@ useSeoMeta({ title: 'Trạng thái đơn hàng - PC Shop' })
 <template>
   <div class="container mx-auto px-4 py-12">
     <div class="mx-auto max-w-2xl">
-      <div v-if="order" class="space-y-6">
+      <div v-if="loading" class="rounded-xl bg-white p-8 text-center shadow-sm"><p class="text-gray-600">Đang tải đơn hàng...</p></div>
+      <div v-else-if="order" class="space-y-6">
         <div class="rounded-xl bg-white p-6 text-center shadow-sm">
           <h1 class="text-3xl font-bold text-gray-900">Đơn hàng {{ order.order_number }}</h1>
           <p class="mt-3 text-lg" :class="order.kiot_sync_status === 'synced' ? 'text-green-700' : order.kiot_sync_status === 'rejected' ? 'text-red-700' : 'text-amber-700'">
@@ -69,9 +105,12 @@ useSeoMeta({ title: 'Trạng thái đơn hàng - PC Shop' })
           <div class="mt-4 flex justify-between border-t pt-4 text-lg font-bold"><span>Tổng cộng</span><span class="text-primary-600">{{ new Intl.NumberFormat('vi-VN').format(order.total) }}₫</span></div>
         </div>
 
-        <div class="flex justify-center"><UButton to="/" size="lg" variant="outline">Tiếp tục mua sắm</UButton></div>
+        <div class="flex justify-center gap-3">
+          <UButton v-if="order.can_cancel" color="error" variant="soft" :loading="cancelling" @click="cancelOrder">Hủy đơn hàng</UButton>
+          <UButton to="/" size="lg" variant="outline">Tiếp tục mua sắm</UButton>
+        </div>
       </div>
-      <div v-else class="rounded-xl bg-white p-8 text-center shadow-sm"><p class="text-gray-600">Không tìm thấy đơn hàng.</p></div>
+      <div v-else class="rounded-xl bg-white p-8 text-center shadow-sm"><p class="text-gray-600">{{ accessDenied ? 'Bạn không có quyền xem đơn hàng này.' : 'Không tìm thấy đơn hàng.' }}</p></div>
     </div>
   </div>
 </template>

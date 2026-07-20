@@ -13,13 +13,15 @@ class KiotConnectionTestCommand extends Command
 
     public function handle(KiotClient $client): int
     {
+        $started = microtime(true);
         $response = $client->products(['limit' => 1]);
+        $duration = (int) ((microtime(true) - $started) * 1000);
         if (! $response->successful()) {
-            $this->error(($response->errorCode() ?? 'UNKNOWN').': '.$response->errorMessage());
+            $this->error(($response->errorCode() ?? 'UNKNOWN').": HTTP {$response->status} ({$duration} ms)");
 
             return self::FAILURE;
         }
-        $this->info('Kết nối KIOT thành công.');
+        $this->info("Kết nối KIOT thành công: HTTP {$response->status} ({$duration} ms).");
 
         return self::SUCCESS;
     }

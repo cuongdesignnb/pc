@@ -195,7 +195,7 @@ class ProductController extends Controller
 
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs'])->toArray();
         if ($product->inventory_source === 'kiot') {
-            unset($productData['price'], $productData['stock_quantity']);
+            unset($productData['sku'], $productData['price'], $productData['stock_quantity']);
         }
         $product->update($productData);
 
@@ -283,6 +283,7 @@ class ProductController extends Controller
                 'Giá gốc', 'Giá sale', 'Tồn kho', 'Trạng thái', 'Nổi bật',
                 'Mô tả ngắn', 'Thông số KT', 'Bảo hành (tháng)',
                 'Ảnh chính', 'Meta Title', 'Meta Description',
+                'Barcode',
             ]);
             foreach ($products as $p) {
                 fputcsv($handle, [
@@ -295,6 +296,7 @@ class ProductController extends Controller
                     $p->warranty_months,
                     $p->primaryImage?->url,
                     $p->meta_title, $p->meta_description,
+                    $p->barcode,
                 ]);
             }
             fclose($handle);
@@ -372,12 +374,13 @@ class ProductController extends Controller
                     'warranty_months' => intval($row[13] ?? 0) ?: null,
                     'meta_title' => $row[15] ?? null,
                     'meta_description' => $row[16] ?? null,
+                    'barcode' => trim($row[17] ?? '') ?: null,
                 ];
 
                 if ($id && ($existingProduct = Product::find($id))) {
                     if ($existingProduct->inventory_source === 'kiot') {
-                        unset($data['price'], $data['stock_quantity']);
-                        $errors[] = "Dòng {$line}: giá cơ sở và tồn kho được bỏ qua vì sản phẩm do KIOT quản lý.";
+                        unset($data['sku'], $data['price'], $data['stock_quantity'], $data['barcode']);
+                        $errors[] = "Dòng {$line}: SKU, giá cơ sở, tồn kho và barcode được bỏ qua vì sản phẩm do KIOT quản lý.";
                     }
                     $existingProduct->update($data);
                     $updated++;

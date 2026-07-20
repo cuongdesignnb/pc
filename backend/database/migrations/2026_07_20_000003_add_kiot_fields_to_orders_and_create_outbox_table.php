@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::table('orders', function (Blueprint $table) {
             $table->uuid('checkout_idempotency_key')->nullable()->unique();
+            $table->char('order_access_token_hash', 64)->nullable()->unique();
             $table->uuid('kiot_event_id')->nullable()->unique();
             $table->uuid('kiot_idempotency_key')->nullable()->unique();
             $table->unsignedBigInteger('kiot_order_id')->nullable()->index();
@@ -49,14 +50,31 @@ return new class extends Migration
             $table->unique(['integration', 'event_id']);
             $table->unique(['integration', 'idempotency_key']);
         });
+
+        Schema::create('sepay_payment_events', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('order_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('source', 32);
+            $table->unsignedBigInteger('external_transaction_id');
+            $table->decimal('amount', 15, 0);
+            $table->string('reference_code')->nullable();
+            $table->string('status', 32)->default('pending')->index();
+            $table->string('failure_code')->nullable();
+            $table->timestamp('received_at');
+            $table->timestamp('processed_at')->nullable();
+            $table->timestamps();
+            $table->unique(['source', 'external_transaction_id']);
+            $table->index(['order_id', 'status']);
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('sepay_payment_events');
         Schema::dropIfExists('integration_outbox_events');
         Schema::table('orders', function (Blueprint $table) {
             $table->dropColumn([
-                'checkout_idempotency_key', 'kiot_event_id', 'kiot_idempotency_key',
+                'checkout_idempotency_key', 'order_access_token_hash', 'kiot_event_id', 'kiot_idempotency_key',
                 'kiot_order_id', 'kiot_order_code', 'kiot_sync_status',
                 'kiot_sync_attempt_count', 'kiot_payload_hash', 'kiot_last_attempt_at',
                 'kiot_synced_at', 'kiot_sync_error_code', 'kiot_sync_error_message',

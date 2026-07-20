@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Jobs\Integrations\Kiot\SyncKiotProductsBySku;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
+use App\Services\Payments\SepayPaymentService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -24,7 +25,10 @@ class KiotOutboxService
 
     private const CONFIG_FAILURES = ['INTEGRATION_DISABLED', 'INTEGRATION_NOT_CONFIGURED'];
 
-    public function __construct(private readonly KiotClient $client) {}
+    public function __construct(
+        private readonly KiotClient $client,
+        private readonly SepayPaymentService $payments,
+    ) {}
 
     public function process(int $eventId): void
     {
@@ -68,6 +72,10 @@ class KiotOutboxService
             if ($event->status === 'processing' && $event->locked_at?->isAfter(now()->subMinutes(5))) {
                 return null;
             }
+            if (in_array($event->status, ['pending', 'retrying'], true)
+                && $event->next_attempt_at?->isFuture()) {
+                return null;
+            }
 
             $attempt = $event->attempt_count + 1;
             if ($attempt > (int) config('integrations.kiot.outbox_max_attempts')) {
@@ -89,7 +97,7 @@ class KiotOutboxService
 
     private function markSent(IntegrationOutboxEvent $event, KiotResponse $response): void
     {
-        $skus = DB::transaction(function () use ($event, $response) {
+        $result = DB::transaction(function () use ($event, $response) {
             $locked = IntegrationOutboxEvent::lockForUpdate()->findOrFail($event->id);
             $order = Order::with('items')->lockForUpdate()->findOrFail($event->aggregate_id);
             $locked->update([
@@ -113,11 +121,15 @@ class KiotOutboxService
                 ]);
             }
 
-            return $order->items->pluck('sku')->all();
+            return ['order' => $order->fresh(), 'skus' => $order->items->pluck('sku')->all()];
         }, 3);
 
+        if ($event->event_type === 'order.create') {
+            $this->payments->reconcileOrder($result['order']);
+        }
+
         if (config('integrations.kiot.enabled') && config('integrations.kiot.product_sync_enabled')) {
-            SyncKiotProductsBySku::dispatch($skus)->afterCommit();
+            SyncKiotProductsBySku::dispatch($result['skus'])->afterCommit();
         }
     }
 

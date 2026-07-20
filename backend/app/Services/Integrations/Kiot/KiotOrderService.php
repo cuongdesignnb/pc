@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
 use App\Models\Product;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -16,7 +17,7 @@ class KiotOrderService
     public function create(array $data, ?int $userId): array
     {
         if ($existing = Order::where('checkout_idempotency_key', $data['checkout_idempotency_key'])->first()) {
-            return ['order' => $existing, 'outbox_id' => null, 'duplicate' => true];
+            return $this->existingResult($existing, $data['order_access_token'], $userId);
         }
 
         $enabled = config('integrations.kiot.enabled') && config('integrations.kiot.order_sync_enabled');
@@ -24,89 +25,113 @@ class KiotOrderService
             $this->client->assertConfigured();
         }
 
-        return DB::transaction(function () use ($data, $userId, $enabled) {
-            if ($existing = Order::where('checkout_idempotency_key', $data['checkout_idempotency_key'])->lockForUpdate()->first()) {
-                return ['order' => $existing, 'outbox_id' => null, 'duplicate' => true];
-            }
-
-            $requested = collect($data['items'])->groupBy('product_id')->map(fn ($rows) => $rows->sum('quantity'));
-            $products = Product::whereIn('id', $requested->keys())->lockForUpdate()->get()->keyBy('id');
-            $subtotal = 0;
-            $weight = 0;
-            $snapshots = [];
-
-            foreach ($requested as $productId => $quantity) {
-                $product = $products->get($productId);
-                if (! $product || ! $product->isSellableOnline() || $product->stock_quantity < $quantity) {
-                    throw new KiotIntegrationException(
-                        'INSUFFICIENT_AVAILABLE_STOCK',
-                        $product ? "Sản phẩm {$product->name} không đủ số lượng khả dụng." : 'Sản phẩm không tồn tại.',
-                        'business_rejection',
-                        422,
-                    );
+        try {
+            return DB::transaction(function () use ($data, $userId, $enabled) {
+                if ($existing = Order::where('checkout_idempotency_key', $data['checkout_idempotency_key'])->lockForUpdate()->first()) {
+                    return $this->existingResult($existing, $data['order_access_token'], $userId);
                 }
-                $unitPrice = (int) ($product->sale_price ?? $product->price);
-                $lineTotal = $unitPrice * (int) $quantity;
-                $subtotal += $lineTotal;
-                $weight += (int) ($product->weight ?? 0) * (int) $quantity;
-                $snapshots[] = [
-                    'product_id' => $product->id,
-                    'product_name' => $product->name,
-                    'sku' => $product->sku,
-                    'quantity' => (int) $quantity,
-                    'price' => $unitPrice,
-                    'total' => $lineTotal,
-                ];
-            }
 
-            $shippingFee = $subtotal >= 500000 ? 0 : 30000;
-            $eventId = $enabled ? (string) Str::uuid() : null;
-            $idempotencyKey = $enabled ? (string) Str::uuid() : null;
-            $order = Order::create([
-                'order_number' => Order::generateOrderNumber(),
-                'user_id' => $userId,
-                'subtotal' => $subtotal,
-                'discount' => 0,
-                'shipping_fee' => $shippingFee,
-                'total' => $subtotal + $shippingFee,
-                'payment_method' => $data['payment_method'],
-                'payment_status' => 'unpaid',
-                'order_status' => 'pending',
-                'shipping_name' => $data['customer_name'],
-                'shipping_phone' => $data['customer_phone'],
-                'customer_email' => $data['customer_email'],
-                'shipping_address' => $data['shipping_address'],
-                'shipping_city' => $data['shipping_city'],
-                'shipping_district' => $data['shipping_district'] ?? null,
-                'shipping_ward' => $data['shipping_ward'] ?? null,
-                'notes' => $data['notes'] ?? null,
-                'checkout_idempotency_key' => $data['checkout_idempotency_key'],
-                'kiot_event_id' => $eventId,
-                'kiot_idempotency_key' => $idempotencyKey,
-                'kiot_sync_status' => $enabled ? 'pending' : 'not_required',
-            ]);
+                $requested = collect($data['items'])->groupBy('product_id')->map(fn ($rows) => $rows->sum('quantity'));
+                $products = Product::whereIn('id', $requested->keys())->lockForUpdate()->get()->keyBy('id');
+                $subtotal = 0;
+                $weight = 0;
+                $snapshots = [];
 
-            foreach ($snapshots as $snapshot) {
-                $order->items()->create($snapshot);
-            }
+                foreach ($requested as $productId => $quantity) {
+                    $product = $products->get($productId);
+                    if (! $product || ! $product->isSellableOnline() || $product->stock_quantity < $quantity) {
+                        throw new KiotIntegrationException(
+                            'INSUFFICIENT_AVAILABLE_STOCK',
+                            $product ? "Sản phẩm {$product->name} không đủ số lượng khả dụng." : 'Sản phẩm không tồn tại.',
+                            'business_rejection',
+                            422,
+                        );
+                    }
+                    $unitPrice = (int) ($product->sale_price ?? $product->price);
+                    $lineTotal = $unitPrice * (int) $quantity;
+                    $subtotal += $lineTotal;
+                    $weight += (int) ($product->weight ?? 0) * (int) $quantity;
+                    $snapshots[] = [
+                        'product_id' => $product->id,
+                        'product_name' => $product->name,
+                        'sku' => $product->sku,
+                        'quantity' => (int) $quantity,
+                        'price' => $unitPrice,
+                        'total' => $lineTotal,
+                    ];
+                }
 
-            $outbox = null;
-            if ($enabled) {
-                $payload = $this->createPayload($order->fresh()->load('items'), $weight);
-                $rawBody = $this->client->encode($payload);
-                $payloadHash = hash('sha256', $rawBody);
-                $order->update(['kiot_payload_hash' => $payloadHash]);
-                $outbox = IntegrationOutboxEvent::create([
-                    'integration' => 'kiot', 'event_type' => 'order.create',
-                    'aggregate_type' => Order::class, 'aggregate_id' => $order->id,
-                    'event_id' => $eventId, 'idempotency_key' => $idempotencyKey,
-                    'payload' => $payload, 'raw_body' => $rawBody, 'payload_hash' => $payloadHash,
-                    'status' => 'pending', 'next_attempt_at' => now(),
+                $shippingFee = $subtotal >= 500000 ? 0 : 30000;
+                $eventId = $enabled ? (string) Str::uuid() : null;
+                $idempotencyKey = $enabled ? (string) Str::uuid() : null;
+                $order = Order::create([
+                    'order_number' => Order::generateOrderNumber(),
+                    'user_id' => $userId,
+                    'subtotal' => $subtotal,
+                    'discount' => 0,
+                    'shipping_fee' => $shippingFee,
+                    'total' => $subtotal + $shippingFee,
+                    'payment_method' => $data['payment_method'],
+                    'payment_status' => 'unpaid',
+                    'order_status' => 'pending',
+                    'shipping_name' => $data['customer_name'],
+                    'shipping_phone' => $data['customer_phone'],
+                    'customer_email' => $data['customer_email'],
+                    'shipping_address' => $data['shipping_address'],
+                    'shipping_city' => $data['shipping_city'],
+                    'shipping_district' => $data['shipping_district'] ?? null,
+                    'shipping_ward' => $data['shipping_ward'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'checkout_idempotency_key' => $data['checkout_idempotency_key'],
+                    'order_access_token_hash' => Order::hashAccessToken($data['order_access_token']),
+                    'kiot_event_id' => $eventId,
+                    'kiot_idempotency_key' => $idempotencyKey,
+                    'kiot_sync_status' => $enabled ? 'pending' : 'not_required',
                 ]);
+
+                foreach ($snapshots as $snapshot) {
+                    $order->items()->create($snapshot);
+                }
+
+                $outbox = null;
+                if ($enabled) {
+                    $payload = $this->createPayload($order->fresh()->load('items'), $weight);
+                    $rawBody = $this->client->encode($payload);
+                    $payloadHash = hash('sha256', $rawBody);
+                    $order->update(['kiot_payload_hash' => $payloadHash]);
+                    $outbox = IntegrationOutboxEvent::create([
+                        'integration' => 'kiot', 'event_type' => 'order.create',
+                        'aggregate_type' => Order::class, 'aggregate_id' => $order->id,
+                        'event_id' => $eventId, 'idempotency_key' => $idempotencyKey,
+                        'payload' => $payload, 'raw_body' => $rawBody, 'payload_hash' => $payloadHash,
+                        'status' => 'pending', 'next_attempt_at' => now(),
+                    ]);
+                }
+
+                return ['order' => $order, 'outbox_id' => $outbox?->id, 'duplicate' => false];
+            }, 3);
+        } catch (UniqueConstraintViolationException $exception) {
+            $existing = Order::where('checkout_idempotency_key', $data['checkout_idempotency_key'])->first();
+            if (! $existing) {
+                throw $exception;
             }
 
-            return ['order' => $order, 'outbox_id' => $outbox?->id, 'duplicate' => false];
-        }, 3);
+            return $this->existingResult($existing, $data['order_access_token'], $userId);
+        }
+    }
+
+    private function existingResult(Order $order, string $accessToken, ?int $userId): array
+    {
+        if ($order->user_id !== $userId || ! $order->matchesAccessToken($accessToken)) {
+            throw new KiotIntegrationException(
+                'IDEMPOTENCY_KEY_CONFLICT',
+                'Khóa checkout đã được sử dụng cho một yêu cầu khác.',
+                'fatal_conflict',
+                409,
+            );
+        }
+
+        return ['order' => $order, 'outbox_id' => null, 'duplicate' => true];
     }
 
     private function createPayload(Order $order, int $weight): array

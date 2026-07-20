@@ -33,6 +33,11 @@ class KiotIntegrationController extends Controller
             'syncState' => IntegrationSyncState::where(['integration' => 'kiot', 'resource' => 'products'])->first(),
             'counts' => [
                 'product_errors' => Product::whereNotNull('kiot_sync_error_code')->count(),
+                'products_stale' => Product::where('inventory_source', 'kiot')
+                    ->where(function ($query) {
+                        $query->whereNull('kiot_synced_at')
+                            ->orWhere('kiot_synced_at', '<', now()->subMinutes((int) config('integrations.kiot.product_stale_after_minutes')));
+                    })->count(),
                 'orders_pending' => Order::whereIn('kiot_sync_status', ['pending', 'sending'])->count(),
                 'orders_retrying' => Order::where('kiot_sync_status', 'retrying')->count(),
                 'orders_rejected' => Order::where('kiot_sync_status', 'rejected')->count(),
@@ -76,7 +81,7 @@ class KiotIntegrationController extends Controller
     public function retryEvent(IntegrationOutboxEvent $event): RedirectResponse
     {
         abort_unless($event->integration === 'kiot', 404);
-        if (in_array($event->status, ['rejected', 'dead_letter', 'retrying'], true)) {
+        if (in_array($event->status, ['dead_letter', 'retrying'], true)) {
             $event->update(['status' => 'retrying', 'attempt_count' => 0, 'next_attempt_at' => now(), 'locked_at' => null]);
             ProcessKiotOutboxEvent::dispatch($event->id);
         }

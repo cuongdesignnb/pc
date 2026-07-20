@@ -41,7 +41,11 @@ const formatTime = (value) => value ? new Date(value).toLocaleString('vi-VN') : 
                     <div><dt class="text-slate-500">Matched</dt><dd class="mt-1 text-slate-200">{{ syncState?.items_matched || 0 }}</dd></div>
                     <div><dt class="text-slate-500">Unmatched</dt><dd class="mt-1 text-slate-200">{{ syncState?.items_unmatched || 0 }}</dd></div>
                     <div><dt class="text-slate-500">Product lỗi</dt><dd class="mt-1 text-slate-200">{{ counts.product_errors }}</dd></div>
+                    <div><dt class="text-slate-500">Dữ liệu tồn đã cũ</dt><dd class="mt-1" :class="counts.products_stale ? 'text-amber-300' : 'text-emerald-300'">{{ counts.products_stale }}</dd></div>
                 </dl>
+                <p v-if="counts.products_stale" class="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                    Storefront vẫn đọc cache gần nhất; KIOT tiếp tục là cổng kiểm tra tồn cuối khi checkout. Hãy kiểm tra product sync trước khi bật integration.
+                </p>
                 <div class="mt-5 flex flex-wrap gap-3">
                     <button @click="submit('/admin/integrations/kiot/dry-run')" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">Product dry-run</button>
                     <button @click="submit('/admin/integrations/kiot/sync')" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700">Đồng bộ sản phẩm</button>
@@ -61,7 +65,7 @@ const formatTime = (value) => value ? new Date(value).toLocaleString('vi-VN') : 
                     <table class="min-w-full divide-y divide-slate-800 text-sm">
                         <thead class="bg-slate-800/40 text-left text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Event</th><th class="px-4 py-3">Order</th><th class="px-4 py-3">Lỗi</th><th class="px-4 py-3">Attempt</th><th class="px-4 py-3"></th></tr></thead>
                         <tbody class="divide-y divide-slate-800">
-                            <tr v-for="event in recentErrors" :key="event.id"><td class="px-4 py-3 text-slate-300">{{ event.event_type }}</td><td class="px-4 py-3 text-slate-300">#{{ event.aggregate_id }}</td><td class="px-4 py-3"><p class="font-mono text-xs text-amber-300">{{ event.last_error_code }}</p><p class="mt-1 max-w-xl truncate text-slate-400">{{ event.last_error_message }}</p></td><td class="px-4 py-3 text-slate-400">{{ event.attempt_count }}</td><td class="px-4 py-3 text-right"><button @click="submit(`/admin/integrations/kiot/events/${event.id}/retry`)" class="text-cyan-400 hover:text-cyan-300">Retry</button></td></tr>
+                            <tr v-for="event in recentErrors" :key="event.id"><td class="px-4 py-3 text-slate-300">{{ event.event_type }}</td><td class="px-4 py-3 text-slate-300">#{{ event.aggregate_id }}</td><td class="px-4 py-3"><p class="font-mono text-xs text-amber-300">{{ event.last_error_code }}</p><p class="mt-1 max-w-xl truncate text-slate-400">{{ event.last_error_message }}</p></td><td class="px-4 py-3 text-slate-400">{{ event.attempt_count }}</td><td class="px-4 py-3 text-right"><button v-if="['retrying', 'dead_letter'].includes(event.status)" @click="submit(`/admin/integrations/kiot/events/${event.id}/retry`)" class="text-cyan-400 hover:text-cyan-300">Retry</button><span v-else class="text-xs text-slate-500">Không retry</span></td></tr>
                             <tr v-if="!recentErrors.length"><td colspan="5" class="px-4 py-8 text-center text-slate-500">Chưa có lỗi đồng bộ.</td></tr>
                         </tbody>
                     </table>

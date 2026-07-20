@@ -60,7 +60,7 @@ class KiotProductSyncService
                 do {
                     $query = [
                         'limit' => min(100, max(1, (int) config('integrations.kiot.product_sync_limit'))),
-                        'include_inactive' => 'true',
+                        'include_inactive' => 1,
                     ];
                     if ($cursor) {
                         $query['cursor'] = $cursor;
@@ -177,8 +177,8 @@ class KiotProductSyncService
             if (! $dryRun) {
                 $sellable = ($remote['sync_status'] ?? null) === 'active'
                     && (bool) ($remote['is_active'] ?? false)
-                    && (bool) ($remote['sell_directly'] ?? false)
-                    && (int) ($remote['available_quantity'] ?? 0) > 0;
+                    && (bool) ($remote['sell_directly'] ?? false);
+                $availableQuantity = max(0, (int) ($remote['available_quantity'] ?? 0));
                 $product->update([
                     'inventory_source' => 'kiot',
                     'kiot_product_id' => $remote['id'] ?? null,
@@ -187,8 +187,8 @@ class KiotProductSyncService
                     'kiot_retail_price' => $remote['retail_price'],
                     'kiot_physical_quantity' => $remote['stock_quantity'] ?? 0,
                     'kiot_reserved_quantity' => $remote['reserved_quantity'] ?? 0,
-                    'stock_quantity' => $sellable ? (int) ($remote['available_quantity'] ?? 0) : 0,
-                    'kiot_available_quantity' => $sellable ? (int) ($remote['available_quantity'] ?? 0) : 0,
+                    'stock_quantity' => $sellable ? $availableQuantity : 0,
+                    'kiot_available_quantity' => $availableQuantity,
                     'kiot_has_serial' => (bool) ($remote['has_serial'] ?? false),
                     'kiot_sellable' => $sellable,
                     'weight' => $remote['weight'] ?? null,

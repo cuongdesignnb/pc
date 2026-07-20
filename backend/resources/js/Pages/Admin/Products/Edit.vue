@@ -102,7 +102,7 @@ function submit() { form.put(`/admin/products/${props.product.id}`); }
                         <div v-if="form.errors.slug" class="text-red-400 text-xs mt-1">{{ form.errors.slug }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">SKU *</label>
-                        <input v-model="form.sku" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <input v-model="form.sku" :disabled="isKiot" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
                         <div v-if="form.errors.sku" class="text-red-400 text-xs mt-1">{{ form.errors.sku }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Trạng thái</label>

@@ -11,6 +11,7 @@ class Order extends Model
 {
     protected $hidden = [
         'checkout_idempotency_key',
+        'order_access_token_hash',
         'kiot_event_id',
         'kiot_idempotency_key',
         'kiot_payload_hash',
@@ -41,6 +42,7 @@ class Order extends Model
         'shipped_at',
         'delivered_at',
         'checkout_idempotency_key',
+        'order_access_token_hash',
         'kiot_event_id',
         'kiot_idempotency_key',
         'kiot_order_id',
@@ -102,5 +104,18 @@ class Order extends Model
     {
         return in_array($this->order_status, ['pending', 'confirmed'], true)
             && ! in_array($this->kiot_sync_status, ['rejected', 'cancelled', 'cancel_pending'], true);
+    }
+
+    public function matchesAccessToken(?string $token): bool
+    {
+        return is_string($token)
+            && $token !== ''
+            && is_string($this->order_access_token_hash)
+            && hash_equals($this->order_access_token_hash, self::hashAccessToken($token));
+    }
+
+    public static function hashAccessToken(string $token): string
+    {
+        return hash('sha256', $token);
     }
 }

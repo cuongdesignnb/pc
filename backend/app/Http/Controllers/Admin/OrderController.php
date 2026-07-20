@@ -86,6 +86,12 @@ class OrderController extends Controller
             'payment_status' => 'required|in:unpaid,paid,refunded',
         ]);
 
+        if ($validated['payment_status'] === 'paid'
+            && $order->payment_method === 'sepay'
+            && $order->kiot_sync_status !== 'synced') {
+            return back()->with('error', 'Chỉ có thể xác nhận thanh toán sau khi KIOT chấp nhận đơn hàng.');
+        }
+
         $data = $validated;
         if ($validated['payment_status'] === 'paid' && ! $order->paid_at) {
             $data['paid_at'] = now();
