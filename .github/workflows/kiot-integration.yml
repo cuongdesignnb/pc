@@ -78,6 +78,12 @@ jobs:
         working-directory: backend
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Build Admin
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+
       - name: Prepare and migrate database
         working-directory: backend
         run: |
@@ -109,12 +115,6 @@ jobs:
           cd backend
           php vendor/bin/pint --test "${relative[@]}"
           for file in "${relative[@]}"; do php -l "$file"; done
-
-      - name: Build Admin
-        working-directory: backend
-        run: |
-          npm ci
-          npm run build
 
       - name: Build Nuxt storefront
         working-directory: frontend
