@@ -82,7 +82,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::get('/orders/{order}/check-payment', [OrderController::class, 'checkPayment']);
-    
+    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+
     // Sepay webhook
     Route::post('/sepay/callback', [OrderController::class, 'sepayCallback']);
 
@@ -99,7 +100,5 @@ Route::prefix('v1')->group(function () {
 
         // User orders
         Route::get('/orders', [OrderController::class, 'index']);
-        Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
     });
 });
-

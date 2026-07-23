@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -57,13 +59,23 @@ class OrderController extends Controller
         ]);
     }
 
-    public function updateStatus(Request $request, Order $order)
+    public function updateStatus(Request $request, Order $order, KiotOrderCancellationService $cancellation)
     {
         $validated = $request->validate([
             'order_status' => 'required|in:pending,confirmed,processing,shipping,delivered,cancelled',
         ]);
 
-        $order->update($validated);
+        if ($validated['order_status'] === 'cancelled') {
+            try {
+                $cancellation->cancel($order, 'Admin yêu cầu hủy đơn');
+            } catch (KiotIntegrationException $exception) {
+                return back()->with('error', in_array($exception->errorCode, ['ORDER_ALREADY_INVOICED', 'ORDER_NOT_CANCELLABLE'], true)
+                    ? 'Đơn hàng đã được xử lý trong hệ thống kho và không thể hủy.'
+                    : $exception->getMessage());
+            }
+        } else {
+            $order->update($validated);
+        }
 
         return back()->with('success', 'Cập nhật trạng thái đơn hàng thành công');
     }
@@ -74,8 +86,14 @@ class OrderController extends Controller
             'payment_status' => 'required|in:unpaid,paid,refunded',
         ]);
 
+        if ($validated['payment_status'] === 'paid'
+            && $order->payment_method === 'sepay'
+            && $order->kiot_sync_status !== 'synced') {
+            return back()->with('error', 'Chỉ có thể xác nhận thanh toán sau khi KIOT chấp nhận đơn hàng.');
+        }
+
         $data = $validated;
-        if ($validated['payment_status'] === 'paid' && !$order->paid_at) {
+        if ($validated['payment_status'] === 'paid' && ! $order->paid_at) {
             $data['paid_at'] = now();
         }
 

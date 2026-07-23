@@ -75,6 +75,7 @@ const navGroups = [
         items: [
             { name: 'Menu', href: '/admin/menus', icon: 'menu' },
             { name: 'Cài đặt', href: '/admin/settings', icon: 'settings' },
+            { name: 'Tích hợp KIOT', href: '/admin/integrations/kiot', icon: 'compat', perm: 'settings.view' },
             { name: 'Nhân viên', href: '/admin/users', icon: 'user', perm: 'users.view' },
             { name: 'Vai trò', href: '/admin/roles', icon: 'shield', perm: 'roles.view' },
         ],

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Services\Payments\SepayPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -16,6 +17,7 @@ class PaymentController extends Controller
     {
         $order = Order::where('order_number', $invoice)
             ->where('payment_status', 'unpaid')
+            ->where('kiot_sync_status', 'synced')
             ->firstOrFail();
 
         $sepay = config('services.sepay');
@@ -68,44 +70,42 @@ class PaymentController extends Controller
      * This is different from the webhook/bank transfer callback.
      * SePay Gateway sends this when checkout payment is completed.
      */
-    public function ipn(Request $request)
+    public function ipn(Request $request, SepayPaymentService $payments)
     {
-        Log::channel('daily')->info('SePay Gateway IPN received', $request->all());
+        $secret = config('services.sepay.secret_key');
+        if (! is_string($secret) || $secret === '') {
+            Log::error('SePay Gateway IPN rejected: authentication is not configured');
+
+            return response()->json(['success' => false, 'message' => 'IPN is not configured'], 503);
+        }
+        $providedSecret = (string) $request->header('X-Secret-Key');
+        if ($providedSecret === '' || ! hash_equals($secret, $providedSecret)) {
+            Log::warning('SePay Gateway IPN rejected: invalid secret');
+
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
 
         $data = $request->json()->all();
 
         // Verify the notification type
         if (isset($data['notification_type']) && $data['notification_type'] === 'ORDER_PAID') {
             $invoiceNumber = $data['order']['order_invoice_number'] ?? null;
+            $transactionId = $data['transaction']['id'] ?? null;
 
-            if ($invoiceNumber) {
-                $order = Order::where('order_number', $invoiceNumber)
-                    ->where('payment_status', 'unpaid')
-                    ->first();
+            if ($invoiceNumber && is_numeric($transactionId)) {
+                $result = $payments->record(
+                    'sepay_gateway',
+                    (int) $transactionId,
+                    (string) $invoiceNumber,
+                    (int) ($data['order']['order_amount'] ?? 0),
+                    $data['transaction']['reference_code'] ?? null,
+                );
 
-                if ($order) {
-                    $order->update([
-                        'payment_status' => 'paid',
-                        'order_status' => 'confirmed',
-                        'paid_at' => now(),
-                    ]);
-
-                    // Create transaction record if transaction data is available
-                    if (isset($data['transaction'])) {
-                        $order->transaction()->create([
-                            'sepay_transaction_id' => $data['transaction']['id'] ?? 0,
-                            'gateway' => 'sepay_gateway',
-                            'amount' => $data['order']['order_amount'] ?? $order->total,
-                            'reference_code' => $data['transaction']['reference_code'] ?? null,
-                            'content' => json_encode($data),
-                            'transaction_date' => now(),
-                        ]);
-                    }
-
-                    Log::info('SePay Gateway IPN: Order paid', [
-                        'order_number' => $invoiceNumber,
-                    ]);
-                }
+                return response()->json([
+                    'success' => true,
+                    'duplicate' => $result['duplicate'],
+                    'payment_status' => $result['processed'] ? 'paid' : 'pending_reconciliation',
+                ]);
             }
         }
 

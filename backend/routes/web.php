@@ -1,8 +1,8 @@
 <?php
 
+use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BannerController;
-use App\Http\Controllers\Admin\FilterController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CompatibilityController;
@@ -10,6 +10,8 @@ use App\Http\Controllers\Admin\ComponentTypeController;
 use App\Http\Controllers\Admin\CouponController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\FilterController;
+use App\Http\Controllers\Admin\KiotIntegrationController;
 use App\Http\Controllers\Admin\MediaController;
 use App\Http\Controllers\Admin\MenuController;
 use App\Http\Controllers\Admin\OrderController;
@@ -21,7 +23,6 @@ use App\Http\Controllers\Admin\ReviewController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
@@ -132,6 +133,16 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     // Settings
     Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
     Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
+
+    Route::middleware('permission:settings.view')->group(function () {
+        Route::get('integrations/kiot', [KiotIntegrationController::class, 'index'])->name('integrations.kiot.index');
+    });
+    Route::middleware('permission:settings.edit')->group(function () {
+        Route::post('integrations/kiot/dry-run', [KiotIntegrationController::class, 'dryRun'])->name('integrations.kiot.dry-run');
+        Route::post('integrations/kiot/sync', [KiotIntegrationController::class, 'sync'])->name('integrations.kiot.sync');
+        Route::post('integrations/kiot/retry', [KiotIntegrationController::class, 'retry'])->name('integrations.kiot.retry');
+        Route::post('integrations/kiot/events/{event}/retry', [KiotIntegrationController::class, 'retryEvent'])->name('integrations.kiot.events.retry');
+    });
 
     // AI Articles
     Route::get('ai-articles', [AiArticleController::class, 'index'])->name('ai-articles.index');

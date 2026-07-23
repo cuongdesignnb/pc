@@ -37,7 +37,7 @@ class PcBuilderController extends Controller
         // Get all products of this component type
         $products = Product::with(['brand', 'images', 'specifications.specificationKey'])
             ->where('component_type_id', $componentType->id)
-            ->where('is_active', true)
+            ->sellableOnline()
             ->get();
 
         // Check compatibility for each product
@@ -69,6 +69,7 @@ class PcBuilderController extends Controller
 
         // Get all products in build
         $products = Product::with(['componentType', 'specifications.specificationKey'])
+            ->sellableOnline()
             ->whereIn('id', array_values($build))
             ->get()
             ->keyBy('component_type_id');
@@ -93,7 +94,7 @@ class PcBuilderController extends Controller
             $sourceProduct = $products->get($rule->source_type_id);
             $targetProduct = $products->get($rule->target_type_id);
 
-            if (!$sourceProduct || !$targetProduct) {
+            if (! $sourceProduct || ! $targetProduct) {
                 continue;
             }
 
@@ -139,12 +140,14 @@ class PcBuilderController extends Controller
 
         // Calculate totals
         $products = Product::with('specifications.specificationKey')
+            ->sellableOnline()
             ->whereIn('id', array_values($validated['build']))
             ->get();
 
         $totalPrice = $products->sum(fn ($p) => $p->sale_price ?? $p->price);
         $totalTdp = $products->sum(function ($p) {
             $tdp = $p->specifications->first(fn ($s) => $s->specificationKey?->key === 'tdp');
+
             return $tdp ? (int) $tdp->value : 0;
         });
 
@@ -197,14 +200,15 @@ class PcBuilderController extends Controller
 
             $otherProductId = $currentBuild[$otherTypeId] ?? null;
 
-            if (!$otherProductId) {
+            if (! $otherProductId) {
                 continue;
             }
 
             $otherProduct = Product::with('specifications.specificationKey')
+                ->sellableOnline()
                 ->find($otherProductId);
 
-            if (!$otherProduct) {
+            if (! $otherProduct) {
                 continue;
             }
 
@@ -236,7 +240,7 @@ class PcBuilderController extends Controller
         $targetSpec = $targetProduct->specifications
             ->first(fn ($s) => $s->specificationKey?->key === $rule->target_spec_key);
 
-        if (!$sourceSpec || !$targetSpec) {
+        if (! $sourceSpec || ! $targetSpec) {
             return null;
         }
 
@@ -255,7 +259,7 @@ class PcBuilderController extends Controller
 
             case 'must_fit':
                 $allowedValues = $rule->allowed_values[$sourceValue] ?? [];
-                if (!in_array($targetValue, $allowedValues)) {
+                if (! in_array($targetValue, $allowedValues)) {
                     return [
                         'type' => 'error',
                         'message' => $rule->message,

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -34,6 +35,20 @@ class Product extends Model
         'meta_description',
         'views_count',
         'sold_count',
+        'barcode',
+        'inventory_source',
+        'kiot_product_id',
+        'kiot_sync_status',
+        'kiot_sellable',
+        'kiot_has_serial',
+        'kiot_physical_quantity',
+        'kiot_reserved_quantity',
+        'kiot_available_quantity',
+        'kiot_retail_price',
+        'kiot_remote_updated_at',
+        'kiot_synced_at',
+        'kiot_sync_error_code',
+        'kiot_sync_error_message',
     ];
 
     protected $appends = ['quantity'];
@@ -51,11 +66,41 @@ class Product extends Model
         'warranty_months' => 'integer',
         'views_count' => 'integer',
         'sold_count' => 'integer',
+        'kiot_product_id' => 'integer',
+        'kiot_sellable' => 'boolean',
+        'kiot_has_serial' => 'boolean',
+        'kiot_physical_quantity' => 'integer',
+        'kiot_reserved_quantity' => 'integer',
+        'kiot_available_quantity' => 'integer',
+        'kiot_retail_price' => 'decimal:2',
+        'kiot_remote_updated_at' => 'datetime',
+        'kiot_synced_at' => 'datetime',
     ];
 
     public function getQuantityAttribute(): int
     {
         return $this->stock_quantity;
+    }
+
+    public function scopeSellableOnline(Builder $query): Builder
+    {
+        return $query->where('is_active', true)
+            ->where('stock_quantity', '>', 0)
+            ->where(function (Builder $query) {
+                $query->where('inventory_source', 'local')
+                    ->orWhere(function (Builder $query) {
+                        $query->where('inventory_source', 'kiot')
+                            ->where('kiot_sellable', true);
+                    });
+            });
+    }
+
+    public function isSellableOnline(): bool
+    {
+        return $this->is_active
+            && $this->stock_quantity > 0
+            && ($this->inventory_source === 'local'
+                || ($this->inventory_source === 'kiot' && $this->kiot_sellable));
     }
 
     public function category(): BelongsTo
@@ -133,7 +178,9 @@ class Product extends Model
 
         foreach ($lines as $line) {
             $line = trim($line);
-            if (empty($line)) continue;
+            if (empty($line)) {
+                continue;
+            }
 
             $parts = explode(':', $line, 2);
             if (count($parts) === 2) {

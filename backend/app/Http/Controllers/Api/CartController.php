@@ -41,6 +41,10 @@ class CartController extends Controller
         $cart = $this->getOrCreateCart($request);
         $product = Product::findOrFail($validated['product_id']);
 
+        if (! $product->isSellableOnline() || $product->stock_quantity < $validated['quantity']) {
+            return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
+        }
+
         // Check if product already in cart
         $cartItem = $cart->items()->where('product_id', $product->id)->first();
 
@@ -74,6 +78,10 @@ class CartController extends Controller
             'quantity' => 'required|integer|min:1',
         ]);
 
+        $product = $cartItem->product;
+        if (! $product->isSellableOnline() || $product->stock_quantity < $validated['quantity']) {
+            return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
+        }
         $cartItem->update(['quantity' => $validated['quantity']]);
 
         $cart = $cartItem->cart->load(['items.product.images']);
