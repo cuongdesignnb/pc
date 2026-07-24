@@ -24,14 +24,7 @@ class KiotOrderCancellationService
 
             return $order->fresh();
         }
-        if (! config('integrations.kiot.enabled') || ! config('integrations.kiot.order_sync_enabled')) {
-            throw new KiotIntegrationException(
-                'INTEGRATION_DISABLED',
-                'Không thể hủy đơn KIOT khi tích hợp đang tắt.',
-                'configuration_failure',
-                503,
-            );
-        }
+        $this->client->assertOrderSyncEnabled();
 
         $createEvent = IntegrationOutboxEvent::where('integration', 'kiot')
             ->where('aggregate_id', $order->id)->where('event_type', 'order.create')->first();

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Integrations\Kiot\KiotClient;
+use App\Services\Integrations\Kiot\KiotConnectionTestService;
 use Illuminate\Console\Command;
 
 class KiotConnectionTestCommand extends Command
@@ -11,17 +11,17 @@ class KiotConnectionTestCommand extends Command
 
     protected $description = 'Kiểm tra kết nối đọc sản phẩm KIOT, không ghi dữ liệu';
 
-    public function handle(KiotClient $client): int
+    public function handle(KiotConnectionTestService $connectionTest): int
     {
         $started = microtime(true);
-        $response = $client->products(['limit' => 1]);
+        $result = $connectionTest->test();
         $duration = (int) ((microtime(true) - $started) * 1000);
-        if (! $response->successful()) {
-            $this->error(($response->errorCode() ?? 'UNKNOWN').": HTTP {$response->status} ({$duration} ms)");
+        if (! $result['success']) {
+            $this->error("{$result['error_code']}: {$result['message']} ({$duration} ms)");
 
             return self::FAILURE;
         }
-        $this->info("Kết nối KIOT thành công: HTTP {$response->status} ({$duration} ms).");
+        $this->info("Kết nối KIOT thành công ({$duration} ms).");
 
         return self::SUCCESS;
     }

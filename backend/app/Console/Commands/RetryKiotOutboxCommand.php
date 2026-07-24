@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Models\IntegrationOutboxEvent;
+use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use Illuminate\Console\Command;
 
 class RetryKiotOutboxCommand extends Command
@@ -12,9 +13,9 @@ class RetryKiotOutboxCommand extends Command
 
     protected $description = 'Dispatch các sự kiện KIOT đang chờ, retry hoặc stale-lock';
 
-    public function handle(): int
+    public function handle(KiotConfigurationResolver $resolver): int
     {
-        if (! config('integrations.kiot.enabled') || ! config('integrations.kiot.order_sync_enabled')) {
+        if (! $resolver->resolve()->orderSyncEnabled) {
             return self::SUCCESS;
         }
 

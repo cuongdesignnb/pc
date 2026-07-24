@@ -138,7 +138,15 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
         Route::get('integrations/kiot', [KiotIntegrationController::class, 'index'])->name('integrations.kiot.index');
     });
     Route::middleware('permission:settings.edit')->group(function () {
+        Route::post('integrations/kiot/pair', [KiotIntegrationController::class, 'pair'])->name('integrations.kiot.pair');
+        Route::post('integrations/kiot/manual', [KiotIntegrationController::class, 'manual'])->name('integrations.kiot.manual');
+        Route::post('integrations/kiot/import-environment', [KiotIntegrationController::class, 'importEnvironment'])->name('integrations.kiot.import-environment');
+        Route::post('integrations/kiot/test-connection', [KiotIntegrationController::class, 'testConnection'])->name('integrations.kiot.test-connection');
+        Route::patch('integrations/kiot/flags', [KiotIntegrationController::class, 'updateFlags'])->name('integrations.kiot.flags');
+        Route::post('integrations/kiot/disconnect', [KiotIntegrationController::class, 'disconnect'])->name('integrations.kiot.disconnect');
         Route::post('integrations/kiot/dry-run', [KiotIntegrationController::class, 'dryRun'])->name('integrations.kiot.dry-run');
+        Route::post('integrations/kiot/test-one', [KiotIntegrationController::class, 'testSku'])->name('integrations.kiot.test-one');
+        Route::post('integrations/kiot/sync-one', [KiotIntegrationController::class, 'syncOne'])->name('integrations.kiot.sync-one');
         Route::post('integrations/kiot/sync', [KiotIntegrationController::class, 'sync'])->name('integrations.kiot.sync');
         Route::post('integrations/kiot/retry', [KiotIntegrationController::class, 'retry'])->name('integrations.kiot.retry');
         Route::post('integrations/kiot/events/{event}/retry', [KiotIntegrationController::class, 'retryEvent'])->name('integrations.kiot.events.retry');

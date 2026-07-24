@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -12,10 +13,10 @@ Schedule::job(new \App\Jobs\Integrations\Kiot\SyncKiotProducts)
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->onOneServer()
-    ->when(fn () => config('integrations.kiot.enabled') && config('integrations.kiot.product_sync_enabled'));
+    ->when(fn () => app(KiotConfigurationResolver::class)->resolve()->productSyncEnabled);
 
 Schedule::command('kiot:retry-outbox')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer()
-    ->when(fn () => config('integrations.kiot.enabled') && config('integrations.kiot.order_sync_enabled'));
+    ->when(fn () => app(KiotConfigurationResolver::class)->resolve()->orderSyncEnabled);
