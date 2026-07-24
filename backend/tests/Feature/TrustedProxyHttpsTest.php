@@ -2,10 +2,14 @@
 
 namespace Tests\Feature;
 
+use Closure;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Foundation\Vite;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
+use Tighten\Ziggy\Ziggy;
 
 class TrustedProxyHttpsTest extends TestCase
 {
@@ -36,6 +40,10 @@ class TrustedProxyHttpsTest extends TestCase
     public function test_admin_login_ignores_empty_forwarded_host_and_renders_secure_assets(): void
     {
         $buildDirectory = 'build-trusted-proxy-test';
+
+        config(['app.url' => 'https://admin.laptopplus.vn']);
+        app(Kernel::class)->prependMiddleware(PrimeUrlGeneratorBeforeTrustedProxy::class);
+        app(Kernel::class)->pushMiddleware(CaptureAdminUrlState::class);
 
         app(Vite::class)->useBuildDirectory($buildDirectory);
         File::ensureDirectoryExists(public_path($buildDirectory));
@@ -69,6 +77,19 @@ class TrustedProxyHttpsTest extends TestCase
             $response->assertOk();
             $response->assertSee('https://admin.laptopplus.vn/'.$buildDirectory.'/assets/app-test.js', false);
             $response->assertDontSee('http://admin.laptopplus.vn/', false);
+            $this->assertSame(0, substr_count($response->getContent(), 'http://admin.laptopplus.vn/'.$buildDirectory.'/'));
+            $this->assertSame(4, substr_count($response->getContent(), 'https://admin.laptopplus.vn/'.$buildDirectory.'/'));
+            $this->assertSame([
+                'config_app_url' => 'https://admin.laptopplus.vn',
+                'request_root' => 'https://admin.laptopplus.vn',
+                'request_scheme' => 'https',
+                'request_http_host' => 'admin.laptopplus.vn',
+                'url' => 'https://admin.laptopplus.vn',
+                'asset' => 'https://admin.laptopplus.vn/build/test.css',
+                'secure_asset' => 'https://admin.laptopplus.vn/build/test.css',
+                'vite_asset' => 'https://admin.laptopplus.vn/'.$buildDirectory.'/assets/app-test.js',
+                'ziggy_url' => 'https://admin.laptopplus.vn',
+            ], CaptureAdminUrlState::$dump);
         } finally {
             File::deleteDirectory(public_path($buildDirectory));
         }
@@ -105,5 +126,37 @@ class TrustedProxyHttpsTest extends TestCase
                 'url' => url('/build/test.css'),
             ]);
         });
+    }
+}
+
+class PrimeUrlGeneratorBeforeTrustedProxy
+{
+    public function handle(Request $request, Closure $next): mixed
+    {
+        url('/');
+
+        return $next($request);
+    }
+}
+
+class CaptureAdminUrlState
+{
+    public static array $dump = [];
+
+    public function handle(Request $request, Closure $next): mixed
+    {
+        self::$dump = [
+            'config_app_url' => config('app.url'),
+            'request_root' => $request->root(),
+            'request_scheme' => $request->getScheme(),
+            'request_http_host' => $request->getHttpHost(),
+            'url' => url('/'),
+            'asset' => asset('build/test.css'),
+            'secure_asset' => secure_asset('build/test.css'),
+            'vite_asset' => app(Vite::class)->asset('resources/js/app.js'),
+            'ziggy_url' => (new Ziggy)->toArray()['url'],
+        ];
+
+        return $next($request);
     }
 }
