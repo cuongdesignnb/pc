@@ -10,13 +10,17 @@ use Throwable;
 
 class KiotProductSyncService
 {
-    public function __construct(private readonly KiotClient $client) {}
+    public function __construct(
+        private readonly KiotClient $client,
+        private readonly KiotConfigurationResolver $resolver,
+    ) {}
 
     public function sync(bool $dryRun = true, bool $full = false, ?string $sku = null): array
     {
-        if (! config('integrations.kiot.product_sync_enabled')) {
-            throw new KiotIntegrationException('INTEGRATION_DISABLED', 'Đồng bộ sản phẩm KIOT đang tắt.');
-        }
+        $runtime = $this->resolver->resolve();
+        $dryRun
+            ? $this->client->assertConnected($runtime)
+            : $this->client->assertProductSyncEnabled($runtime);
 
         $state = IntegrationSyncState::firstOrNew(['integration' => 'kiot', 'resource' => 'products']);
         $oldWatermark = $state->last_successful_watermark;
@@ -30,7 +34,7 @@ class KiotProductSyncService
 
         try {
             if ($sku !== null) {
-                $response = $this->client->product(trim($sku));
+                $response = $this->client->product(trim($sku), requireProductSync: ! $dryRun);
                 if (! $response->successful()) {
                     if ($response->errorCode() === 'UNKNOWN_SKU') {
                         $local = Product::where('sku', trim($sku))->get()
@@ -59,7 +63,7 @@ class KiotProductSyncService
                 $cursor = null;
                 do {
                     $query = [
-                        'limit' => min(100, max(1, (int) config('integrations.kiot.product_sync_limit'))),
+                        'limit' => $runtime->productSyncLimit,
                         'include_inactive' => 1,
                     ];
                     if ($cursor) {
@@ -67,11 +71,11 @@ class KiotProductSyncService
                     }
                     if (! $full && $oldWatermark) {
                         $query['updated_since'] = CarbonImmutable::parse($oldWatermark)
-                            ->subSeconds((int) config('integrations.kiot.product_sync_overlap_seconds'))
+                            ->subSeconds($runtime->productSyncOverlapSeconds)
                             ->toRfc3339String();
                     }
 
-                    $response = $this->client->products($query);
+                    $response = $this->client->products($query, requireProductSync: ! $dryRun);
                     if (! $response->successful()) {
                         throw $this->responseException($response);
                     }
@@ -148,16 +152,20 @@ class KiotProductSyncService
             if (! $product) {
                 $report['remote_unmatched'][] = $sku;
                 $report['remote_unmatched_count']++;
+                $report['preview'][] = $this->preview($remote, null, []);
 
                 continue;
             }
 
             $report['matched']++;
+            $proposedChanges = [];
             if ((string) $product->price !== (string) ($remote['retail_price'] ?? '')) {
                 $report['price_differences'][] = $sku;
+                $proposedChanges['price'] = $remote['retail_price'] ?? null;
             }
             if ((int) $product->stock_quantity !== (int) ($remote['available_quantity'] ?? 0)) {
                 $report['stock_differences'][] = $sku;
+                $proposedChanges['stock_quantity'] = (int) ($remote['available_quantity'] ?? 0);
             }
             if (! ($remote['is_active'] ?? false)) {
                 $report['inactive'][] = $sku;
@@ -168,6 +176,8 @@ class KiotProductSyncService
             if (! ($remote['sell_directly'] ?? false)) {
                 $report['not_sell_directly'][] = $sku;
             }
+
+            $report['preview'][] = $this->preview($remote, $product, $proposedChanges);
 
             $remoteUpdatedAt = isset($remote['updated_at']) ? CarbonImmutable::parse($remote['updated_at']) : null;
             if ($remoteUpdatedAt && (! $maxUpdatedAt || $remoteUpdatedAt->greaterThan($maxUpdatedAt))) {
@@ -210,7 +220,31 @@ class KiotProductSyncService
             'total_remote' => 0, 'matched' => 0, 'remote_unmatched_count' => 0,
             'local_unmatched_count' => 0, 'remote_unmatched' => [], 'local_unmatched' => [],
             'price_differences' => [], 'stock_differences' => [], 'inactive' => [],
-            'deleted' => [], 'not_sell_directly' => [],
+            'deleted' => [], 'not_sell_directly' => [], 'preview' => [],
+        ];
+    }
+
+    private function preview(array $remote, ?Product $product, array $proposedChanges): array
+    {
+        $safeRemote = [
+            'sku' => (string) ($remote['sku'] ?? ''),
+            'name' => (string) ($remote['name'] ?? ''),
+            'stock_quantity' => (int) ($remote['stock_quantity'] ?? 0),
+            'available_quantity' => (int) ($remote['available_quantity'] ?? 0),
+            'retail_price' => $remote['retail_price'] ?? null,
+            'updated_at' => $remote['updated_at'] ?? null,
+        ];
+
+        return [
+            'sku' => $safeRemote['sku'],
+            'product_name' => $safeRemote['name'],
+            'provider_stock' => $safeRemote['stock_quantity'],
+            'available_stock' => $safeRemote['available_quantity'],
+            'provider_price' => $safeRemote['retail_price'],
+            'local_match' => $product !== null,
+            'local_product_id' => $product?->id,
+            'checksum' => hash('sha256', json_encode($safeRemote, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+            'proposed_changes' => $proposedChanges,
         ];
     }
 

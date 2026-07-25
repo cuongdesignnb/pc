@@ -24,17 +24,21 @@ class KiotSignatureService
         return hash_hmac('sha256', $this->canonical($method, $path, $timestamp, $nonce, $rawBody), $secret);
     }
 
-    public function headers(string $method, string $path, string $rawBody, ?string $idempotencyKey = null): array
-    {
+    public function headers(
+        KiotRuntimeConfiguration $runtime,
+        string $method,
+        string $path,
+        string $rawBody,
+        ?string $idempotencyKey = null,
+    ): array {
         $timestamp = now()->timestamp;
         $nonce = (string) Str::uuid();
-        $secret = (string) config('integrations.kiot.secret');
 
         $headers = [
-            'X-Integration-Key' => (string) config('integrations.kiot.client_id'),
+            'X-Integration-Key' => (string) $runtime->clientId,
             'X-Timestamp' => (string) $timestamp,
             'X-Nonce' => $nonce,
-            'X-Signature' => $this->sign($method, $path, $timestamp, $nonce, $rawBody, $secret),
+            'X-Signature' => $this->sign($method, $path, $timestamp, $nonce, $rawBody, (string) $runtime->secret),
             'Accept' => 'application/json',
         ];
 

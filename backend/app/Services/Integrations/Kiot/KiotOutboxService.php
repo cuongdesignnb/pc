@@ -27,12 +27,18 @@ class KiotOutboxService
 
     public function __construct(
         private readonly KiotClient $client,
+        private readonly KiotConfigurationResolver $resolver,
         private readonly SepayPaymentService $payments,
     ) {}
 
     public function process(int $eventId): void
     {
-        $event = $this->claim($eventId);
+        $runtime = $this->resolver->resolve();
+        if (! $runtime->orderSyncEnabled) {
+            return;
+        }
+
+        $event = $this->claim($eventId, $runtime->outboxMaxAttempts);
         if (! $event) {
             return;
         }
@@ -46,12 +52,12 @@ class KiotOutboxService
             if ($response->successful()) {
                 $this->markSent($event, $response);
             } else {
-                $this->markFailure($event, $response->errorCode() ?? 'INTERNAL_INTEGRATION_ERROR', $response->errorMessage(), $response->status, $response->body);
+                $this->markFailure($event, $response->errorCode() ?? 'INTERNAL_INTEGRATION_ERROR', $response->errorMessage(), $response->status, $response->body, maxAttempts: $runtime->outboxMaxAttempts);
             }
         } catch (KiotIntegrationException $exception) {
-            $this->markFailure($event, $exception->errorCode, $exception->getMessage(), $exception->httpStatus, $exception->responseBody, $exception->classification);
+            $this->markFailure($event, $exception->errorCode, $exception->getMessage(), $exception->httpStatus, $exception->responseBody, $exception->classification, $runtime->outboxMaxAttempts);
         } catch (Throwable $exception) {
-            $this->markFailure($event, 'INTERNAL_INTEGRATION_ERROR', 'Lỗi tạm thời khi gửi KIOT.', null, null, 'retryable');
+            $this->markFailure($event, 'INTERNAL_INTEGRATION_ERROR', 'Lỗi tạm thời khi gửi KIOT.', null, null, 'retryable', $runtime->outboxMaxAttempts);
             report($exception);
         } finally {
             Log::info('KIOT outbox processed', [
@@ -62,9 +68,9 @@ class KiotOutboxService
         }
     }
 
-    private function claim(int $eventId): ?IntegrationOutboxEvent
+    private function claim(int $eventId, int $maxAttempts): ?IntegrationOutboxEvent
     {
-        return DB::transaction(function () use ($eventId) {
+        return DB::transaction(function () use ($eventId, $maxAttempts) {
             $event = IntegrationOutboxEvent::lockForUpdate()->find($eventId);
             if (! $event || in_array($event->status, ['sent', 'rejected', 'dead_letter', 'cancelled'], true)) {
                 return null;
@@ -78,7 +84,7 @@ class KiotOutboxService
             }
 
             $attempt = $event->attempt_count + 1;
-            if ($attempt > (int) config('integrations.kiot.outbox_max_attempts')) {
+            if ($attempt > $maxAttempts) {
                 $event->update(['status' => 'dead_letter', 'locked_at' => null, 'last_error_code' => 'MAX_ATTEMPTS_EXCEEDED']);
                 Order::whereKey($event->aggregate_id)->update(['kiot_sync_status' => 'failed', 'kiot_sync_error_code' => 'MAX_ATTEMPTS_EXCEEDED']);
 
@@ -128,23 +134,31 @@ class KiotOutboxService
             $this->payments->reconcileOrder($result['order']);
         }
 
-        if (config('integrations.kiot.enabled') && config('integrations.kiot.product_sync_enabled')) {
+        if ($this->resolver->resolve()->productSyncEnabled) {
             SyncKiotProductsBySku::dispatch($result['skus'])->afterCommit();
         }
     }
 
-    private function markFailure(IntegrationOutboxEvent $event, string $code, string $message, ?int $status, ?array $body, ?string $classification = null): void
-    {
+    private function markFailure(
+        IntegrationOutboxEvent $event,
+        string $code,
+        string $message,
+        ?int $status,
+        ?array $body,
+        ?string $classification = null,
+        ?int $maxAttempts = null,
+    ): void {
         $classification ??= $this->classify($code, $status);
-        DB::transaction(function () use ($event, $code, $message, $status, $body, $classification) {
+        $maxAttempts ??= $this->resolver->resolve()->outboxMaxAttempts;
+        DB::transaction(function () use ($event, $code, $message, $status, $body, $classification, $maxAttempts) {
             $locked = IntegrationOutboxEvent::lockForUpdate()->findOrFail($event->id);
             $order = Order::lockForUpdate()->findOrFail($event->aggregate_id);
             $terminal = in_array($classification, ['business_rejection', 'authentication_failure', 'configuration_failure', 'fatal_conflict'], true);
 
-            if ($classification === 'retryable' && $locked->attempt_count < (int) config('integrations.kiot.outbox_max_attempts')) {
+            if ($classification === 'retryable' && $locked->attempt_count < $maxAttempts) {
                 $locked->update([
                     'status' => 'retrying', 'locked_at' => null,
-                    'next_attempt_at' => now()->addSeconds($this->backoffSeconds($locked->attempt_count)),
+                    'next_attempt_at' => now()->addSeconds($this->backoffSeconds($locked->attempt_count))->ceilSecond(),
                     'last_error_code' => $code, 'last_error_message' => $message,
                     'response_status' => $status, 'response_body' => $body,
                 ]);
@@ -200,6 +214,6 @@ class KiotOutboxService
     {
         $factors = [1, 2, 4, 10, 20, 60, 120];
 
-        return (int) config('integrations.kiot.outbox_retry_base_seconds') * ($factors[min($attempt - 1, count($factors) - 1)] ?? 120);
+        return $this->resolver->resolve()->outboxRetryBaseSeconds * ($factors[min($attempt - 1, count($factors) - 1)] ?? 120);
     }
 }

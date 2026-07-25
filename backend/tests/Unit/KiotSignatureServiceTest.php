@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Services\Integrations\Kiot\KiotRuntimeConfiguration;
 use App\Services\Integrations\Kiot\KiotSignatureService;
 use Tests\TestCase;
 
@@ -30,14 +31,24 @@ class KiotSignatureServiceTest extends TestCase
 
     public function test_each_header_set_has_a_fresh_nonce(): void
     {
-        config()->set('integrations.kiot.client_id', 'pc-website');
-        config()->set('integrations.kiot.secret', 'secret');
         $service = new KiotSignatureService;
 
-        $first = $service->headers('GET', '/products', '');
-        $second = $service->headers('GET', '/products', '');
+        $first = $service->headers($this->runtime(), 'GET', '/products', '');
+        $second = $service->headers($this->runtime(), 'GET', '/products', '');
 
         $this->assertNotSame($first['X-Nonce'], $second['X-Nonce']);
         $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $first['X-Signature']);
+    }
+
+    private function runtime(): KiotRuntimeConfiguration
+    {
+        return new KiotRuntimeConfiguration(
+            source: 'database', databaseConnectionId: 1, baseUrl: 'https://kiot.test',
+            clientId: 'pc-website', secret: 'secret', apiVersion: 'v1', enabled: false,
+            productSyncEnabled: false, orderSyncEnabled: false, connectTimeoutSeconds: 1,
+            requestTimeoutSeconds: 2, productSyncLimit: 100, productSyncOverlapSeconds: 120,
+            productStaleAfterMinutes: 15, outboxMaxAttempts: 3, outboxRetryBaseSeconds: 1,
+            configured: true, connected: true, capabilities: [],
+        );
     }
 }

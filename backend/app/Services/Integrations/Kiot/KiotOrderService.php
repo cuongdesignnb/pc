@@ -12,7 +12,10 @@ use Illuminate\Support\Str;
 
 class KiotOrderService
 {
-    public function __construct(private readonly KiotClient $client) {}
+    public function __construct(
+        private readonly KiotClient $client,
+        private readonly KiotConfigurationResolver $resolver,
+    ) {}
 
     public function create(array $data, ?int $userId): array
     {
@@ -20,9 +23,10 @@ class KiotOrderService
             return $this->existingResult($existing, $data['order_access_token'], $userId);
         }
 
-        $enabled = config('integrations.kiot.enabled') && config('integrations.kiot.order_sync_enabled');
+        $runtime = $this->resolver->resolve();
+        $enabled = $runtime->enabled && $runtime->orderSyncEnabled;
         if ($enabled) {
-            $this->client->assertConfigured();
+            $this->client->assertConfigured($runtime);
         }
 
         try {

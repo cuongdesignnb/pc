@@ -8,6 +8,7 @@ return [
         'base_url' => env('KIOT_INTEGRATION_BASE_URL'),
         'client_id' => env('KIOT_INTEGRATION_CLIENT_ID', 'pc-website'),
         'secret' => env('KIOT_INTEGRATION_SECRET'),
+        'api_version' => env('KIOT_API_VERSION', 'v1'),
         'connect_timeout_seconds' => env('KIOT_CONNECT_TIMEOUT_SECONDS', 3),
         'request_timeout_seconds' => env('KIOT_REQUEST_TIMEOUT_SECONDS', 10),
         'product_sync_limit' => env('KIOT_PRODUCT_SYNC_LIMIT', 100),

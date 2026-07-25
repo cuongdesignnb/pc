@@ -50,5 +50,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->dontFlash([
+            'password',
+            'password_confirmation',
+            'pairing_code',
+            'secret',
+        ]);
     })->create();

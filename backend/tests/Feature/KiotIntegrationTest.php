@@ -8,6 +8,7 @@ use App\Jobs\Integrations\Kiot\SyncKiotProductsBySku;
 use App\Models\Cart;
 use App\Models\Category;
 use App\Models\ComponentType;
+use App\Models\IntegrationConnection;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\IntegrationSyncState;
 use App\Models\Order;
@@ -51,6 +52,20 @@ class KiotIntegrationTest extends TestCase
 
     public function test_product_dry_run_is_exact_case_and_does_not_write(): void
     {
+        IntegrationConnection::create([
+            'provider' => 'kiot',
+            'configuration_source' => 'manual',
+            'base_url' => 'https://kiot.test',
+            'client_id' => 'pc-website',
+            'secret_encrypted' => 'test-secret',
+            'secret_fingerprint' => substr(hash('sha256', 'test-secret'), 0, 16),
+            'api_version' => 'v1',
+            'connection_status' => 'connected',
+            'is_enabled' => false,
+            'product_sync_enabled' => false,
+            'order_sync_enabled' => false,
+            'capabilities' => ['products' => true, 'orders' => true],
+        ]);
         $product = $this->product(['sku' => 'CPU-AbC', 'price' => 1000, 'sale_price' => 900, 'cost_price' => 700, 'stock_quantity' => 2]);
         Http::fake(['https://kiot.test/*' => Http::response($this->productList([$this->remote(['sku' => 'cpu-abc'])]), 200)]);
 
