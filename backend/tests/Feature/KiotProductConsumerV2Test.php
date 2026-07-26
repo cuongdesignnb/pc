@@ -73,8 +73,15 @@ class KiotProductConsumerV2Test extends TestCase
 
         $report = app(KiotProductSyncService::class)->sync(dryRun: true, full: true);
 
+        $this->assertSame(1, $report['total_remote']);
         $this->assertSame(1, $report['category_create']);
         $this->assertSame(1, $report['create_candidates']);
+        $this->assertSame(0, $report['update_candidates']);
+        $this->assertSame(0, $report['created']);
+        $this->assertSame(0, $report['updated']);
+        $this->assertCount(1, $report['preview']);
+        $this->assertSame('create', $report['preview'][0]['action']);
+        $this->assertSame(0, $report['errors']);
         $this->assertSame(1, $report['image_downloads']);
         $this->assertSame(0, $imageRequests);
         $this->assertDatabaseCount('categories', 0);
@@ -82,6 +89,29 @@ class KiotProductConsumerV2Test extends TestCase
         $this->assertDatabaseCount('product_images', 0);
         $this->assertDatabaseCount('integration_sync_states', 0);
         $this->assertDatabaseHas('integration_sync_runs', ['id' => $report['run_id'], 'status' => 'completed']);
+    }
+
+    public function test_empty_local_v2_dry_run_classifies_all_eligible_products_as_create_candidates(): void
+    {
+        $products = [
+            $this->canonicalProduct(['id' => 201, 'sku' => 'CREATE-1'], []),
+            $this->canonicalProduct(['id' => 202, 'sku' => 'CREATE-2'], []),
+        ];
+        $this->fakeProvider([$this->category()], $products);
+
+        $report = app(KiotProductSyncService::class)->sync(dryRun: true, full: true);
+
+        $this->assertSame(2, $report['total_remote']);
+        $this->assertSame($report['total_remote'], $report['create_candidates']);
+        $this->assertSame(0, $report['update_candidates']);
+        $this->assertSame(2, $report['remote_unmatched_count']);
+        $this->assertCount(2, $report['preview']);
+        $this->assertSame(['create'], collect($report['preview'])->pluck('action')->unique()->values()->all());
+        $this->assertSame(0, $report['created']);
+        $this->assertSame(0, $report['updated']);
+        $this->assertSame(0, $report['errors']);
+        $this->assertDatabaseCount('categories', 0);
+        $this->assertDatabaseCount('products', 0);
     }
 
     public function test_unmapped_exact_sku_records_a_conflict_without_overwriting_or_creating(): void
