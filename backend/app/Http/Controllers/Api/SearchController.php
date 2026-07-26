@@ -17,7 +17,7 @@ class SearchController extends Controller
             return response()->json(['products' => [], 'posts' => []]);
         }
 
-        $products = Product::sellableOnline()
+        $products = Product::visibleOnStorefront()
             ->where(function ($query) use ($q) {
                 $query->where('name', 'LIKE', "%{$q}%")
                     ->orWhere('sku', 'LIKE', "%{$q}%");

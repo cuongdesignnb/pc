@@ -17,7 +17,7 @@ class ReviewController extends Controller
     public function store(Request $request, string $slug): JsonResponse
     {
         $product = Product::where('slug', $slug)
-            ->sellableOnline()
+            ->visibleOnStorefront()
             ->firstOrFail();
 
         $user = $request->user('sanctum');
