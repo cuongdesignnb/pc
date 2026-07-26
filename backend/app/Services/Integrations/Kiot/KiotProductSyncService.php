@@ -468,6 +468,15 @@ class KiotProductSyncService
                 $attributes['is_featured'] = false;
                 $report['create_candidates']++;
                 $report['remote_unmatched'][] = $sku;
+                if ($dryRun) {
+                    $report['preview'][] = [
+                        'action' => 'create',
+                        'remote_product_id' => $remoteId,
+                        'sku' => $sku,
+                        'local_product_id' => null,
+                        'checksum' => $checksum,
+                    ];
+                }
                 if (! $dryRun) {
                     $product = Product::create($attributes);
                     $report['created']++;
@@ -579,6 +588,7 @@ class KiotProductSyncService
             $report['stock_changes']++;
         }
         $report['preview'][] = [
+            'action' => 'update',
             'remote_product_id' => (int) $remote['id'],
             'sku' => (string) $remote['sku'],
             'local_product_id' => $product->id,

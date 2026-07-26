@@ -76,7 +76,10 @@ class KiotConnectionTestService
             'capabilities' => [
                 'products' => (bool) ($capabilities['products'] ?? false),
                 'orders' => (bool) ($capabilities['orders'] ?? false),
+                'categories' => (bool) ($capabilities['categories'] ?? false),
+                'product_images' => (bool) ($capabilities['product_images'] ?? false),
                 'price_books' => (bool) ($capabilities['price_books'] ?? false),
+                'repair_status' => (bool) ($capabilities['repair_status'] ?? false),
                 'google_sheets' => (bool) ($capabilities['google_sheets'] ?? false),
             ],
         ];

@@ -6,6 +6,7 @@ use App\Models\IntegrationConnection;
 use App\Models\IntegrationConnectionEvent;
 use App\Models\User;
 use App\Services\Integrations\Kiot\KiotConfigurationResolver;
+use App\Services\Integrations\Kiot\KiotConnectionTestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -104,6 +105,49 @@ class KiotConnectionWizardTest extends TestCase
             ->assertOk()
             ->assertDontSee('paired-secret')
             ->assertDontSee('one-time-code');
+    }
+
+    public function test_connection_test_stores_all_kiot_v2_capabilities(): void
+    {
+        $connection = $this->connectedConnection();
+        $capabilities = [
+            'products' => true,
+            'orders' => true,
+            'categories' => true,
+            'product_images' => true,
+            'price_books' => true,
+            'repair_status' => true,
+            'google_sheets' => false,
+        ];
+        $this->fakeSuccessfulConnection($capabilities);
+
+        $result = app(KiotConnectionTestService::class)->test();
+
+        $this->assertTrue($result['success']);
+        $this->assertSame($capabilities, $result['capabilities']);
+        $this->assertEquals($capabilities, $connection->fresh()->capabilities);
+        $this->assertEquals($capabilities, app(KiotConfigurationResolver::class)->resolve()->capabilities);
+    }
+
+    public function test_connection_test_preserves_false_kiot_v2_capabilities(): void
+    {
+        $connection = $this->connectedConnection();
+        $capabilities = [
+            'products' => true,
+            'orders' => true,
+            'categories' => false,
+            'product_images' => false,
+            'price_books' => false,
+            'repair_status' => false,
+            'google_sheets' => false,
+        ];
+        $this->fakeSuccessfulConnection($capabilities);
+
+        $result = app(KiotConnectionTestService::class)->test();
+
+        $this->assertTrue($result['success']);
+        $this->assertSame($capabilities, $result['capabilities']);
+        $this->assertEquals($capabilities, $connection->fresh()->capabilities);
     }
 
     #[DataProvider('pairingErrors')]
@@ -311,5 +355,17 @@ class KiotConnectionWizardTest extends TestCase
             'order_sync_enabled' => false,
             'capabilities' => ['products' => true, 'orders' => true],
         ]);
+    }
+
+    private function fakeSuccessfulConnection(array $capabilities): void
+    {
+        Http::fake(['https://kiot.test/*' => Http::response([
+            'status' => 'ok',
+            'provider' => 'kiot',
+            'api_version' => 'v1',
+            'server_time' => '2026-07-26T08:00:00Z',
+            'client_id' => 'pc-website',
+            'capabilities' => $capabilities,
+        ])]);
     }
 }
