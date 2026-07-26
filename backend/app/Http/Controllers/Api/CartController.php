@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
+use App\Services\Catalog\ProductPurchasabilityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,7 +32,7 @@ class CartController extends Controller
     /**
      * Add item to cart
      */
-    public function addItem(Request $request): JsonResponse
+    public function addItem(Request $request, ProductPurchasabilityService $purchasability): JsonResponse
     {
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
@@ -41,7 +42,7 @@ class CartController extends Controller
         $cart = $this->getOrCreateCart($request);
         $product = Product::findOrFail($validated['product_id']);
 
-        if (! $product->isSellableOnline() || $product->stock_quantity < $validated['quantity']) {
+        if (! $purchasability->isPurchasable($product, (int) $validated['quantity'])) {
             return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
         }
 
@@ -56,7 +57,7 @@ class CartController extends Controller
             $cart->items()->create([
                 'product_id' => $product->id,
                 'quantity' => $validated['quantity'],
-                'price' => $product->sale_price ?? $product->price,
+                'price' => $purchasability->unitPrice($product),
             ]);
         }
 
@@ -72,14 +73,14 @@ class CartController extends Controller
     /**
      * Update cart item quantity
      */
-    public function updateItem(Request $request, CartItem $cartItem): JsonResponse
+    public function updateItem(Request $request, CartItem $cartItem, ProductPurchasabilityService $purchasability): JsonResponse
     {
         $validated = $request->validate([
             'quantity' => 'required|integer|min:1',
         ]);
 
         $product = $cartItem->product;
-        if (! $product->isSellableOnline() || $product->stock_quantity < $validated['quantity']) {
+        if (! $purchasability->isPurchasable($product, (int) $validated['quantity'])) {
             return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
         }
         $cartItem->update(['quantity' => $validated['quantity']]);

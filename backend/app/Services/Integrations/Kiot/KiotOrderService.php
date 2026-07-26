@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\Catalog\ProductPurchasabilityService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -15,6 +16,7 @@ class KiotOrderService
     public function __construct(
         private readonly KiotClient $client,
         private readonly KiotConfigurationResolver $resolver,
+        private readonly ProductPurchasabilityService $purchasability,
     ) {}
 
     public function create(array $data, ?int $userId): array
@@ -43,7 +45,7 @@ class KiotOrderService
 
                 foreach ($requested as $productId => $quantity) {
                     $product = $products->get($productId);
-                    if (! $product || ! $product->isSellableOnline() || $product->stock_quantity < $quantity) {
+                    if (! $product || ! $this->purchasability->isPurchasable($product, (int) $quantity)) {
                         throw new KiotIntegrationException(
                             'INSUFFICIENT_AVAILABLE_STOCK',
                             $product ? "Sản phẩm {$product->name} không đủ số lượng khả dụng." : 'Sản phẩm không tồn tại.',
@@ -51,7 +53,7 @@ class KiotOrderService
                             422,
                         );
                     }
-                    $unitPrice = (int) ($product->sale_price ?? $product->price);
+                    $unitPrice = $this->purchasability->unitPrice($product);
                     $lineTotal = $unitPrice * (int) $quantity;
                     $subtotal += $lineTotal;
                     $weight += (int) ($product->weight ?? 0) * (int) $quantity;

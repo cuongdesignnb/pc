@@ -18,7 +18,7 @@ class ProductController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Product::with(['category', 'brand', 'images'])
-            ->sellableOnline();
+            ->visibleOnStorefront();
 
         // Search
         if ($request->search) {
@@ -83,7 +83,7 @@ class ProductController extends Controller
     public function featured(): JsonResponse
     {
         $products = Product::with(['category', 'brand', 'images'])
-            ->sellableOnline()
+            ->visibleOnStorefront()
             ->where('is_featured', true)
             ->limit(8)
             ->get();
@@ -107,7 +107,7 @@ class ProductController extends Controller
                 ->with(['user:id,name']),
         ])
             ->where('slug', $slug)
-            ->sellableOnline()
+            ->visibleOnStorefront()
             ->firstOrFail();
 
         // Append parsed specifications
@@ -117,7 +117,7 @@ class ProductController extends Controller
         $related = Product::with(['images'])
             ->where('category_id', $product->category_id)
             ->where('id', '!=', $product->id)
-            ->sellableOnline()
+            ->visibleOnStorefront()
             ->limit(4)
             ->get();
 

@@ -31,6 +31,26 @@ class KiotClient
         );
     }
 
+    public function categories(array $query = [], bool $requireProductSync = true): KiotResponse
+    {
+        return $this->request(
+            'GET',
+            self::BASE_PATH.'/categories',
+            $query,
+            guard: $requireProductSync ? 'product' : 'connected',
+        );
+    }
+
+    public function priceBooks(array $query = [], bool $requireProductSync = true): KiotResponse
+    {
+        return $this->request(
+            'GET',
+            self::BASE_PATH.'/price-books',
+            $query,
+            guard: $requireProductSync ? 'product' : 'connected',
+        );
+    }
+
     public function product(string $sku, bool $requireProductSync = true): KiotResponse
     {
         return $this->request(

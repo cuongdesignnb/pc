@@ -148,6 +148,8 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
         Route::post('integrations/kiot/test-one', [KiotIntegrationController::class, 'testSku'])->name('integrations.kiot.test-one');
         Route::post('integrations/kiot/sync-one', [KiotIntegrationController::class, 'syncOne'])->name('integrations.kiot.sync-one');
         Route::post('integrations/kiot/sync', [KiotIntegrationController::class, 'sync'])->name('integrations.kiot.sync');
+        Route::post('integrations/kiot/incremental', [KiotIntegrationController::class, 'incremental'])->name('integrations.kiot.incremental');
+        Route::get('integrations/kiot/runs/{run}', [KiotIntegrationController::class, 'showRun'])->name('integrations.kiot.runs.show');
         Route::post('integrations/kiot/retry', [KiotIntegrationController::class, 'retry'])->name('integrations.kiot.retry');
         Route::post('integrations/kiot/events/{event}/retry', [KiotIntegrationController::class, 'retryEvent'])->name('integrations.kiot.events.retry');
     });

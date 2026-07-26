@@ -9,10 +9,20 @@ class ProductImage extends Model
 {
     protected $fillable = [
         'product_id',
+        'provider',
+        'remote_image_id',
         'url',
+        'source_url',
+        'storage_path',
+        'checksum',
+        'mime_type',
+        'file_size',
+        'width',
+        'height',
         'alt_text',
         'sort_order',
         'is_primary',
+        'synced_at',
     ];
 
     protected $appends = ['alt'];
@@ -22,6 +32,11 @@ class ProductImage extends Model
     protected $casts = [
         'sort_order' => 'integer',
         'is_primary' => 'boolean',
+        'remote_image_id' => 'integer',
+        'file_size' => 'integer',
+        'width' => 'integer',
+        'height' => 'integer',
+        'synced_at' => 'datetime',
     ];
 
     public function getAltAttribute(): ?string

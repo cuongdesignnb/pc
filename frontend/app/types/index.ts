@@ -7,6 +7,9 @@ export interface Product {
   price: number
   sale_price: number | null
   quantity: number
+  is_purchasable: boolean
+  availability_label: string
+  kiot_availability_status?: 'available' | 'repairing' | 'reserved' | 'sold' | 'inactive' | 'deleted' | null
   description: string | null
   short_description: string | null
   meta_description?: string | null

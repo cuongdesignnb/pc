@@ -7,7 +7,7 @@ const loading = ref(true)
 const accessDenied = ref(false)
 const orderAccessToken = ref('')
 
-const orderHeaders = () => orderAccessToken.value
+const orderHeaders = (): Record<string, string> => orderAccessToken.value
   ? { 'X-Order-Access-Token': orderAccessToken.value }
   : {}
 

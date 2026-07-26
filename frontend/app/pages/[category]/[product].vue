@@ -95,7 +95,7 @@ const cart = useCart()
 const toast = useToast()
 
 const addToCart = async () => {
-  if (!product.value) return
+  if (!product.value?.is_purchasable) return
   addingToCart.value = true
   try {
     const success = await cart.addItem(product.value.id, quantity.value)
@@ -378,16 +378,16 @@ onUnmounted(() => {
 
               <!-- Stock status -->
               <div class="mb-5">
-                <div v-if="product.quantity > 0" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
+                <div v-if="product.is_purchasable" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
                   <span class="relative flex h-2.5 w-2.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  <span class="text-sm font-medium text-emerald-700">Còn {{ product.quantity }} sản phẩm</span>
+                  <span class="text-sm font-medium text-emerald-700">{{ product.availability_label }} · {{ product.quantity }} sản phẩm</span>
                 </div>
                 <div v-else class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-50 border border-red-200">
                   <span class="w-2.5 h-2.5 rounded-full bg-red-400"></span>
-                  <span class="text-sm font-medium text-red-600">Hết hàng</span>
+                  <span class="text-sm font-medium text-red-600">{{ product.availability_label }}</span>
                 </div>
               </div>
 
@@ -396,7 +396,7 @@ onUnmounted(() => {
                 <div class="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden">
                   <button 
                     class="px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors disabled:opacity-30"
-                    :disabled="quantity <= 1"
+                    :disabled="!product.is_purchasable || quantity <= 1"
                     @click="quantity--"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"/></svg>
@@ -410,7 +410,7 @@ onUnmounted(() => {
                   >
                   <button 
                     class="px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors disabled:opacity-30"
-                    :disabled="quantity >= product.quantity"
+                    :disabled="!product.is_purchasable || quantity >= product.quantity"
                     @click="quantity++"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
@@ -418,13 +418,13 @@ onUnmounted(() => {
                 </div>
 
                 <button
-                  :disabled="product.quantity === 0 || addingToCart"
+                  :disabled="!product.is_purchasable || addingToCart"
                   :class="[
                     'flex-1 sm:flex-none flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl font-semibold text-white transition-all duration-300 shadow-lg',
                     addedToCart 
                       ? 'bg-emerald-500 shadow-emerald-200'
                       : 'bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 shadow-primary-200 hover:shadow-primary-300 hover:shadow-xl active:scale-[0.98]',
-                    (product.quantity === 0 || addingToCart) && 'opacity-50 cursor-not-allowed !shadow-none'
+                    (!product.is_purchasable || addingToCart) && 'opacity-50 cursor-not-allowed !shadow-none'
                   ]"
                   @click="addToCart"
                 >
@@ -434,7 +434,7 @@ onUnmounted(() => {
                   </svg>
                   <svg v-else-if="addedToCart" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
                   <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"/></svg>
-                  <span>{{ addedToCart ? 'Đã thêm!' : 'Thêm vào giỏ hàng' }}</span>
+                  <span>{{ addedToCart ? 'Đã thêm!' : (product.is_purchasable ? 'Thêm vào giỏ hàng' : product.availability_label) }}</span>
                 </button>
               </div>
 
@@ -939,7 +939,7 @@ onUnmounted(() => {
           <div v-if="(product?.images?.length || 0) > 1" class="absolute bottom-6 left-0 right-0 flex justify-center z-50 px-4 pointer-events-none">
             <div class="flex gap-3 px-4 py-3 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl overflow-x-auto max-w-full [&::-webkit-scrollbar]:hidden pointer-events-auto">
               <button 
-                v-for="(img, idx) in product.images" 
+                v-for="(img, idx) in (product?.images || [])"
                 :key="img.id"
                 @click.stop="selectedImage = idx; modalZoomScale = 1"
                 :class="[

@@ -19,7 +19,7 @@ class CategoryController extends Controller
     {
         $categories = Category::with('children')
             ->whereNull('parent_id')
-            ->where('is_active', true)
+            ->visibleOnStorefront()
             ->orderBy('sort_order')
             ->get();
 
@@ -32,10 +32,10 @@ class CategoryController extends Controller
     public function homepageSections(): JsonResponse
     {
         $parents = Category::with(['children' => function ($q) {
-            $q->where('is_active', true)->orderBy('sort_order');
+            $q->visibleOnStorefront()->orderBy('sort_order');
         }])
             ->whereNull('parent_id')
-            ->where('is_active', true)
+            ->visibleOnStorefront()
             ->orderBy('sort_order')
             ->get();
 
@@ -49,7 +49,7 @@ class CategoryController extends Controller
 
             // Count products
             $productCount = Product::whereIn('category_id', $catIds)
-                ->sellableOnline()
+                ->visibleOnStorefront()
                 ->count();
 
             if ($productCount === 0) {
@@ -59,7 +59,7 @@ class CategoryController extends Controller
             // Get sample products (newest 8)
             $products = Product::with(['category', 'brand', 'images'])
                 ->whereIn('category_id', $catIds)
-                ->sellableOnline()
+                ->visibleOnStorefront()
                 ->orderByDesc('is_featured')
                 ->orderByDesc('created_at')
                 ->limit(8)
@@ -94,10 +94,10 @@ class CategoryController extends Controller
     public function show(string $slug, Request $request): JsonResponse
     {
         $category = Category::with(['children' => function ($q) {
-            $q->where('is_active', true)->orderBy('sort_order');
+            $q->visibleOnStorefront()->orderBy('sort_order');
         }, 'parent'])
             ->where('slug', $slug)
-            ->where('is_active', true)
+            ->visibleOnStorefront()
             ->firstOrFail();
 
         // Collect all category IDs (self + children)
@@ -128,7 +128,7 @@ class CategoryController extends Controller
         // ---- Build product query with filters ----
         $query = Product::with(['category', 'brand', 'images'])
             ->whereIn('category_id', $catIdsArr)
-            ->sellableOnline();
+            ->visibleOnStorefront();
 
         // Sub-category filter
         if ($request->filled('sub_category')) {

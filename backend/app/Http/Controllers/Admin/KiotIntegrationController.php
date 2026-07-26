@@ -10,6 +10,8 @@ use App\Jobs\Integrations\Kiot\SyncKiotProductsBySku;
 use App\Models\IntegrationConnection;
 use App\Models\IntegrationConnectionEvent;
 use App\Models\IntegrationOutboxEvent;
+use App\Models\IntegrationSyncConflict;
+use App\Models\IntegrationSyncRun;
 use App\Models\IntegrationSyncState;
 use App\Models\Order;
 use App\Models\Product;
@@ -44,6 +46,10 @@ class KiotIntegrationController extends Controller
             : null;
         $environment = $this->resolver->environmentBootstrap();
         $databaseHistory = $this->resolver->hasDatabaseConfigurationHistory();
+        $latestRun = IntegrationSyncRun::query()
+            ->where(['provider' => 'kiot', 'resource' => 'products'])
+            ->latest('id')
+            ->first();
 
         return Inertia::render('Admin/Integrations/Kiot', [
             'configuration' => [
@@ -69,6 +75,20 @@ class KiotIntegrationController extends Controller
                 'website_url' => rtrim((string) config('app.url'), '/'),
             ],
             'syncState' => IntegrationSyncState::where(['integration' => 'kiot', 'resource' => 'products'])->first(),
+            'syncRuns' => IntegrationSyncRun::query()
+                ->where(['provider' => 'kiot', 'resource' => 'products'])
+                ->with('requester:id,name,email')
+                ->latest('id')
+                ->limit(25)
+                ->get(),
+            'syncConflicts' => IntegrationSyncConflict::query()
+                ->where(['provider' => 'kiot', 'resource' => 'products', 'status' => 'open'])
+                ->with('product:id,name,sku')
+                ->latest('id')
+                ->limit(25)
+                ->get(),
+            'selectedPriceBook' => data_get($latestRun?->totals_json, 'selected_price_book'),
+            'nextScheduledRun' => $runtime->productSyncEnabled ? now()->addMinutes(5)->toIso8601String() : null,
             'counts' => [
                 'product_errors' => Product::whereNotNull('kiot_sync_error_code')->count(),
                 'products_stale' => Product::where('inventory_source', 'kiot')
@@ -187,10 +207,16 @@ class KiotIntegrationController extends Controller
         } catch (KiotIntegrationException $exception) {
             return $this->domainError($exception);
         }
-        SyncKiotProducts::dispatch(full: true, dryRun: true);
+        $run = $this->createRun('dry-run', $request);
+        SyncKiotProducts::dispatch(
+            full: true,
+            dryRun: true,
+            runId: $run->id,
+            requestedBy: $request->user()?->id,
+        );
         $this->recordOperation($runtime->databaseConnectionId, 'product.dry_run_requested', $request);
 
-        return back()->with('success', 'Đã đưa product dry-run vào hàng đợi.');
+        return back()->with('success', "Đã đưa product dry-run #{$run->id} vào hàng đợi.");
     }
 
     public function testSku(Request $request, KiotProductSyncService $service): RedirectResponse
@@ -199,7 +225,7 @@ class KiotIntegrationController extends Controller
 
         try {
             $runtime = $this->client->assertConnected();
-            $report = $service->sync(dryRun: true, sku: $data['sku']);
+            $report = $service->sync(dryRun: true, sku: $data['sku'], requestedBy: $request->user()?->id);
             $this->recordOperation($runtime->databaseConnectionId, 'product.targeted_test_requested', $request, ['sku' => $data['sku']]);
 
             return back()->with('success', 'Đã kiểm tra SKU mà không ghi dữ liệu.')
@@ -218,7 +244,7 @@ class KiotIntegrationController extends Controller
         } catch (KiotIntegrationException $exception) {
             return $this->domainError($exception);
         }
-        SyncKiotProductsBySku::dispatch([$data['sku']]);
+        SyncKiotProductsBySku::dispatch([$data['sku']], requestedBy: $request->user()?->id);
         $this->recordOperation($runtime->databaseConnectionId, 'product.targeted_sync_requested', $request, ['sku' => $data['sku']]);
 
         return back()->with('success', 'Đã đưa SKU vào hàng đợi đồng bộ.');
@@ -231,10 +257,40 @@ class KiotIntegrationController extends Controller
         } catch (KiotIntegrationException $exception) {
             return $this->domainError($exception);
         }
-        SyncKiotProducts::dispatch(full: true);
+        $run = $this->createRun('full', $request);
+        SyncKiotProducts::dispatch(full: true, runId: $run->id, requestedBy: $request->user()?->id);
         $this->recordOperation($runtime->databaseConnectionId, 'product.full_sync_requested', $request);
 
-        return back()->with('success', 'Đã đưa product sync vào hàng đợi.');
+        return back()->with('success', "Đã đưa full product sync #{$run->id} vào hàng đợi.");
+    }
+
+    public function incremental(Request $request): RedirectResponse
+    {
+        try {
+            $runtime = $this->client->assertProductSyncEnabled();
+        } catch (KiotIntegrationException $exception) {
+            return $this->domainError($exception);
+        }
+        $run = $this->createRun('incremental', $request);
+        SyncKiotProducts::dispatch(full: false, runId: $run->id, requestedBy: $request->user()?->id);
+        $this->recordOperation($runtime->databaseConnectionId, 'product.incremental_sync_requested', $request);
+
+        return back()->with('success', "Đã đưa incremental product sync #{$run->id} vào hàng đợi.");
+    }
+
+    public function showRun(IntegrationSyncRun $run): Response
+    {
+        abort_unless($run->provider === 'kiot' && $run->resource === 'products', 404);
+
+        return Inertia::render('Admin/Integrations/KiotRun', [
+            'run' => $run->load('requester:id,name,email'),
+            'conflicts' => IntegrationSyncConflict::query()
+                ->where(['provider' => 'kiot', 'resource' => 'products'])
+                ->whereBetween('created_at', [$run->created_at, $run->completed_at ?? now()])
+                ->with('product:id,name,sku')
+                ->latest('id')
+                ->get(),
+        ]);
     }
 
     public function retry(Request $request): RedirectResponse
@@ -312,5 +368,16 @@ class KiotIntegrationController extends Controller
         }
 
         $this->audit->record($connection, $event, $request->user(), $metadata, $request);
+    }
+
+    private function createRun(string $mode, Request $request): IntegrationSyncRun
+    {
+        return IntegrationSyncRun::create([
+            'provider' => 'kiot',
+            'resource' => 'products',
+            'mode' => $mode,
+            'status' => 'queued',
+            'requested_by' => $request->user()?->id,
+        ]);
     }
 }

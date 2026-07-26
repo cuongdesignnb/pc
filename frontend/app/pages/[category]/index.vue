@@ -471,7 +471,7 @@ useSeoMeta({
             <NuxtLink
               v-for="product in products"
               :key="product.id"
-              :to="`/${category.slug}/${product.slug}`"
+              :to="`/${category?.slug}/${product.slug}`"
               class="bg-white rounded-xl overflow-hidden border border-gray-100 hover:shadow-lg hover:border-primary-200 transition-all group"
             >
               <div class="relative aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
@@ -503,7 +503,7 @@ useSeoMeta({
             <NuxtLink
               v-for="product in products"
               :key="product.id"
-              :to="`/${category.slug}/${product.slug}`"
+              :to="`/${category?.slug}/${product.slug}`"
               class="bg-white rounded-xl border border-gray-100 hover:shadow-md hover:border-primary-200 transition-all flex overflow-hidden group"
             >
               <div class="w-32 h-32 md:w-40 md:h-40 bg-gray-50 flex items-center justify-center shrink-0 overflow-hidden">

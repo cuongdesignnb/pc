@@ -1,11 +1,15 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { router, useForm, usePage } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
 const props = defineProps({
     configuration: Object,
     syncState: Object,
+    syncRuns: Array,
+    syncConflicts: Array,
+    selectedPriceBook: Object,
+    nextScheduledRun: String,
     counts: Object,
     recentErrors: Array,
     history: Array,
@@ -183,7 +187,10 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                         <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Products</dt><dd class="mt-1 text-slate-200">{{ capabilityLabel(configuration.capabilities?.products) }}</dd></div>
                         <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Orders</dt><dd class="mt-1 text-slate-200">{{ capabilityLabel(configuration.capabilities?.orders) }}</dd></div>
-                        <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Price books</dt><dd class="mt-1 text-slate-400">Chưa hỗ trợ trong Phase hiện tại</dd></div>
+                        <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Categories</dt><dd class="mt-1 text-slate-200">{{ capabilityLabel(configuration.capabilities?.categories) }}</dd></div>
+                        <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Product images</dt><dd class="mt-1 text-slate-200">{{ capabilityLabel(configuration.capabilities?.product_images) }}</dd></div>
+                        <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Price books</dt><dd class="mt-1 text-slate-200">{{ capabilityLabel(configuration.capabilities?.price_books) }}</dd></div>
+                        <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Repair status</dt><dd class="mt-1 text-slate-200">{{ capabilityLabel(configuration.capabilities?.repair_status) }}</dd></div>
                         <div class="rounded-md bg-slate-950/60 p-3"><dt class="text-slate-500">Google Sheets</dt><dd class="mt-1 text-slate-400">Chưa hỗ trợ trong Phase hiện tại</dd></div>
                     </dl>
                 </section>
@@ -213,6 +220,8 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <div><dt class="text-slate-500">Unmatched</dt><dd class="mt-1 text-slate-200">{{ syncState?.items_unmatched || 0 }}</dd></div>
                     <div><dt class="text-slate-500">Product lỗi</dt><dd class="mt-1 text-slate-200">{{ counts.product_errors }}</dd></div>
                     <div><dt class="text-slate-500">Dữ liệu tồn đã cũ</dt><dd class="mt-1" :class="counts.products_stale ? 'text-amber-300' : 'text-emerald-300'">{{ counts.products_stale }}</dd></div>
+                    <div><dt class="text-slate-500">Bảng giá đã chọn</dt><dd class="mt-1 text-slate-200">{{ selectedPriceBook?.name || selectedPriceBook?.code || 'Chưa ghi nhận' }}</dd></div>
+                    <div><dt class="text-slate-500">Lần chạy tự động kế tiếp</dt><dd class="mt-1 text-slate-200">{{ formatTime(nextScheduledRun) }}</dd></div>
                 </dl>
                 <p v-if="counts.products_stale" class="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
                     Storefront vẫn đọc cache gần nhất; KIOT tiếp tục là cổng kiểm tra tồn cuối khi checkout. Hãy kiểm tra product sync trước khi bật integration.
@@ -226,6 +235,7 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                 <div class="mt-3 flex flex-wrap gap-3">
                     <button :disabled="!canPilot" @click="submit('/admin/integrations/kiot/dry-run')" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">Product dry-run</button>
                     <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/sync')" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Full product sync</button>
+                    <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/incremental')" class="rounded-lg border border-cyan-500/40 px-4 py-2 text-sm text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40">Incremental sync</button>
                     <button :disabled="!canOrderRetry" @click="submit('/admin/integrations/kiot/retry')" class="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300 disabled:cursor-not-allowed disabled:opacity-40">Retry đơn lỗi</button>
                 </div>
                 <dl v-if="skuPreview" class="mt-5 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -243,6 +253,40 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <button :disabled="!disconnectForm.confirm_disconnect || disconnectForm.processing" @click="disconnectForm.post('/admin/integrations/kiot/disconnect', { preserveScroll: true, onFinish: () => disconnectForm.reset() })" class="mt-3 rounded-lg border border-red-500/40 px-4 py-2 text-sm text-red-300 disabled:cursor-not-allowed disabled:opacity-40">Ngắt kết nối</button>
                 </div>
             </div>
+
+            <section class="overflow-hidden rounded-lg border border-slate-800 bg-slate-900" aria-labelledby="sync-runs-title">
+                <div class="border-b border-slate-800 px-5 py-4">
+                    <h4 id="sync-runs-title" class="font-semibold text-slate-200">Lịch sử product sync</h4>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-800 text-sm">
+                        <thead class="bg-slate-800/40 text-left text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Run</th><th class="px-4 py-3">Mode</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Progress</th><th class="px-4 py-3">Kết quả</th><th class="px-4 py-3"></th></tr></thead>
+                        <tbody class="divide-y divide-slate-800">
+                            <tr v-for="run in syncRuns" :key="run.id">
+                                <td class="px-4 py-3 text-slate-300">#{{ run.id }}<p class="text-xs text-slate-500">{{ formatTime(run.created_at) }}</p></td>
+                                <td class="px-4 py-3 font-mono text-xs text-cyan-300">{{ run.mode }}</td>
+                                <td class="px-4 py-3 text-slate-300">{{ run.status }}</td>
+                                <td class="px-4 py-3 text-slate-400">{{ run.pages_processed }} trang · {{ run.remote_processed }} remote</td>
+                                <td class="px-4 py-3 text-slate-400">+{{ run.created }} / ~{{ run.updated }} / ={{ run.unchanged }} · ảnh {{ run.images_downloaded }}</td>
+                                <td class="px-4 py-3 text-right"><Link :href="`/admin/integrations/kiot/runs/${run.id}`" class="text-cyan-400">Chi tiết</Link></td>
+                            </tr>
+                            <tr v-if="!syncRuns?.length"><td colspan="6" class="px-4 py-8 text-center text-slate-500">Chưa có sync run.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section v-if="syncConflicts?.length" class="overflow-hidden rounded-lg border border-amber-500/30 bg-slate-900" aria-labelledby="sync-conflicts-title">
+                <div class="border-b border-slate-800 px-5 py-4"><h4 id="sync-conflicts-title" class="font-semibold text-amber-200">SKU cần operator xử lý</h4></div>
+                <div class="divide-y divide-slate-800 text-sm">
+                    <div v-for="conflict in syncConflicts" :key="conflict.id" class="grid gap-2 px-5 py-3 md:grid-cols-4">
+                        <span class="font-mono text-amber-300">{{ conflict.sku }}</span>
+                        <span class="text-slate-400">Remote #{{ conflict.remote_id }}</span>
+                        <span class="text-slate-300">{{ conflict.product?.name || 'Không có local product' }}</span>
+                        <span class="text-slate-500">{{ conflict.conflict_type }}</span>
+                    </div>
+                </div>
+            </section>
 
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div v-for="(value, key) in { 'Đơn đang chờ': counts.orders_pending, 'Đơn retry': counts.orders_retrying, 'Đơn bị từ chối': counts.orders_rejected, 'Dead letter': counts.dead_letter }" :key="key" class="rounded-lg border border-slate-800 bg-slate-900 p-4">
