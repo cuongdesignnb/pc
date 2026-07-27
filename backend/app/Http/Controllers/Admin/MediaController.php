@@ -134,7 +134,7 @@ class MediaController extends Controller
             }
         }
 
-        if ($request->wantsJson() || $request->ajax()) {
+        if (! $request->headers->has('X-Inertia') && ($request->wantsJson() || $request->ajax())) {
             return response()->json(['files' => $uploaded], 201);
         }
 
