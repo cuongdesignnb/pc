@@ -80,8 +80,11 @@ class KiotIntegrationTest extends TestCase
 
     public function test_full_product_sync_follows_cursor_and_preserves_website_fields(): void
     {
-        $first = $this->product(['sku' => 'CPU-1', 'price' => 1000, 'sale_price' => 900, 'cost_price' => 700, 'slug' => 'marketing-slug']);
-        $second = $this->product(['sku' => 'CPU-2', 'price' => 1000]);
+        $first = $this->product([
+            'sku' => 'CPU-1', 'price' => 1000, 'sale_price' => 900, 'cost_price' => 700, 'slug' => 'marketing-slug',
+            'provider' => 'kiot', 'remote_product_id' => 1001,
+        ]);
+        $second = $this->product(['sku' => 'CPU-2', 'price' => 1000, 'provider' => 'kiot', 'remote_product_id' => 1002]);
         $calls = 0;
         Http::fake(function (Request $request) use (&$calls) {
             $calls++;
@@ -90,7 +93,7 @@ class KiotIntegrationTest extends TestCase
 
             return $calls === 1
                 ? Http::response($this->productList([$this->remote(['sku' => 'CPU-1'])], 'next-page'), 200)
-                : Http::response($this->productList([$this->remote(['sku' => 'CPU-2', 'available_quantity' => 3])]), 200);
+                : Http::response($this->productList([$this->remote(['id' => 1002, 'sku' => 'CPU-2', 'available_quantity' => 3])]), 200);
         });
 
         $report = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
@@ -111,7 +114,7 @@ class KiotIntegrationTest extends TestCase
 
     public function test_provider_available_quantity_is_preserved_when_product_is_not_sellable(): void
     {
-        $product = $this->product(['sku' => 'CPU-1']);
+        $product = $this->product(['sku' => 'CPU-1', 'provider' => 'kiot', 'remote_product_id' => 1001]);
         Http::fake(['https://kiot.test/*' => Http::response($this->productList([
             $this->remote(['sell_directly' => false, 'available_quantity' => 4]),
         ]), 200)]);
@@ -144,7 +147,7 @@ class KiotIntegrationTest extends TestCase
 
     public function test_failed_later_cursor_page_does_not_advance_the_product_watermark(): void
     {
-        $product = $this->product(['sku' => 'CPU-1']);
+        $product = $this->product(['sku' => 'CPU-1', 'provider' => 'kiot', 'remote_product_id' => 1001, 'inventory_source' => 'kiot']);
         IntegrationSyncState::create([
             'integration' => 'kiot',
             'resource' => 'products',
@@ -174,7 +177,7 @@ class KiotIntegrationTest extends TestCase
 
     public function test_targeted_product_request_uses_a_url_encoded_exact_case_sku(): void
     {
-        $product = $this->product(['sku' => 'SKU A/B']);
+        $product = $this->product(['sku' => 'SKU A/B', 'provider' => 'kiot', 'remote_product_id' => 1001]);
         Http::fake(function (Request $request) {
             $this->assertStringContainsString('/products/SKU%20A%2FB', $request->url());
 
@@ -188,22 +191,25 @@ class KiotIntegrationTest extends TestCase
 
     public function test_deleted_product_is_not_sellable_and_no_remote_product_is_created(): void
     {
-        $product = $this->product(['sku' => 'CPU-1', 'stock_quantity' => 5]);
+        $product = $this->product(['sku' => 'CPU-1', 'stock_quantity' => 5, 'provider' => 'kiot', 'remote_product_id' => 1001]);
         Http::fake(['https://kiot.test/*' => Http::response($this->productList([
             $this->remote(['sku' => 'CPU-1', 'sync_status' => 'deleted']),
-            $this->remote(['sku' => 'REMOTE-ONLY']),
+            $this->remote(['id' => 1002, 'sku' => 'REMOTE-ONLY']),
         ]), 200)]);
 
         app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
 
         $this->assertFalse($product->fresh()->kiot_sellable);
-        $this->assertSame(0, $product->fresh()->stock_quantity);
+        $this->assertSame(5, $product->fresh()->stock_quantity);
         $this->assertDatabaseMissing('products', ['sku' => 'REMOTE-ONLY']);
     }
 
-    public function test_targeted_refresh_marks_missing_kiot_sku_unmatched(): void
+    public function test_targeted_refresh_preserves_missing_kiot_product(): void
     {
-        $product = $this->product(['sku' => 'MISSING-1', 'inventory_source' => 'kiot', 'kiot_sellable' => true, 'stock_quantity' => 5]);
+        $product = $this->product([
+            'sku' => 'MISSING-1', 'provider' => 'kiot', 'remote_product_id' => 1001,
+            'inventory_source' => 'kiot', 'kiot_sellable' => true, 'stock_quantity' => 5,
+        ]);
         Http::fake(['https://kiot.test/*' => Http::response([
             'success' => false,
             'error' => ['code' => 'UNKNOWN_SKU', 'message' => 'SKU not found'],
@@ -212,10 +218,10 @@ class KiotIntegrationTest extends TestCase
         app(KiotProductSyncService::class)->sync(dryRun: false, sku: 'MISSING-1');
 
         $product->refresh();
-        $this->assertSame('unmatched', $product->kiot_sync_status);
-        $this->assertSame('UNKNOWN_SKU', $product->kiot_sync_error_code);
-        $this->assertFalse($product->kiot_sellable);
-        $this->assertSame(0, $product->stock_quantity);
+        $this->assertNotSame('unmatched', $product->kiot_sync_status);
+        $this->assertNull($product->kiot_sync_error_code);
+        $this->assertTrue($product->kiot_sellable);
+        $this->assertSame(5, $product->stock_quantity);
     }
 
     public function test_checkout_creates_snapshot_and_outbox_without_decrementing_stock_and_is_idempotent(): void

@@ -308,7 +308,13 @@ class KiotProductConsumerV2Test extends TestCase
                     : Http::response([
                         'success' => true,
                         'data' => [$first],
-                        'meta' => ['next_cursor' => 'page-two', 'has_more' => true],
+                        'meta' => [
+                            'next_cursor' => 'page-two',
+                            'has_more' => true,
+                            'dataset_complete' => false,
+                            'deletion_policy' => 'explicit_tombstone_only',
+                            'missing_products_are_deleted' => false,
+                        ],
                     ], 200);
             }
 
@@ -329,6 +335,176 @@ class KiotProductConsumerV2Test extends TestCase
         ]);
         Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/products')
             && ($request->data()['cursor'] ?? null) === 'page-two');
+    }
+
+    public function test_missing_mapped_and_local_only_products_are_preserved_without_zeroing_stock(): void
+    {
+        $mapped = $this->localProduct([
+            'provider' => 'kiot',
+            'remote_product_id' => 998,
+            'kiot_product_id' => 998,
+            'inventory_source' => 'kiot',
+            'stock_quantity' => 9,
+            'show_on_pc_website' => true,
+            'kiot_sellable' => true,
+        ]);
+        $localOnly = $this->localProduct(['stock_quantity' => 7, 'show_on_pc_website' => true]);
+        $this->fakeProvider([$this->category()], [$this->canonicalProduct(images: [])]);
+
+        $report = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+
+        $this->assertSame(1, $report['missing_preserved']);
+        $this->assertSame(1, $report['local_only_skipped']);
+        $this->assertSame(9, $mapped->fresh()->stock_quantity);
+        $this->assertTrue($mapped->fresh()->show_on_pc_website);
+        $this->assertTrue($mapped->fresh()->kiot_sellable);
+        $this->assertSame(7, $localOnly->fresh()->stock_quantity);
+        $this->assertTrue($localOnly->fresh()->show_on_pc_website);
+    }
+
+    public function test_explicit_tombstone_archives_without_soft_delete_or_zeroing_business_stock(): void
+    {
+        $mapped = $this->localProduct([
+            'provider' => 'kiot',
+            'remote_product_id' => 126,
+            'kiot_product_id' => 126,
+            'inventory_source' => 'kiot',
+            'stock_quantity' => 7,
+            'show_on_pc_website' => true,
+            'kiot_sellable' => true,
+        ]);
+        $tombstone = $this->canonicalProduct([
+            'id' => 126,
+            'sku' => $mapped->sku,
+            'is_active' => false,
+            'sync_status' => 'deleted',
+            'publishing' => ['show_on_pc_website' => false, 'blocked_reason' => 'PRODUCT_DELETED'],
+            'inventory' => ['stock_quantity' => 0, 'reserved_quantity' => 0, 'available_quantity' => 0, 'status' => 'deleted'],
+            'availability' => ['is_available' => false, 'is_under_repair' => false, 'sell_directly' => false],
+        ], []);
+        $this->fakeProvider([$this->category()], [$tombstone]);
+
+        $report = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+
+        $fresh = $mapped->fresh();
+        $this->assertSame(1, $report['remote_tombstones']);
+        $this->assertSame(1, $report['archived']);
+        $this->assertSame(0, $report['deleted']);
+        $this->assertNull($fresh->deleted_at);
+        $this->assertSame(7, $fresh->stock_quantity);
+        $this->assertFalse($fresh->is_active);
+        $this->assertFalse($fresh->show_on_pc_website);
+        $this->assertFalse($fresh->kiot_sellable);
+    }
+
+    public function test_incomplete_dataset_skips_finalization_and_preserves_missing_products(): void
+    {
+        $mapped = $this->localProduct([
+            'provider' => 'kiot',
+            'remote_product_id' => 998,
+            'kiot_product_id' => 998,
+            'inventory_source' => 'kiot',
+            'stock_quantity' => 9,
+            'show_on_pc_website' => true,
+        ]);
+        $this->fakeProvider([$this->category()], [], productMeta: ['dataset_complete' => false]);
+
+        $report = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+
+        $this->assertFalse($report['dataset_complete']);
+        $this->assertSame(1, $report['finalization_skipped']);
+        $this->assertSame(9, $mapped->fresh()->stock_quantity);
+        $this->assertTrue($mapped->fresh()->show_on_pc_website);
+    }
+
+    public function test_repeated_product_cursor_is_blocked_before_products_are_changed(): void
+    {
+        $mapped = $this->localProduct([
+            'provider' => 'kiot',
+            'remote_product_id' => 123,
+            'kiot_product_id' => 123,
+            'inventory_source' => 'kiot',
+            'name' => 'Before repeated cursor',
+        ]);
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/categories') || str_contains($request->url(), '/price-books')) {
+                return Http::response($this->page([]), 200);
+            }
+            if (str_contains($request->url(), '/products')) {
+                return Http::response([
+                    'success' => true,
+                    'data' => [$this->canonicalProduct(['name' => 'Must not be applied'], [])],
+                    'meta' => [
+                        'next_cursor' => 'same-cursor',
+                        'has_more' => true,
+                        'dataset_complete' => false,
+                        'deletion_policy' => 'explicit_tombstone_only',
+                        'missing_products_are_deleted' => false,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['success' => false], 500);
+        });
+
+        try {
+            app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+            $this->fail('Expected repeated cursor protection to abort the sync.');
+        } catch (KiotIntegrationException $exception) {
+            $this->assertSame('PRODUCT_PAGINATION_CURSOR_REPEATED', $exception->errorCode);
+        }
+
+        $this->assertSame('Before repeated cursor', $mapped->fresh()->name);
+    }
+
+    public function test_abnormal_empty_dataset_triggers_safety_guard(): void
+    {
+        $mapped = $this->localProduct([
+            'provider' => 'kiot',
+            'remote_product_id' => 126,
+            'kiot_product_id' => 126,
+            'inventory_source' => 'kiot',
+            'stock_quantity' => 7,
+            'show_on_pc_website' => true,
+            'kiot_sellable' => true,
+        ]);
+        $this->fakeProvider([$this->category()], []);
+
+        $emptyReport = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+
+        $this->assertSame(1, $emptyReport['safety_blocked']);
+        $this->assertSame(1, $emptyReport['finalization_skipped']);
+        $this->assertSame(7, $mapped->fresh()->stock_quantity);
+    }
+
+    public function test_tombstone_threshold_triggers_safety_guard_before_archive(): void
+    {
+        $mapped = $this->localProduct([
+            'provider' => 'kiot',
+            'remote_product_id' => 126,
+            'kiot_product_id' => 126,
+            'inventory_source' => 'kiot',
+            'stock_quantity' => 7,
+            'show_on_pc_website' => true,
+            'kiot_sellable' => true,
+        ]);
+
+        config()->set('integrations.kiot.product_sync_max_tombstones', 0);
+        $tombstone = $this->canonicalProduct([
+            'id' => 126,
+            'sku' => $mapped->sku,
+            'is_active' => false,
+            'sync_status' => 'deleted',
+        ], []);
+        $this->fakeProvider([$this->category()], [$tombstone]);
+
+        $tombstoneReport = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+
+        $this->assertSame(1, $tombstoneReport['remote_tombstones']);
+        $this->assertSame(1, $tombstoneReport['safety_blocked']);
+        $this->assertSame(0, $tombstoneReport['archived']);
+        $this->assertTrue($mapped->fresh()->show_on_pc_website);
+        $this->assertSame(7, $mapped->fresh()->stock_quantity);
     }
 
     private function connection(): IntegrationConnection
@@ -400,9 +576,10 @@ class KiotProductConsumerV2Test extends TestCase
         ?int &$imageRequests = null,
         ?string $imageBody = null,
         string $imageMime = 'image/png',
+        array $productMeta = [],
     ): void {
         $imageBody ??= $this->png;
-        Http::fake(function (Request $request) use ($categories, $products, &$imageRequests, $imageBody, $imageMime) {
+        Http::fake(function (Request $request) use ($categories, $products, &$imageRequests, $imageBody, $imageMime, $productMeta) {
             $url = $request->url();
             if (str_contains($url, '/categories')) {
                 return Http::response($this->page($categories), 200);
@@ -426,16 +603,26 @@ class KiotProductConsumerV2Test extends TestCase
                 return Http::response($imageBody, 200, ['Content-Type' => $imageMime]);
             }
             if (str_contains($url, '/products')) {
-                return Http::response($this->page($products), 200);
+                return Http::response($this->page($products, $productMeta), 200);
             }
 
             return Http::response(['success' => false, 'error' => ['code' => 'UNEXPECTED_REQUEST', 'message' => $url]], 500);
         });
     }
 
-    private function page(array $items): array
+    private function page(array $items, array $meta = []): array
     {
-        return ['success' => true, 'data' => $items, 'meta' => ['next_cursor' => null, 'has_more' => false]];
+        return [
+            'success' => true,
+            'data' => $items,
+            'meta' => array_replace([
+                'next_cursor' => null,
+                'has_more' => false,
+                'dataset_complete' => true,
+                'deletion_policy' => 'explicit_tombstone_only',
+                'missing_products_are_deleted' => false,
+            ], $meta),
+        ];
     }
 
     private function localProduct(array $overrides = []): Product
