@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
@@ -29,6 +29,35 @@ const dragOver = ref(false);
 const uploading = ref(false);
 const uploadProgress = ref(0);
 const uploadFiles = ref([]);
+const uploadPreviewUrls = ref([]);
+
+function revokeUploadPreviews() {
+    uploadPreviewUrls.value.forEach((url) => {
+        if (url) window.URL.revokeObjectURL(url);
+    });
+    uploadPreviewUrls.value = [];
+}
+
+function setUploadFiles(files) {
+    revokeUploadPreviews();
+    uploadFiles.value = files;
+    uploadPreviewUrls.value = files.map((file) =>
+        file.type.startsWith('image/') ? window.URL.createObjectURL(file) : null
+    );
+}
+
+function clearUploadFiles() {
+    revokeUploadPreviews();
+    uploadFiles.value = [];
+}
+
+function closeUploadModal() {
+    if (uploading.value) return;
+    showUploadModal.value = false;
+    clearUploadFiles();
+}
+
+onBeforeUnmount(revokeUploadPreviews);
 
 // ---- Computed ----
 const mediaItems = computed(() => props.media?.data || []);
@@ -116,7 +145,7 @@ function onDrop(e) {
     dragOver.value = false;
     const files = Array.from(e.dataTransfer.files);
     if (files.length) {
-        uploadFiles.value = files;
+        setUploadFiles(files);
         showUploadModal.value = true;
     }
 }
@@ -128,14 +157,17 @@ function triggerFileInput() {
 function onFileSelected(e) {
     const files = Array.from(e.target.files);
     if (files.length) {
-        uploadFiles.value = files;
+        setUploadFiles(files);
         showUploadModal.value = true;
     }
     e.target.value = '';
 }
 
 function removeUploadFile(idx) {
+    const previewUrl = uploadPreviewUrls.value[idx];
+    if (previewUrl) window.URL.revokeObjectURL(previewUrl);
     uploadFiles.value.splice(idx, 1);
+    uploadPreviewUrls.value.splice(idx, 1);
 }
 
 function submitUpload() {
@@ -155,7 +187,7 @@ function submitUpload() {
         onSuccess: () => {
             uploading.value = false;
             showUploadModal.value = false;
-            uploadFiles.value = [];
+            clearUploadFiles();
             selectedItems.value = [];
         },
         onError: () => {
@@ -425,7 +457,7 @@ function isImage(item) {
         <!-- ====== UPLOAD MODAL ====== -->
         <Teleport to="body">
             <div v-if="showUploadModal" class="fixed inset-0 z-[60] flex items-center justify-center">
-                <div class="absolute inset-0 bg-black/50" @click="showUploadModal = false"></div>
+                <div class="absolute inset-0 bg-black/50" @click="closeUploadModal"></div>
                 <div class="relative bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
                     <h3 class="text-lg font-semibold text-slate-200 mb-4">Upload file</h3>
 
@@ -435,7 +467,7 @@ function isImage(item) {
                             class="flex items-center justify-between p-2 bg-slate-800/40 rounded-lg">
                             <div class="flex items-center gap-3 min-w-0">
                                 <div class="w-10 h-10 bg-slate-700 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                    <img v-if="file.type.startsWith('image/')" :src="URL.createObjectURL(file)" class="w-full h-full object-cover">
+                                    <img v-if="uploadPreviewUrls[fi]" :src="uploadPreviewUrls[fi]" class="w-full h-full object-cover">
                                     <svg v-else class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                                 </div>
                                 <div class="min-w-0">
@@ -464,7 +496,7 @@ function isImage(item) {
 
                     <!-- Actions -->
                     <div class="flex justify-end gap-3">
-                        <button @click="showUploadModal = false; uploadFiles = []" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg transition-colors">Huỷ</button>
+                        <button @click="closeUploadModal" :disabled="uploading" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg transition-colors disabled:opacity-50">Huỷ</button>
                         <button @click="submitUpload" :disabled="uploading || !uploadFiles.length"
                             class="px-4 py-2 text-sm bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 transition-colors font-medium">
                             {{ uploading ? 'Đang upload...' : `Upload ${uploadFiles.length} file` }}
