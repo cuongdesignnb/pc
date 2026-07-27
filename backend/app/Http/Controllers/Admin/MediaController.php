@@ -28,9 +28,8 @@ class MediaController extends Controller
             match ($request->type) {
                 'image' => $query->where('mime_type', 'like', 'image/%'),
                 'video' => $query->where('mime_type', 'like', 'video/%'),
-                'document' => $query->whereNotIn('mime_type', fn($q) =>
-                    $q->where('mime_type', 'like', 'image/%')
-                      ->orWhere('mime_type', 'like', 'video/%')
+                'document' => $query->whereNotIn('mime_type', fn ($q) => $q->where('mime_type', 'like', 'image/%')
+                    ->orWhere('mime_type', 'like', 'video/%')
                 ),
                 default => null,
             };
@@ -38,7 +37,7 @@ class MediaController extends Controller
 
         // Search by name
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $query->where('name', 'like', '%'.$request->search.'%');
         }
 
         $media = $query->paginate(40)->withQueryString();
@@ -73,7 +72,7 @@ class MediaController extends Controller
             $size = $file->getSize();
 
             // Check if image needs WebP conversion
-            $shouldConvertToWebP = in_array(strtolower($extension), ['jpg', 'jpeg', 'png', 'gif']) 
+            $shouldConvertToWebP = in_array(strtolower($extension), ['jpg', 'jpeg', 'png', 'gif'])
                                    && str_starts_with($mime, 'image/');
 
             // Convert to WebP if applicable
@@ -88,12 +87,12 @@ class MediaController extends Controller
             }
 
             // Generate unique filename
-            $fileName = Str::slug($name) . '-' . Str::random(6) . '.' . $extension;
+            $fileName = Str::slug($name).'-'.Str::random(6).'.'.$extension;
             $storagePath = ltrim($folder, '/');
-            $storagePath = $storagePath === '' ? 'media' : 'media/' . $storagePath;
+            $storagePath = $storagePath === '' ? 'media' : 'media/'.$storagePath;
 
             // Store file
-            $path = $file->storeAs($storagePath, $fileName, 'public');
+            $path = Storage::disk('public')->putFileAs($storagePath, $file, $fileName);
 
             // Get image dimensions
             $width = null;
@@ -139,7 +138,7 @@ class MediaController extends Controller
             return response()->json(['files' => $uploaded], 201);
         }
 
-        return back()->with('success', count($uploaded) . ' file đã được upload.');
+        return back()->with('success', count($uploaded).' file đã được upload.');
     }
 
     /**
@@ -169,7 +168,7 @@ class MediaController extends Controller
     {
         // Delete file from disk
         Storage::disk($medium->disk)->delete($medium->path);
-        Storage::disk($medium->disk)->delete('thumbnails/' . $medium->path);
+        Storage::disk($medium->disk)->delete('thumbnails/'.$medium->path);
 
         $medium->delete();
 
@@ -193,11 +192,11 @@ class MediaController extends Controller
         $items = Media::whereIn('id', $request->ids)->get();
         foreach ($items as $item) {
             Storage::disk($item->disk)->delete($item->path);
-            Storage::disk($item->disk)->delete('thumbnails/' . $item->path);
+            Storage::disk($item->disk)->delete('thumbnails/'.$item->path);
             $item->delete();
         }
 
-        return back()->with('success', count($items) . ' file đã được xoá.');
+        return back()->with('success', count($items).' file đã được xoá.');
     }
 
     /**
@@ -211,12 +210,12 @@ class MediaController extends Controller
         ]);
 
         $parent = $request->input('parent', '/');
-        $folderPath = $parent === '/' ? $request->name : $parent . '/' . $request->name;
+        $folderPath = $parent === '/' ? $request->name : $parent.'/'.$request->name;
 
         // Create dir on disk
-        Storage::disk('public')->makeDirectory('media/' . $folderPath);
+        Storage::disk('public')->makeDirectory('media/'.$folderPath);
 
-        return back()->with('success', 'Thư mục "' . $request->name . '" đã được tạo.');
+        return back()->with('success', 'Thư mục "'.$request->name.'" đã được tạo.');
     }
 
     /**
@@ -233,11 +232,11 @@ class MediaController extends Controller
         }
 
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $query->where('name', 'like', '%'.$request->search.'%');
         }
 
         if ($request->filled('type') && $request->type !== 'image') {
-            $query->where('mime_type', 'like', $request->type . '/%');
+            $query->where('mime_type', 'like', $request->type.'/%');
         }
 
         $paginated = $query->paginate(40)->toArray();
@@ -263,7 +262,7 @@ class MediaController extends Controller
                 default => null,
             };
 
-            if (!$image) {
+            if (! $image) {
                 return null;
             }
 
@@ -272,11 +271,11 @@ class MediaController extends Controller
             imagesavealpha($image, true);
 
             // Create temporary WebP file
-            $tempPath = sys_get_temp_dir() . '/' . uniqid('webp_') . '.webp';
-            
+            $tempPath = sys_get_temp_dir().'/'.uniqid('webp_').'.webp';
+
             // Convert to WebP with quality 85 (good balance between quality and size)
             $success = imagewebp($image, $tempPath, 85);
-            
+
             imagedestroy($image);
 
             return $success ? $tempPath : null;
@@ -292,13 +291,16 @@ class MediaController extends Controller
     {
         try {
             $image = @imagecreatefromstring(file_get_contents($file->getRealPath()));
-            if (!$image) return;
+            if (! $image) {
+                return;
+            }
 
             $origW = imagesx($image);
             $origH = imagesy($image);
 
             if ($origW <= 300) {
                 imagedestroy($image);
+
                 return; // No need for thumbnail if small enough
             }
 
@@ -315,14 +317,14 @@ class MediaController extends Controller
 
             imagecopyresampled($thumb, $image, 0, 0, 0, 0, $newW, $newH, $origW, $origH);
 
-            $thumbDir = storage_path('app/public/thumbnails/' . $storagePath);
-            if (!is_dir($thumbDir)) {
+            $thumbDir = storage_path('app/public/thumbnails/'.$storagePath);
+            if (! is_dir($thumbDir)) {
                 mkdir($thumbDir, 0755, true);
             }
 
             // Always save thumbnails as WebP for optimal size
-            $thumbFileName = pathinfo($fileName, PATHINFO_FILENAME) . '.webp';
-            $thumbPath = $thumbDir . '/' . $thumbFileName;
+            $thumbFileName = pathinfo($fileName, PATHINFO_FILENAME).'.webp';
+            $thumbPath = $thumbDir.'/'.$thumbFileName;
             imagewebp($thumb, $thumbPath, 80);
 
             imagedestroy($image);
