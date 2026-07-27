@@ -112,6 +112,7 @@ class KiotProductSyncService
             } else {
                 $this->fetchAndProcessProducts(
                     $updatedSince,
+                    $full,
                     $dryRun,
                     $run,
                     $report,
@@ -123,10 +124,12 @@ class KiotProductSyncService
             }
 
             if ($full && $sku === null) {
-                if ($v2Contract) {
-                    $this->hideMissingMappedProducts($remoteIds, $dryRun, $report);
+                if (! $report['dataset_complete'] || $report['safety_blocked'] > 0) {
+                    $report['finalization_skipped']++;
+                } elseif ($v2Contract) {
+                    $this->preserveMissingMappedProducts($remoteIds, $report);
                 } else {
-                    $this->hideMissingLegacyProducts($remoteSkus, $dryRun, $report);
+                    $this->preserveMissingLegacyProducts($remoteSkus, $report);
                 }
             }
 
@@ -190,6 +193,7 @@ class KiotProductSyncService
     ): array {
         $runtime = $this->resolver->resolve();
         $cursor = null;
+        $seenCursors = [];
         $items = [];
         do {
             $query = ['limit' => $runtime->productSyncLimit, 'include_inactive' => 1];
@@ -209,6 +213,12 @@ class KiotProductSyncService
             }
             array_push($items, ...$response->data());
             $cursor = $response->meta()['next_cursor'] ?? null;
+            if ($cursor !== null && $cursor !== '') {
+                if (isset($seenCursors[$cursor])) {
+                    throw new KiotIntegrationException('PAGINATION_CURSOR_REPEATED', "Repeated {$resource} cursor: {$cursor}", 'provider_contract', 502);
+                }
+                $seenCursors[$cursor] = true;
+            }
             $report['pages_processed']++;
             $run->update(['pages_processed' => $report['pages_processed']]);
         } while ($cursor);
@@ -218,6 +228,7 @@ class KiotProductSyncService
 
     private function fetchAndProcessProducts(
         ?string $updatedSince,
+        bool $full,
         bool $dryRun,
         IntegrationSyncRun $run,
         array &$report,
@@ -228,6 +239,9 @@ class KiotProductSyncService
     ): void {
         $runtime = $this->resolver->resolve();
         $cursor = null;
+        $seenCursors = [];
+        $items = [];
+        $datasetComplete = false;
         do {
             $query = ['limit' => $runtime->productSyncLimit, 'include_inactive' => 1];
             if ($cursor) {
@@ -240,15 +254,116 @@ class KiotProductSyncService
             if (! $response->successful()) {
                 throw $this->responseException($response);
             }
+            $meta = $response->meta();
             if ($v2Contract) {
-                $this->processProducts($response->data(), $dryRun, $report, $remoteIds, $maxUpdatedAt, $run);
-            } else {
-                $this->processLegacyProducts($response->data(), $dryRun, $report, $remoteSkus, $maxUpdatedAt, $run);
+                $this->assertProductDatasetContract($meta);
             }
-            $cursor = $response->meta()['next_cursor'] ?? null;
+            array_push($items, ...$response->data());
+            $nextCursor = $meta['next_cursor'] ?? null;
+            $hasMore = (bool) ($meta['has_more'] ?? false);
+            $datasetComplete = $v2Contract ? ($meta['dataset_complete'] === true) : ! $hasMore && ! $nextCursor;
+            if ($datasetComplete && ($hasMore || filled($nextCursor))) {
+                throw new KiotIntegrationException('PRODUCT_DATASET_CONTRACT_INVALID', 'Provider marked dataset_complete while another product page is advertised.', 'provider_contract', 502);
+            }
+            if ($hasMore && blank($nextCursor)) {
+                throw new KiotIntegrationException('PRODUCT_PAGINATION_CURSOR_MISSING', 'Provider advertised another product page without a cursor.', 'provider_contract', 502);
+            }
+            if (filled($nextCursor)) {
+                if (isset($seenCursors[$nextCursor])) {
+                    throw new KiotIntegrationException('PRODUCT_PAGINATION_CURSOR_REPEATED', "Repeated product cursor: {$nextCursor}", 'provider_contract', 502);
+                }
+                $seenCursors[$nextCursor] = true;
+            }
+            $cursor = $nextCursor;
             $report['pages_processed']++;
             $run->update(['pages_processed' => $report['pages_processed']]);
         } while ($cursor);
+
+        $report['dataset_complete'] = $datasetComplete;
+        if ($full && ! $datasetComplete) {
+            $report['warnings']++;
+            $report['warning_details'][] = ['code' => 'PRODUCT_DATASET_INCOMPLETE_FINALIZATION_SKIPPED'];
+        }
+        $report['remote_tombstones'] = count(array_filter(
+            $items,
+            fn (mixed $item): bool => is_array($item) && ($item['sync_status'] ?? null) === 'deleted',
+        ));
+
+        if ($this->productCircuitBreakerTriggered($items, $full, $report)) {
+            return;
+        }
+
+        if ($v2Contract) {
+            $this->processProducts($items, $dryRun, $report, $remoteIds, $maxUpdatedAt, $run);
+        } else {
+            $this->processLegacyProducts($items, $dryRun, $report, $remoteSkus, $maxUpdatedAt, $run);
+        }
+    }
+
+    private function assertProductDatasetContract(array $meta): void
+    {
+        $valid = array_key_exists('dataset_complete', $meta)
+            && is_bool($meta['dataset_complete'])
+            && ($meta['deletion_policy'] ?? null) === 'explicit_tombstone_only'
+            && array_key_exists('missing_products_are_deleted', $meta)
+            && $meta['missing_products_are_deleted'] === false;
+
+        if (! $valid) {
+            throw new KiotIntegrationException(
+                'PRODUCT_DATASET_CONTRACT_INVALID',
+                'Provider product response is missing the explicit-tombstone safety contract.',
+                'provider_contract',
+                502,
+            );
+        }
+    }
+
+    private function productCircuitBreakerTriggered(array $items, bool $full, array &$report): bool
+    {
+        $mappedCount = Product::query()
+            ->where('provider', 'kiot')
+            ->where('remote_product_id', '>', 0)
+            ->count();
+
+        if ($full && $items === [] && $mappedCount > 0) {
+            $report['total_remote'] = 0;
+            $this->blockProductDataset($report, 'ABNORMAL_EMPTY_PRODUCT_DATASET', [
+                'mapped_product_count' => $mappedCount,
+            ]);
+
+            return true;
+        }
+
+        $total = count($items);
+        $tombstones = $report['remote_tombstones'];
+        $maxTombstones = (int) config('integrations.kiot.product_sync_max_tombstones', 100);
+        $maxRatio = (float) config('integrations.kiot.product_sync_max_tombstone_ratio', 0.30);
+        $ratioMinItems = (int) config('integrations.kiot.product_sync_tombstone_ratio_min_items', 20);
+        $ratio = $total > 0 ? $tombstones / $total : 0.0;
+        $countExceeded = $maxTombstones >= 0 && $tombstones > $maxTombstones;
+        $ratioExceeded = $total >= $ratioMinItems && $ratio > $maxRatio;
+
+        if ($countExceeded || $ratioExceeded) {
+            $report['total_remote'] = $total;
+            $this->blockProductDataset($report, 'PRODUCT_TOMBSTONE_THRESHOLD_EXCEEDED', [
+                'remote_tombstones' => $tombstones,
+                'total_remote' => $total,
+                'ratio' => $ratio,
+                'max_tombstones' => $maxTombstones,
+                'max_ratio' => $maxRatio,
+            ]);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private function blockProductDataset(array &$report, string $code, array $details): void
+    {
+        $report['safety_blocked']++;
+        $report['warnings']++;
+        $report['warning_details'][] = ['code' => $code] + $details;
     }
 
     private function processLegacyProducts(
@@ -264,13 +379,16 @@ class KiotProductSyncService
                 continue;
             }
             $sku = trim((string) ($remote['sku'] ?? ''));
-            if ($sku === '') {
+            $remoteId = (int) ($remote['id'] ?? 0);
+            if ($sku === '' || $remoteId <= 0) {
                 continue;
             }
             $report['total_remote']++;
             $remoteSkus[$sku] = true;
-            $product = Product::query()->where('sku', $sku)->get()
-                ->first(fn (Product $candidate): bool => $candidate->sku === $sku);
+            $product = Product::query()
+                ->where('provider', 'kiot')
+                ->where('remote_product_id', $remoteId)
+                ->first();
             if (! $product) {
                 $report['remote_unmatched'][] = $sku;
                 $report['remote_unmatched_count']++;
@@ -279,18 +397,25 @@ class KiotProductSyncService
                 continue;
             }
 
-            $report['matched']++;
             $remoteUpdatedAt = isset($remote['updated_at']) ? CarbonImmutable::parse($remote['updated_at']) : null;
             if ($remoteUpdatedAt && (! $maxUpdatedAt || $remoteUpdatedAt->greaterThan($maxUpdatedAt))) {
                 $maxUpdatedAt = $remoteUpdatedAt;
             }
+            if (($remote['sync_status'] ?? null) === 'deleted') {
+                $this->archiveTombstone($product, $remote, $this->checksum($remote), $dryRun, $report, $run);
+
+                continue;
+            }
+            $report['matched']++;
             $sellable = ($remote['sync_status'] ?? null) === 'active'
                 && (bool) ($remote['is_active'] ?? false)
                 && (bool) ($remote['sell_directly'] ?? false);
             $availableQuantity = max(0, (int) ($remote['available_quantity'] ?? 0));
             $attributes = [
+                'provider' => 'kiot',
+                'remote_product_id' => $remoteId,
                 'inventory_source' => 'kiot',
-                'kiot_product_id' => isset($remote['id']) ? (int) $remote['id'] : null,
+                'kiot_product_id' => $remoteId,
                 'barcode' => $remote['barcode'] ?? null,
                 'price' => $remote['retail_price'] ?? 0,
                 'kiot_retail_price' => $remote['retail_price'] ?? 0,
@@ -334,24 +459,17 @@ class KiotProductSyncService
         bool $dryRun,
         array &$report,
     ): void {
-        $local = Product::query()->where('sku', $sku)->get()
+        $local = Product::query()
+            ->where('provider', 'kiot')
+            ->where('remote_product_id', '>', 0)
+            ->where('sku', $sku)
+            ->get()
             ->first(fn (Product $candidate): bool => $candidate->sku === $sku);
         if (! $local) {
             return;
         }
         $report['local_unmatched'][] = $local->sku;
-        if ($dryRun) {
-            return;
-        }
-        $updates = [
-            'kiot_sync_status' => 'unmatched',
-            'kiot_sync_error_code' => 'UNKNOWN_SKU',
-            'kiot_sync_error_message' => $response->errorMessage(),
-        ];
-        if ($local->inventory_source === 'kiot') {
-            $updates += ['kiot_sellable' => false, 'stock_quantity' => 0, 'kiot_available_quantity' => 0];
-        }
-        $local->update($updates);
+        $report['missing_preserved']++;
     }
 
     private function processProducts(
@@ -388,7 +506,11 @@ class KiotProductSyncService
                 ->where('remote_product_id', $remoteId)
                 ->first();
             if (! $product) {
-                $product = Product::query()->where('kiot_product_id', $remoteId)->first();
+                $product = Product::query()
+                    ->where('provider', 'kiot')
+                    ->where('kiot_product_id', $remoteId)
+                    ->where('remote_product_id', '>', 0)
+                    ->first();
             }
             if (! $product) {
                 $skuConflict = $this->skuConflict($sku);
@@ -401,6 +523,12 @@ class KiotProductSyncService
             }
 
             $checksum = $this->checksum($remote);
+            $status = (string) ($remote['sync_status'] ?? 'inactive');
+            if ($status === 'deleted') {
+                $this->archiveTombstone($product, $remote, $checksum, $dryRun, $report, $run);
+
+                continue;
+            }
             $category = $this->mappedCategory($remote);
             $selectedPrice = $this->money($remote['pricing']['selected_price'] ?? null, $remoteId, $report);
             if ($report['selected_price_book'] === null && isset($remote['pricing']['selected_price_book_id'])) {
@@ -410,7 +538,6 @@ class KiotProductSyncService
                     'name' => $remote['pricing']['selected_price_book_name'] ?? null,
                 ];
             }
-            $status = (string) ($remote['sync_status'] ?? 'inactive');
             $availabilityStatus = (string) ($remote['inventory']['status'] ?? 'inactive');
             $availableQuantity = max(0, (int) ($remote['inventory']['available_quantity'] ?? 0));
             $categoryVisible = $category?->isVisibleOnStorefront()
@@ -508,9 +635,6 @@ class KiotProductSyncService
             if (! $categoryVisible) {
                 $report['hidden_by_category']++;
             }
-            if ($status === 'deleted') {
-                $report['deleted']++;
-            }
             if ((bool) ($remote['pricing']['fallback_used'] ?? false)) {
                 $report['price_fallback']++;
                 $report['warnings']++;
@@ -524,6 +648,61 @@ class KiotProductSyncService
             }
             $this->updateRunProgress($run, $report);
         }
+    }
+
+    private function archiveTombstone(
+        ?Product $product,
+        array $remote,
+        string $checksum,
+        bool $dryRun,
+        array &$report,
+        IntegrationSyncRun $run,
+    ): void {
+        $remoteId = (int) $remote['id'];
+        $sku = (string) $remote['sku'];
+        if (! $product) {
+            $report['remote_unmatched'][] = $sku;
+            $this->updateRunProgress($run, $report);
+
+            return;
+        }
+
+        $attributes = [
+            'is_active' => false,
+            'show_on_pc_website' => false,
+            'kiot_sellable' => false,
+            'kiot_sync_status' => 'deleted',
+            'kiot_availability_status' => 'deleted',
+            'kiot_sync_checksum' => $checksum,
+            'kiot_remote_updated_at' => isset($remote['updated_at']) ? CarbonImmutable::parse($remote['updated_at']) : null,
+            'kiot_sync_error_code' => null,
+            'kiot_sync_error_message' => null,
+        ];
+        $report['matched']++;
+        $report['update_candidates']++;
+        $report['preview'][] = [
+            'action' => 'archive',
+            'remote_product_id' => $remoteId,
+            'sku' => $sku,
+            'local_product_id' => $product->id,
+            'checksum' => $checksum,
+        ];
+
+        if ($dryRun) {
+            $this->updateRunProgress($run, $report);
+
+            return;
+        }
+
+        $product->fill($attributes);
+        if ($product->isDirty()) {
+            $product->save();
+            $report['updated']++;
+            $report['archived']++;
+        } else {
+            $report['unchanged']++;
+        }
+        $this->updateRunProgress($run, $report);
     }
 
     private function mappedCategory(array $remote): ?Category
@@ -596,50 +775,44 @@ class KiotProductSyncService
         ];
     }
 
-    private function hideMissingMappedProducts(array $remoteIds, bool $dryRun, array &$report): void
+    private function preserveMissingMappedProducts(array $remoteIds, array &$report): void
     {
-        Product::query()->where('provider', 'kiot')->select(['id', 'remote_product_id', 'sku'])->chunkById(200, function (Collection $products) use ($remoteIds, $dryRun, &$report) {
-            foreach ($products as $product) {
-                if (isset($remoteIds[(int) $product->remote_product_id])) {
-                    continue;
+        Product::query()
+            ->where('provider', 'kiot')
+            ->where('remote_product_id', '>', 0)
+            ->select(['id', 'remote_product_id', 'sku'])
+            ->chunkById(200, function (Collection $products) use ($remoteIds, &$report) {
+                foreach ($products as $product) {
+                    if (isset($remoteIds[(int) $product->remote_product_id])) {
+                        continue;
+                    }
+                    $report['local_unmatched'][] = $product->sku;
+                    $report['missing_preserved']++;
                 }
-                $report['local_unmatched'][] = $product->sku;
-                if (! $dryRun) {
-                    $product->update([
-                        'show_on_pc_website' => false,
-                        'kiot_sellable' => false,
-                        'kiot_sync_status' => 'unmatched',
-                        'stock_quantity' => 0,
-                        'kiot_sync_error_code' => 'REMOTE_PRODUCT_MISSING',
-                        'kiot_sync_error_message' => 'Mapped product was absent from the complete provider response.',
-                    ]);
-                }
-            }
-        });
+            });
+
+        $report['local_only_skipped'] = Product::query()
+            ->where(function ($query) {
+                $query->whereNull('provider')
+                    ->orWhere('provider', '!=', 'kiot')
+                    ->orWhereNull('remote_product_id')
+                    ->orWhere('remote_product_id', '<=', 0);
+            })
+            ->count();
     }
 
-    private function hideMissingLegacyProducts(array $remoteSkus, bool $dryRun, array &$report): void
+    private function preserveMissingLegacyProducts(array $remoteSkus, array &$report): void
     {
-        Product::query()->select(['id', 'sku', 'inventory_source'])->chunkById(200, function (Collection $products) use ($remoteSkus, $dryRun, &$report) {
-            foreach ($products as $product) {
-                if (isset($remoteSkus[$product->sku])) {
-                    continue;
+        Product::query()->where('provider', 'kiot')->where('remote_product_id', '>', 0)
+            ->select(['id', 'sku'])->chunkById(200, function (Collection $products) use ($remoteSkus, &$report) {
+                foreach ($products as $product) {
+                    if (isset($remoteSkus[$product->sku])) {
+                        continue;
+                    }
+                    $report['local_unmatched'][] = $product->sku;
+                    $report['missing_preserved']++;
                 }
-                $report['local_unmatched'][] = $product->sku;
-                if ($dryRun) {
-                    continue;
-                }
-                $updates = [
-                    'kiot_sync_status' => 'unmatched',
-                    'kiot_sync_error_code' => 'UNKNOWN_SKU',
-                    'kiot_sync_error_message' => 'SKU không tồn tại trong dữ liệu sản phẩm KIOT.',
-                ];
-                if ($product->inventory_source === 'kiot') {
-                    $updates += ['kiot_sellable' => false, 'stock_quantity' => 0, 'kiot_available_quantity' => 0];
-                }
-                $product->update($updates);
-            }
-        });
+            });
     }
 
     private function money(mixed $value, int $remoteId, array &$report): int
@@ -712,7 +885,10 @@ class KiotProductSyncService
             'created' => 0, 'updated' => 0, 'unchanged' => 0,
             'category_create' => 0, 'category_update' => 0, 'category_hidden' => 0,
             'price_changes' => 0, 'stock_changes' => 0, 'repairing' => 0,
-            'hidden_by_category' => 0, 'deleted' => 0, 'image_downloads' => 0,
+            'hidden_by_category' => 0, 'deleted' => 0, 'remote_tombstones' => 0,
+            'missing_preserved' => 0, 'archived' => 0, 'local_only_skipped' => 0,
+            'safety_blocked' => 0, 'dataset_complete' => false, 'finalization_skipped' => 0,
+            'image_downloads' => 0,
             'image_skips' => 0, 'image_archives' => 0, 'images_downloaded' => 0,
             'price_fallback' => 0, 'price_books_available' => 0, 'conflicts' => 0,
             'selected_price_book' => null,
