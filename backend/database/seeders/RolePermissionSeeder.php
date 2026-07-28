@@ -3,8 +3,8 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 class RolePermissionSeeder extends Seeder
@@ -121,6 +121,10 @@ class RolePermissionSeeder extends Seeder
             // Settings
             'settings.view',
             'settings.edit',
+
+            // Catalog channels
+            'catalog-channels.view',
+            'catalog-channels.manage',
 
             // Users (admin management)
             'users.view',

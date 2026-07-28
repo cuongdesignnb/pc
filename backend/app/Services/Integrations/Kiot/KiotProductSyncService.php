@@ -2,6 +2,7 @@
 
 namespace App\Services\Integrations\Kiot;
 
+use App\Events\KiotProductSyncCompleted;
 use App\Exceptions\KiotIntegrationException;
 use App\Models\Category;
 use App\Models\IntegrationSyncConflict;
@@ -12,6 +13,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -164,6 +166,15 @@ class KiotProductSyncService
                     'items_matched' => $report['updated'] + $report['unchanged'],
                     'items_unmatched' => $report['conflicts'] + $report['remote_unmatched_count'] + $report['local_unmatched_count'],
                 ]);
+
+                try {
+                    KiotProductSyncCompleted::dispatch($run->id);
+                } catch (Throwable) {
+                    Log::warning('Catalog downstream dispatch failed.', [
+                        'source' => 'kiot',
+                        'sync_run_id' => $run->id,
+                    ]);
+                }
             }
 
             return $report + ['run_id' => $run->id, 'status' => $status];
