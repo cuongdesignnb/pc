@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BannerController;
 use App\Http\Controllers\Admin\BrandController;
+use App\Http\Controllers\Admin\CatalogChannelController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CompatibilityController;
 use App\Http\Controllers\Admin\ComponentTypeController;
@@ -23,12 +24,16 @@ use App\Http\Controllers\Admin\ReviewController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\CatalogFeedController;
 use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect('/admin');
 });
+
+Route::get('feeds/google/products.xml', [CatalogFeedController::class, 'google'])->name('feeds.google.products');
+Route::get('feeds/meta/products.csv', [CatalogFeedController::class, 'meta'])->name('feeds.meta.products');
 
 // ─── Payment routes (SePay Gateway) ─────────────────────────────────────────
 Route::prefix('payment')->name('payment.')->group(function () {
@@ -152,6 +157,33 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
         Route::get('integrations/kiot/runs/{run}', [KiotIntegrationController::class, 'showRun'])->name('integrations.kiot.runs.show');
         Route::post('integrations/kiot/retry', [KiotIntegrationController::class, 'retry'])->name('integrations.kiot.retry');
         Route::post('integrations/kiot/events/{event}/retry', [KiotIntegrationController::class, 'retryEvent'])->name('integrations.kiot.events.retry');
+    });
+
+    Route::middleware('permission:catalog-channels.view')->group(function () {
+        Route::get('integrations/catalog-channels', [CatalogChannelController::class, 'index'])
+            ->name('integrations.catalog-channels.index');
+    });
+    Route::middleware('permission:catalog-channels.manage')->group(function () {
+        Route::patch('integrations/catalog-channels/google-sheets/config', [CatalogChannelController::class, 'updateGoogleSheets'])
+            ->name('integrations.catalog-channels.google-sheets.config');
+        Route::post('integrations/catalog-channels/google-sheets/test', [CatalogChannelController::class, 'testGoogleSheets'])
+            ->name('integrations.catalog-channels.google-sheets.test');
+        Route::post('integrations/catalog-channels/google-sheets/dry-run', [CatalogChannelController::class, 'dryRunGoogleSheets'])
+            ->name('integrations.catalog-channels.google-sheets.dry-run');
+        Route::post('integrations/catalog-channels/google-sheets/sync', [CatalogChannelController::class, 'syncGoogleSheets'])
+            ->name('integrations.catalog-channels.google-sheets.sync');
+        Route::patch('integrations/catalog-channels/{channel}/flags', [CatalogChannelController::class, 'updateFlags'])
+            ->whereIn('channel', ['google_merchant', 'meta_catalog'])
+            ->name('integrations.catalog-channels.flags');
+        Route::post('integrations/catalog-channels/{channel}/validate', [CatalogChannelController::class, 'validateFeed'])
+            ->whereIn('channel', ['google_merchant', 'meta_catalog'])
+            ->name('integrations.catalog-channels.validate');
+        Route::post('integrations/catalog-channels/{channel}/rebuild', [CatalogChannelController::class, 'rebuildFeed'])
+            ->whereIn('channel', ['google_merchant', 'meta_catalog'])
+            ->name('integrations.catalog-channels.rebuild');
+        Route::post('integrations/catalog-channels/{channel}/rotate-token', [CatalogChannelController::class, 'rotateToken'])
+            ->whereIn('channel', ['google_merchant', 'meta_catalog'])
+            ->name('integrations.catalog-channels.rotate-token');
     });
 
     // AI Articles

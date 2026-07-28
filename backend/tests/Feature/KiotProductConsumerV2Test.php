@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\KiotProductSyncCompleted;
 use App\Exceptions\KiotIntegrationException;
 use App\Models\Category;
 use App\Models\IntegrationConnection;
@@ -12,6 +13,7 @@ use App\Services\Integrations\Kiot\KiotProductSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -38,6 +40,7 @@ class KiotProductConsumerV2Test extends TestCase
         Storage::fake('public');
         $product = $this->canonicalProduct();
         $this->fakeProvider([$this->category()], [$product]);
+        Event::listen(KiotProductSyncCompleted::class, fn () => throw new \RuntimeException('downstream unavailable'));
 
         $first = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
 

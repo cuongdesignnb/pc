@@ -41,10 +41,10 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $user ? [
-                    'id'    => $user->id,
-                    'name'  => $user->name,
+                    'id' => $user->id,
+                    'name' => $user->name,
                     'email' => $user->email,
-                    'role'  => $user->role,
+                    'role' => $user->role,
                     'avatar' => $user->avatar,
                     'roles' => $user->getRoleNames(),
                     'permissions' => $user->allPermissionNames(),
@@ -53,6 +53,8 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
+                'catalog_result' => fn () => $request->session()->get('catalog_result'),
+                'feed_url' => fn () => $request->session()->pull('feed_url'),
             ],
         ];
     }
