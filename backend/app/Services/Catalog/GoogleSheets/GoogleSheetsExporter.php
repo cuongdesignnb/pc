@@ -61,7 +61,9 @@ class GoogleSheetsExporter
 
         try {
             $configuration = (array) $connection->configuration_encrypted;
-            $existingRows = $this->client->readRows($configuration);
+            $existingRows = $dryRun && ! $this->remoteReadConfigured($configuration)
+                ? []
+                : $this->client->readRows($configuration);
             $report = $this->prepare($existingRows, $configuration, $dryRun);
             if (! $dryRun) {
                 $this->client->writeRows($configuration, $report['ranges']);
@@ -212,6 +214,7 @@ class GoogleSheetsExporter
                 'external_id' => $product->externalId,
                 'checksum' => $product->checksum,
                 'remote_row_id' => (string) $rowNumber,
+                'remote_item_id' => null,
                 'last_status' => $validation->status($product),
                 'last_error_code' => $errors[0] ?? null,
                 'last_error_message' => $errors === [] ? null : implode('|', $errors),
@@ -253,12 +256,33 @@ class GoogleSheetsExporter
 
     private function persistStates(array $states): void
     {
-        foreach ($states as $state) {
-            CatalogChannelItemState::updateOrCreate(
-                ['channel' => CatalogChannelConnection::GOOGLE_SHEETS, 'product_id' => $state['product_id']],
-                $state + ['channel' => CatalogChannelConnection::GOOGLE_SHEETS, 'last_synced_at' => now()],
+        $now = now();
+        foreach (array_chunk($states, max(1, (int) config('catalog.sync_chunk_size', 250))) as $chunk) {
+            $rows = array_map(fn (array $state): array => $state + [
+                'channel' => CatalogChannelConnection::GOOGLE_SHEETS,
+                'last_synced_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $chunk);
+            CatalogChannelItemState::upsert(
+                $rows,
+                ['channel', 'product_id'],
+                [
+                    'external_id', 'checksum', 'remote_row_id', 'remote_item_id', 'last_synced_at',
+                    'last_status', 'last_error_code', 'last_error_message', 'updated_at',
+                ],
             );
         }
+    }
+
+    private function remoteReadConfigured(array $configuration): bool
+    {
+        $credentials = $configuration['service_account'] ?? null;
+
+        return is_array($credentials)
+            && filled($credentials['client_email'] ?? null)
+            && filled($credentials['private_key'] ?? null)
+            && filled($configuration['spreadsheet_id'] ?? null);
     }
 
     private function completedRun(array $summary): array

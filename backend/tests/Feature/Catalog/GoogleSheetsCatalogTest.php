@@ -104,16 +104,19 @@ class GoogleSheetsCatalogTest extends TestCase
         $this->assertSame(3, CatalogChannelItemState::where('channel', 'google_sheets')->count());
     }
 
-    public function test_dry_run_never_calls_write_api_or_creates_item_state(): void
+    public function test_unconfigured_dry_run_stays_local_and_creates_no_item_state(): void
     {
-        $this->connection(enabled: false);
+        $connection = $this->connection(enabled: false);
+        $connection->update(['configuration_encrypted' => ['worksheet' => 'Products']]);
         $category = $this->category();
         $product = $this->product($category, 10);
         $product->images()->create(['url' => 'https://cdn.laptopplus.test/image.jpg', 'is_primary' => true]);
 
         $client = Mockery::mock(GoogleSheetsClient::class);
-        $client->shouldReceive('readRows')->once()->andReturn([GoogleSheetsExporter::HEADERS]);
-        $client->shouldReceive('rowRange')->once()->andReturn("'Products'!A2:S2");
+        $client->shouldNotReceive('readRows');
+        $client->shouldReceive('rowRange')->twice()->andReturnUsing(
+            fn (array $configuration, int $row): string => "'Products'!A{$row}:S{$row}",
+        );
         $client->shouldNotReceive('writeRows');
         $this->app->instance(GoogleSheetsClient::class, $client);
 
