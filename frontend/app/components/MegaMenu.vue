@@ -23,6 +23,7 @@ interface MenuResponse {
 }
 
 const config = useRuntimeConfig()
+const { siteLogo, siteName } = useSettings()
 
 const { data: menuData } = await useFetch<MenuResponse>(`${config.public.apiBase}/menus/header`, {
   default: () => ({ menu: { id: 0, name: '', slug: '' }, items: [] })
@@ -240,8 +241,11 @@ function toggleMobileSubmenu(id: number) {
           <!-- Mobile header -->
           <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <NuxtLink to="/" class="flex items-center gap-2" @click="mobileOpen = false">
-              <div class="w-7 h-7 bg-primary-600 rounded-md flex items-center justify-center text-white font-bold text-xs">PC</div>
-              <span class="text-lg font-bold text-gray-900">PC Shop</span>
+              <img v-if="siteLogo" :src="siteLogo" :alt="siteName" class="h-8 w-auto object-contain" />
+              <template v-else>
+                <div class="w-7 h-7 bg-primary-600 rounded-md flex items-center justify-center text-white font-bold text-xs">PC</div>
+                <span class="text-lg font-bold text-gray-900">{{ siteName }}</span>
+              </template>
             </NuxtLink>
             <button @click="mobileOpen = false" class="p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

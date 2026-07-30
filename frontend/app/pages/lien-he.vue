@@ -1,7 +1,17 @@
 <script setup lang="ts">
+const {
+  siteName,
+  siteDescription,
+  siteAddress,
+  siteHotline,
+  siteEmail,
+  businessHours,
+  contactMap,
+} = useSettings()
+
 useSeoMeta({
-  title: 'Liên hệ - PC Shop',
-  description: 'Liên hệ PC Shop - Hỗ trợ mua hàng, tư vấn kỹ thuật, bảo hành.',
+  title: () => `Liên hệ - ${siteName.value}`,
+  description: () => `Liên hệ ${siteName.value} - ${siteDescription.value || 'Hỗ trợ mua hàng, tư vấn kỹ thuật và bảo hành.'}`,
 })
 </script>
 
@@ -21,7 +31,7 @@ useSeoMeta({
               </div>
               <div>
                 <p class="font-medium text-gray-900">Địa chỉ</p>
-                <p class="text-gray-600">123 Nguyễn Văn Linh, Quận 7, TP.HCM</p>
+                <p class="text-gray-600">{{ siteAddress }}</p>
               </div>
             </div>
             <div class="flex items-start gap-3">
@@ -30,7 +40,8 @@ useSeoMeta({
               </div>
               <div>
                 <p class="font-medium text-gray-900">Hotline</p>
-                <p class="text-gray-600">1900 xxxx (8:00 – 21:00)</p>
+                <a :href="`tel:${siteHotline.replace(/\s/g, '')}`" class="text-gray-600 hover:text-primary-600">{{ siteHotline }}</a>
+                <p v-if="businessHours" class="text-sm text-gray-500">{{ businessHours }}</p>
               </div>
             </div>
             <div class="flex items-start gap-3">
@@ -39,7 +50,7 @@ useSeoMeta({
               </div>
               <div>
                 <p class="font-medium text-gray-900">Email</p>
-                <p class="text-gray-600">info@pcshop.vn</p>
+                <a :href="`mailto:${siteEmail}`" class="text-gray-600 hover:text-primary-600">{{ siteEmail }}</a>
               </div>
             </div>
           </div>
@@ -69,6 +80,10 @@ useSeoMeta({
           <UButton type="submit" size="lg" class="w-full justify-center">Gửi tin nhắn</UButton>
         </form>
       </div>
+    </div>
+
+    <div v-if="contactMap" class="mt-10 overflow-hidden rounded-xl border border-gray-200">
+      <iframe :src="contactMap" title="Bản đồ" class="w-full h-96" loading="lazy" referrerpolicy="no-referrer-when-downgrade" />
     </div>
   </div>
 </template>

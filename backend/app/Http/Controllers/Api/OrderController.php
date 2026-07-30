@@ -7,12 +7,14 @@ use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Models\Cart;
 use App\Models\Order;
+use App\Models\Setting;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
 use App\Services\Payments\SepayPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -55,6 +57,12 @@ class OrderController extends Controller
             'items.*.product_id' => 'required|integer|exists:products,id',
             'items.*.quantity' => 'required|integer|min:1',
         ]);
+
+        if ($validated['payment_method'] === 'cod' && ! $this->booleanSetting('payment_cod_enabled', true)) {
+            throw ValidationException::withMessages([
+                'payment_method' => 'Phương thức thanh toán COD hiện đang tắt.',
+            ]);
+        }
 
         try {
             $result = $orders->create($validated, $this->authenticatedUserId($request));
@@ -239,13 +247,30 @@ class OrderController extends Controller
     private function generateSepayPaymentData(Order $order): array
     {
         $sepay = config('services.sepay');
+        $bankCode = $this->stringSetting('payment_bank_name', (string) ($sepay['bank_code'] ?? ''));
+        $bankAccount = $this->stringSetting('payment_bank_account', (string) ($sepay['bank_account'] ?? ''));
+        $accountName = $this->stringSetting('payment_bank_holder', (string) ($sepay['account_name'] ?? ''));
 
         return [
-            'qr_url' => "https://img.vietqr.io/image/{$sepay['bank_code']}-{$sepay['bank_account']}-qr_only.png?amount={$order->total}&addInfo=".urlencode($order->order_number).'&accountName='.urlencode($sepay['account_name']),
-            'bank_code' => $sepay['bank_code'], 'bank_account' => $sepay['bank_account'],
-            'account_name' => $sepay['account_name'], 'amount' => (int) $order->total,
+            'qr_url' => "https://img.vietqr.io/image/{$bankCode}-{$bankAccount}-qr_only.png?amount={$order->total}&addInfo=".urlencode($order->order_number).'&accountName='.urlencode($accountName),
+            'bank_code' => $bankCode, 'bank_account' => $bankAccount,
+            'account_name' => $accountName, 'amount' => (int) $order->total,
             'transfer_content' => $order->order_number, 'order_number' => $order->order_number,
         ];
+    }
+
+    private function stringSetting(string $key, string $fallback): string
+    {
+        $value = Setting::get($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : $fallback;
+    }
+
+    private function booleanSetting(string $key, bool $fallback): bool
+    {
+        $value = Setting::get($key);
+
+        return $value === null ? $fallback : filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
     private function friendlyError(?string $code): string

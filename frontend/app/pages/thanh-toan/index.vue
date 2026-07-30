@@ -2,6 +2,13 @@
 const config = useRuntimeConfig();
 const router = useRouter();
 const { getHeaders: getCartHeaders } = useCartSession();
+const {
+  siteName,
+  paymentCodEnabled,
+  shippingFreeThreshold,
+  shippingDefaultFee,
+  formatMoney,
+} = useSettings();
 const checkoutIdempotencyKey = ref("");
 const orderAccessToken = ref("");
 
@@ -66,7 +73,9 @@ watch(selectedProvinceCode, async (code) => {
 
 // Shipping fee
 const shippingFee = computed(() => {
-  return cartTotal.value >= 500000 ? 0 : 30000;
+  return shippingFreeThreshold.value > 0 && cartTotal.value >= shippingFreeThreshold.value
+    ? 0
+    : shippingDefaultFee.value;
 });
 
 const orderTotal = computed(() => cartTotal.value + shippingFee.value);
@@ -204,7 +213,7 @@ const isFormValid = computed(() => {
 });
 
 useSeoMeta({
-  title: "Thanh toán - PC Shop",
+  title: () => `Thanh toán - ${siteName.value}`,
 });
 </script>
 
@@ -236,7 +245,7 @@ useSeoMeta({
           </div>
 
           <p class="text-2xl font-bold text-primary-600 mb-4">
-            {{ new Intl.NumberFormat("vi-VN").format(paymentData.amount) }}₫
+            {{ formatMoney(paymentData.amount) }}
           </p>
 
           <!-- Bank info -->
@@ -444,6 +453,7 @@ useSeoMeta({
             </label>
 
             <label
+              v-if="paymentCodEnabled"
               class="flex items-center gap-4 p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
               :class="{
                 'border-primary-500 bg-primary-50':
@@ -491,12 +501,7 @@ useSeoMeta({
                 <p class="text-sm text-gray-500">SL: {{ item.quantity }}</p>
               </div>
               <p class="text-sm font-semibold whitespace-nowrap">
-                {{
-                  new Intl.NumberFormat("vi-VN").format(
-                    (item.product.sale_price || item.product.price) *
-                      item.quantity,
-                  )
-                }}₫
+                {{ formatMoney((item.product.sale_price || item.product.price) * item.quantity) }}
               </p>
             </div>
           </div>
@@ -504,9 +509,7 @@ useSeoMeta({
           <div class="border-t pt-4 space-y-2">
             <div class="flex justify-between">
               <span class="text-gray-600">Tạm tính</span>
-              <span
-                >{{ new Intl.NumberFormat("vi-VN").format(cartTotal) }}₫</span
-              >
+              <span>{{ formatMoney(cartTotal) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Phí vận chuyển</span>
@@ -514,15 +517,13 @@ useSeoMeta({
                 {{
                   shippingFee === 0
                     ? "Miễn phí"
-                    : new Intl.NumberFormat("vi-VN").format(shippingFee) + "₫"
+                    : formatMoney(shippingFee)
                 }}
               </span>
             </div>
             <div class="flex justify-between text-lg font-bold pt-2 border-t">
               <span>Tổng cộng</span>
-              <span class="text-primary-600"
-                >{{ new Intl.NumberFormat("vi-VN").format(orderTotal) }}₫</span
-              >
+              <span class="text-primary-600">{{ formatMoney(orderTotal) }}</span>
             </div>
           </div>
 

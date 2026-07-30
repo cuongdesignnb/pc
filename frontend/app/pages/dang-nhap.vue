@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const config = useRuntimeConfig()
 const router = useRouter()
+const { siteName } = useSettings()
 
 definePageMeta({
   middleware: 'guest',
@@ -55,7 +56,7 @@ const login = async () => {
 }
 
 useSeoMeta({
-  title: 'Đăng nhập - PC Shop',
+  title: () => `Đăng nhập - ${siteName.value}`,
 })
 </script>
 
@@ -65,7 +66,7 @@ useSeoMeta({
       <div class="bg-white rounded-2xl shadow-lg p-8">
         <div class="text-center mb-8">
           <h1 class="text-3xl font-bold mb-2">Đăng nhập</h1>
-          <p class="text-gray-600">Chào mừng trở lại PC Shop</p>
+          <p class="text-gray-600">Chào mừng trở lại {{ siteName }}</p>
         </div>
 
         <form @submit.prevent="login" class="space-y-4">

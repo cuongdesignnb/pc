@@ -4,6 +4,15 @@ import type { ComponentType, Product } from "~/types";
 const config = useRuntimeConfig();
 const cart = useCart();
 const toast = useToast();
+const {
+  siteName,
+  siteTagline,
+  siteLogo,
+  sitePhone,
+  siteEmail,
+  siteAddress,
+  formatMoney,
+} = useSettings();
 
 const { data: componentTypes } = await useFetch<ComponentType[]>(
   `${config.public.apiBase}/builder/component-types`,
@@ -186,8 +195,14 @@ const resetBuild = () => {
   activeTypeId.value = null;
 };
 
-const formatPrice = (v: any) =>
-  new Intl.NumberFormat("vi-VN").format(Number(v) || 0) + "₫";
+const formatPrice = (v: any) => formatMoney(Number(v) || 0);
+
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
 
 // Print quotation
 const printQuotation = () => {
@@ -206,13 +221,14 @@ const printQuotation = () => {
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Báo giá cấu hình PC - PC Shop</title>
+  <title>Báo giá cấu hình PC - ${escapeHtml(siteName.value)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; padding: 40px; font-size: 13px; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid #2563eb; }
     .logo-area { display: flex; align-items: center; gap: 12px; }
     .logo-box { width: 48px; height: 48px; background: #2563eb; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 18px; }
+    .logo-image { max-width: 160px; max-height: 56px; object-fit: contain; }
     .logo-text { font-size: 22px; font-weight: 700; color: #1e293b; }
     .logo-text small { display: block; font-size: 11px; font-weight: 400; color: #64748b; }
     .company-info { text-align: right; font-size: 12px; color: #475569; line-height: 1.8; }
@@ -249,17 +265,18 @@ const printQuotation = () => {
 <body>
   <div class="header">
     <div class="logo-area">
-      <div class="logo-box">PC</div>
+      ${siteLogo.value ? `<img class="logo-image" src="${escapeHtml(siteLogo.value)}" alt="${escapeHtml(siteName.value)}">` : '<div class="logo-box">PC</div>'}
       <div class="logo-text">
-        PC Shop
-        <small>Chuyên PC, Laptop & Linh kiện</small>
+        ${escapeHtml(siteName.value)}
+        <small>${escapeHtml(siteTagline.value)}</small>
       </div>
     </div>
     <div class="company-info">
-      <strong>CÔNG TY TNHH PC SHOP</strong><br>
-      Hotline: 1900 1234<br>
-      Email: support@pcshop.vn<br>
-      Website: pcshop.vn
+      <strong>${escapeHtml(siteName.value)}</strong><br>
+      ${escapeHtml(siteAddress.value)}<br>
+      Hotline: ${escapeHtml(sitePhone.value)}<br>
+      Email: ${escapeHtml(siteEmail.value)}<br>
+      Website: ${escapeHtml(window.location.host)}
     </div>
   </div>
 
@@ -291,14 +308,14 @@ const printQuotation = () => {
           ${p.product.brand?.name ? `<div class="product-brand">${p.product.brand.name}</div>` : ""}
         </td>
         <td class="center">${p.quantity}</td>
-        <td class="right">${new Intl.NumberFormat("vi-VN").format(p.price)}₫</td>
-        <td class="right">${new Intl.NumberFormat("vi-VN").format(p.price * p.quantity)}₫</td>
+        <td class="right">${escapeHtml(formatMoney(p.price))}</td>
+        <td class="right">${escapeHtml(formatMoney(p.price * p.quantity))}</td>
       </tr>`,
         )
         .join("")}
       <tr class="total-row">
         <td colspan="5" class="right">TỔNG CỘNG:</td>
-        <td class="right total-price">${new Intl.NumberFormat("vi-VN").format(total)}₫</td>
+        <td class="right total-price">${escapeHtml(formatMoney(total))}</td>
       </tr>
     </tbody>
   </table>
@@ -316,7 +333,7 @@ const printQuotation = () => {
   </div>
 
   <div class="footer">
-    <span>PC Shop - pcshop.vn</span>
+    <span>${escapeHtml(siteName.value)} - ${escapeHtml(window.location.host)}</span>
     <span>Báo giá tự động từ hệ thống Build PC</span>
   </div>
 
@@ -376,7 +393,7 @@ const saveBuild = async () => {
 };
 
 useSeoMeta({
-  title: "Xây dựng cấu hình PC - PC Shop",
+  title: () => `Xây dựng cấu hình PC - ${siteName.value}`,
   description:
     "Công cụ xây dựng cấu hình PC thông minh với kiểm tra tương thích tự động",
 });

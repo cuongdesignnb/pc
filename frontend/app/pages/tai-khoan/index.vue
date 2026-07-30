@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const config = useRuntimeConfig()
 const router = useRouter()
+const { siteName, formatMoney } = useSettings()
 
 definePageMeta({
   middleware: 'auth',
@@ -65,7 +66,7 @@ const getOrderStatusBadge = (status: string): { bg: string; text: string; label:
 }
 
 useSeoMeta({
-  title: 'Tài khoản - PC Shop',
+  title: () => `Tài khoản - ${siteName.value}`,
 })
 </script>
 
@@ -177,7 +178,7 @@ useSeoMeta({
               </div>
               <div class="text-right">
                 <p class="font-bold">
-                  {{ new Intl.NumberFormat('vi-VN').format(order.total_amount) }}₫
+                  {{ formatMoney(order.total_amount) }}
                 </p>
                 <span 
                   :class="[

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const config = useRuntimeConfig()
 const route = useRoute()
+const { siteName, formatMoney } = useSettings()
 const orderId = route.params.id as string
 const order = ref<any>(null)
 const loading = ref(true)
@@ -66,7 +67,7 @@ const cancelOrder = async () => {
   }
 }
 
-useSeoMeta({ title: 'Trạng thái đơn hàng - PC Shop' })
+useSeoMeta({ title: () => `Trạng thái đơn hàng - ${siteName.value}` })
 </script>
 
 <template>
@@ -87,7 +88,7 @@ useSeoMeta({ title: 'Trạng thái đơn hàng - PC Shop' })
           <h2 class="text-xl font-bold">Thanh toán bằng chuyển khoản</h2>
           <p class="mt-2 text-sm text-gray-600">KIOT đã xác nhận sản phẩm và tồn kho cho đơn này.</p>
           <img :src="order.payment.qr_url" alt="Mã QR thanh toán" class="mx-auto mt-4 h-64 w-64" />
-          <p class="mt-3 text-2xl font-bold text-primary-600">{{ new Intl.NumberFormat('vi-VN').format(order.payment.amount) }}₫</p>
+          <p class="mt-3 text-2xl font-bold text-primary-600">{{ formatMoney(order.payment.amount) }}</p>
           <p class="mt-2 text-sm text-gray-700">Nội dung chuyển khoản: <strong>{{ order.payment.transfer_content }}</strong></p>
         </div>
 
@@ -99,10 +100,10 @@ useSeoMeta({ title: 'Trạng thái đơn hàng - PC Shop' })
           <div class="mt-6 border-t pt-6">
             <div v-for="item in order.items" :key="item.id" class="flex justify-between py-2">
               <div><p class="font-medium">{{ item.product_name }}</p><p class="text-sm text-gray-500">SKU: {{ item.sku }} · SL: {{ item.quantity }}</p></div>
-              <p class="font-medium">{{ new Intl.NumberFormat('vi-VN').format(item.total) }}₫</p>
+              <p class="font-medium">{{ formatMoney(item.total) }}</p>
             </div>
           </div>
-          <div class="mt-4 flex justify-between border-t pt-4 text-lg font-bold"><span>Tổng cộng</span><span class="text-primary-600">{{ new Intl.NumberFormat('vi-VN').format(order.total) }}₫</span></div>
+          <div class="mt-4 flex justify-between border-t pt-4 text-lg font-bold"><span>Tổng cộng</span><span class="text-primary-600">{{ formatMoney(order.total) }}</span></div>
         </div>
 
         <div class="flex justify-center gap-3">

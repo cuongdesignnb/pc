@@ -18,6 +18,7 @@ interface SuggestionsResponse {
 const config = useRuntimeConfig()
 const route = useRoute()
 const { user, isAuthenticated, token } = useAuth()
+const { siteName, formatMoney } = useSettings()
 
 const slug = route.params.product as string
 
@@ -58,7 +59,7 @@ watch(
 
 // Format price
 const formatPrice = (price: number) => {
-  return new Intl.NumberFormat('vi-VN').format(price) + '₫'
+  return formatMoney(price)
 }
 
 // Selected image
@@ -215,7 +216,7 @@ const submitReview = async () => {
 
 // SEO
 useSeoMeta({
-  title: () => product.value?.name ? `${product.value.name} - PC Shop` : 'Sản phẩm - PC Shop',
+  title: () => product.value?.name ? `${product.value.name} - ${siteName.value}` : `Sản phẩm - ${siteName.value}`,
   description: () => product.value?.short_description || product.value?.meta_description,
 })
 
@@ -686,7 +687,7 @@ onUnmounted(() => {
                   <p class="text-xs text-amber-600 mt-1 font-medium">{{ product.reviews.length }} lượt đánh giá</p>
                 </div>
                 <div class="flex-1 flex items-center">
-                  <p class="text-sm text-amber-700/80 leading-relaxed">Đánh giá từ những khách hàng đã mua và sử dụng sản phẩm tại PC Shop.</p>
+                  <p class="text-sm text-amber-700/80 leading-relaxed">Đánh giá từ những khách hàng đã mua và sử dụng sản phẩm tại {{ siteName }}.</p>
                 </div>
               </div>
             </div>
@@ -729,7 +730,7 @@ onUnmounted(() => {
                   <p v-if="review.title" class="font-semibold text-gray-800 mb-1">{{ review.title }}</p>
                   <p class="text-gray-600 leading-relaxed">{{ review.body }}</p>
                   <p v-if="review.admin_reply" class="mt-3 text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
-                    Phản hồi từ PC Shop: {{ review.admin_reply }}
+                    Phản hồi từ {{ siteName }}: {{ review.admin_reply }}
                   </p>
                 </div>
               </div>

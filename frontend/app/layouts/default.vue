@@ -2,7 +2,37 @@
 // Default layout for the storefront
 const cart = useCart()
 const auth = useAuth()
-const { siteLogo, siteName } = useSettings()
+const {
+  siteLogo,
+  siteLogoWhite,
+  siteName,
+  siteTagline,
+  siteDescription,
+  sitePhone,
+  siteHotline,
+  siteEmail,
+  siteAddress,
+  businessHours,
+  socialFacebook,
+  socialYoutube,
+  socialTiktok,
+  socialZalo,
+  socialInstagram,
+  shippingFreeThreshold,
+  formatMoney,
+} = useSettings()
+
+const freeShippingLabel = computed(() => shippingFreeThreshold.value > 0
+  ? `Miễn phí vận chuyển đơn từ ${formatMoney(shippingFreeThreshold.value)}`
+  : 'Miễn phí vận chuyển')
+
+const socialLinks = computed(() => [
+  { label: 'Facebook', href: socialFacebook.value },
+  { label: 'YouTube', href: socialYoutube.value },
+  { label: 'TikTok', href: socialTiktok.value },
+  { label: 'Zalo', href: socialZalo.value.startsWith('http') ? socialZalo.value : (socialZalo.value ? `https://zalo.me/${socialZalo.value.replace(/\D/g, '')}` : '') },
+  { label: 'Instagram', href: socialInstagram.value },
+].filter(link => link.href))
 
 // Fetch cart on mount
 onMounted(() => {
@@ -18,16 +48,16 @@ onMounted(() => {
         <div class="flex items-center gap-4">
           <span class="flex items-center gap-1">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-            1900 1234
+            <a :href="`tel:${sitePhone.replace(/\s/g, '')}`">{{ sitePhone }}</a>
           </span>
           <span class="hidden sm:flex items-center gap-1">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            support@pcshop.vn
+            <a :href="`mailto:${siteEmail}`">{{ siteEmail }}</a>
           </span>
         </div>
         <div class="flex items-center gap-1">
           <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"/></svg>
-          <span>Miễn phí vận chuyển đơn &gt; 500K</span>
+          <span>{{ freeShippingLabel }}</span>
         </div>
       </div>
     </div>
@@ -107,10 +137,14 @@ onMounted(() => {
         <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
           <!-- About -->
           <div>
-            <h3 class="text-lg font-semibold mb-4">{{ siteName }}</h3>
+            <img v-if="siteLogoWhite || siteLogo" :src="siteLogoWhite || siteLogo" :alt="siteName" class="h-10 w-auto object-contain mb-4" />
+            <h3 v-else class="text-lg font-semibold mb-4">{{ siteName }}</h3>
             <p class="text-gray-400 text-sm">
-              Chuyên cung cấp PC, Laptop và linh kiện máy tính chính hãng với giá tốt nhất.
+              {{ siteDescription || siteTagline }}
             </p>
+            <div v-if="socialLinks.length" class="flex flex-wrap gap-x-3 gap-y-1 mt-4 text-sm">
+              <a v-for="link in socialLinks" :key="link.label" :href="link.href" target="_blank" rel="noopener noreferrer" class="text-gray-400 hover:text-white">{{ link.label }}</a>
+            </div>
           </div>
 
           <!-- Quick links -->
@@ -141,16 +175,17 @@ onMounted(() => {
             <ul class="space-y-2 text-sm text-gray-400">
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                123 Đường ABC, Quận 1, TP.HCM
+                {{ siteAddress }}
               </li>
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-                1900 1234
+                <a :href="`tel:${siteHotline.replace(/\s/g, '')}`" class="hover:text-white">{{ siteHotline }}</a>
               </li>
               <li class="flex items-center gap-2">
                 <svg class="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                support@pcshop.vn
+                <a :href="`mailto:${siteEmail}`" class="hover:text-white">{{ siteEmail }}</a>
               </li>
+              <li v-if="businessHours" class="text-gray-400">{{ businessHours }}</li>
             </ul>
           </div>
         </div>

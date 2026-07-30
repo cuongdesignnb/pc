@@ -1,5 +1,6 @@
 <script setup>
 const config = useRuntimeConfig()
+const { formatMoney } = useSettings()
 const query = ref('')
 const results = ref({ products: [], posts: [] })
 const isOpen = ref(false)
@@ -34,7 +35,7 @@ watch(query, (val) => {
 })
 
 function formatPrice(p) {
-  return new Intl.NumberFormat('vi-VN').format(p) + ' VND'
+  return formatMoney(p)
 }
 
 function close() {

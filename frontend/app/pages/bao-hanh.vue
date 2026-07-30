@@ -1,7 +1,9 @@
 <script setup lang="ts">
+const { siteName, siteHotline } = useSettings()
+
 useSeoMeta({
-  title: 'Chính sách bảo hành - PC Shop',
-  description: 'Chính sách bảo hành sản phẩm tại PC Shop - Cam kết bảo hành chính hãng, đổi trả minh bạch.',
+  title: () => `Chính sách bảo hành - ${siteName.value}`,
+  description: () => `Chính sách bảo hành sản phẩm tại ${siteName.value} - Cam kết bảo hành chính hãng, đổi trả minh bạch.`,
 })
 </script>
 
@@ -12,7 +14,7 @@ useSeoMeta({
     <div class="prose prose-lg max-w-none text-gray-700 space-y-6">
       <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8">
         <p class="text-blue-800 font-medium">
-          PC Shop cam kết bảo hành chính hãng 100% cho tất cả sản phẩm. Mọi sản phẩm đều có phiếu bảo hành
+          {{ siteName }} cam kết bảo hành chính hãng 100% cho tất cả sản phẩm. Mọi sản phẩm đều có phiếu bảo hành
           và được hỗ trợ trực tiếp bởi đội ngũ kỹ thuật viên chuyên nghiệp.
         </p>
       </div>
@@ -22,7 +24,7 @@ useSeoMeta({
         <li>Sản phẩm còn trong thời hạn bảo hành (theo phiếu bảo hành)</li>
         <li>Tem bảo hành, serial number còn nguyên vẹn</li>
         <li>Sản phẩm bị lỗi do nhà sản xuất (không do tác động bên ngoài)</li>
-        <li>Có hóa đơn mua hàng hoặc phiếu bảo hành từ PC Shop</li>
+        <li>Có hóa đơn mua hàng hoặc phiếu bảo hành từ {{ siteName }}</li>
       </ul>
 
       <h2 class="text-2xl font-semibold text-gray-900 mt-8 mb-4">2. Thời gian bảo hành</h2>
@@ -58,7 +60,7 @@ useSeoMeta({
         <div class="bg-gray-50 rounded-xl p-5 text-center">
           <div class="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 font-bold">1</div>
           <p class="font-medium text-gray-900 mb-1">Liên hệ</p>
-          <p class="text-sm text-gray-500">Hotline 1900 xxxx hoặc mang sản phẩm đến cửa hàng</p>
+          <p class="text-sm text-gray-500">Hotline {{ siteHotline }} hoặc mang sản phẩm đến cửa hàng</p>
         </div>
         <div class="bg-gray-50 rounded-xl p-5 text-center">
           <div class="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 font-bold">2</div>

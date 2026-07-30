@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\Setting;
 use App\Services\Catalog\ProductPurchasabilityService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -67,7 +68,11 @@ class KiotOrderService
                     ];
                 }
 
-                $shippingFee = $subtotal >= 500000 ? 0 : 30000;
+                $freeShippingThreshold = $this->nonNegativeIntegerSetting('shipping_free_threshold', 500000);
+                $defaultShippingFee = $this->nonNegativeIntegerSetting('shipping_default_fee', 30000);
+                $shippingFee = $freeShippingThreshold > 0 && $subtotal >= $freeShippingThreshold
+                    ? 0
+                    : $defaultShippingFee;
                 $eventId = $enabled ? (string) Str::uuid() : null;
                 $idempotencyKey = $enabled ? (string) Str::uuid() : null;
                 $order = Order::create([
@@ -167,5 +172,12 @@ class KiotOrderService
             ])->values()->all(),
             'note' => $order->notes,
         ];
+    }
+
+    private function nonNegativeIntegerSetting(string $key, int $fallback): int
+    {
+        $value = Setting::get($key);
+
+        return is_numeric($value) ? max(0, (int) $value) : $fallback;
     }
 }
