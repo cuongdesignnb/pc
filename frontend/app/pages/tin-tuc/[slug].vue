@@ -8,6 +8,7 @@ interface PostDetailResponse {
 
 const config = useRuntimeConfig()
 const route = useRoute()
+const { siteName } = useSettings()
 
 const slug = route.params.slug as string
 
@@ -29,7 +30,7 @@ const formatDate = (date: string | null) => {
 
 // SEO
 useSeoMeta({
-  title: () => post.value?.title ? `${post.value.title} - PC Shop` : 'Bài viết - PC Shop',
+  title: () => post.value?.title ? `${post.value.title} - ${siteName.value}` : `Bài viết - ${siteName.value}`,
   description: () => post.value?.excerpt || post.value?.meta_description,
 })
 </script>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Setting;
 use App\Models\SpecificationKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,11 @@ class CategoryController extends Controller
      */
     public function homepageSections(): JsonResponse
     {
+        $configuredLimit = Setting::get('homepage_products_per_section');
+        $productLimit = is_numeric($configuredLimit)
+            ? max(1, min(50, (int) $configuredLimit))
+            : 8;
+
         $parents = Category::with(['children' => function ($q) {
             $q->visibleOnStorefront()->orderBy('sort_order');
         }])
@@ -62,7 +68,7 @@ class CategoryController extends Controller
                 ->visibleOnStorefront()
                 ->orderByDesc('is_featured')
                 ->orderByDesc('created_at')
-                ->limit(8)
+                ->limit($productLimit)
                 ->get();
 
             $sections[] = [

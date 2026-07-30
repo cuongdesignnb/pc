@@ -15,6 +15,7 @@ interface BlogCategory extends PostCategory {
 }
 
 const config = useRuntimeConfig()
+const { siteName } = useSettings()
 
 // Filters
 const search = ref('')
@@ -51,7 +52,7 @@ const formatDate = (date: string | null) => {
 }
 
 useSeoMeta({
-  title: 'Blog & Tin tức - PC Shop',
+  title: () => `Blog & Tin tức - ${siteName.value}`,
   description: 'Tin tức công nghệ, hướng dẫn build PC, review sản phẩm mới nhất',
 })
 </script>

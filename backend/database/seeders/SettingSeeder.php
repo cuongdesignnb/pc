@@ -199,7 +199,7 @@ class SettingSeeder extends Seeder
                 'group' => 'seo',
                 'type' => 'text',
                 'label' => 'Google Analytics ID (UA/G-)',
-                'is_public' => false,
+                'is_public' => true,
             ],
             [
                 'key' => 'google_tag_manager_id',
@@ -207,7 +207,7 @@ class SettingSeeder extends Seeder
                 'group' => 'seo',
                 'type' => 'text',
                 'label' => 'Google Tag Manager ID',
-                'is_public' => false,
+                'is_public' => true,
             ],
             [
                 'key' => 'facebook_pixel_id',
@@ -215,7 +215,7 @@ class SettingSeeder extends Seeder
                 'group' => 'seo',
                 'type' => 'text',
                 'label' => 'Facebook Pixel ID',
-                'is_public' => false,
+                'is_public' => true,
             ],
 
             // ─── Homepage ───────────────────────────────────────
@@ -328,6 +328,6 @@ class SettingSeeder extends Seeder
             );
         }
 
-        $this->command->info('Seeded ' . count($settings) . ' settings');
+        $this->command->info('Seeded '.count($settings).' settings');
     }
 }

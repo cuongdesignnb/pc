@@ -35,7 +35,19 @@ interface BannerSlide {
 }
 
 const config = useRuntimeConfig()
-const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
+const {
+  siteName,
+  seoTitle,
+  seoDescription,
+  seoKeywords,
+  seoOgImage,
+  heroAutoplay,
+  heroInterval,
+  productsPerSection,
+  showBrands,
+  showPosts,
+  formatMoney,
+} = useSettings()
 
 const { data: sections } = await useFetch<HomepageSection[]>(
   `${config.public.apiBase}/categories/homepage-sections`,
@@ -82,7 +94,7 @@ const mainSlides = computed(() => {
   if (banners.length === 0) {
     // Fallback if no banners in the DB
     return [{
-      badge: 'PC Shop',
+      badge: siteName.value,
       title: 'Xây dựng PC<br>trong mơ của bạn',
       desc: 'Công cụ build cấu hình thông minh — kiểm tra tương thích tự động, xem TDP & giá ngay lập tức.',
       cta: { label: 'Build PC ngay', to: '/configurator' },
@@ -153,17 +165,21 @@ function availableChildren(section: HomepageSection) {
 
 function filteredProducts(section: HomepageSection, sectionIdx: number): Product[] {
   const filter = activeChildFilter.value[sectionIdx]
-  if (!filter) return section.products.slice(0, 8)
+  if (!filter) return section.products.slice(0, productsPerSection.value)
 
   const child = section.children.find(c => c.slug === filter)
-  if (!child) return section.products.slice(0, 8)
+  if (!child) return section.products.slice(0, productsPerSection.value)
 
-  return section.products.filter(p => p.category?.id === child.id).slice(0, 8)
+  return section.products.filter(p => p.category?.id === child.id).slice(0, productsPerSection.value)
 }
 
 useSeoMeta({
-  title: 'PC Shop - Bán PC, Laptop & Linh kiện máy tính',
-  description: 'Chuyên cung cấp PC Gaming, Laptop, linh kiện máy tính chính hãng. Xây dựng cấu hình PC thông minh với công cụ kiểm tra tương thích.',
+  title: () => seoTitle.value,
+  description: () => seoDescription.value,
+  keywords: () => seoKeywords.value,
+  ogTitle: () => seoTitle.value,
+  ogDescription: () => seoDescription.value,
+  ogImage: () => seoOgImage.value,
 })
 
 // ===== MAIN BANNER SLIDES =====
@@ -191,8 +207,13 @@ function prevSlide() {
 
 function resetMainTimer() {
   if (mainSlideTimer) clearInterval(mainSlideTimer)
-  mainSlideTimer = setInterval(nextSlide, 5000)
+  mainSlideTimer = null
+  if (heroAutoplay.value && mainSlides.value.length > 1) {
+    mainSlideTimer = setInterval(nextSlide, heroInterval.value)
+  }
 }
+
+watch([heroAutoplay, heroInterval], resetMainTimer)
 
 // ===== SIDE BANNERS VERTICAL TICKER =====
 const sideSlideIndex = ref(0)
@@ -535,8 +556,8 @@ onMounted(() => {
                 </h3>
                 <p class="text-xs text-gray-500 line-clamp-1 mb-3">{{ product.short_description }}</p>
                 <div class="flex items-end gap-2">
-                  <span class="text-lg font-bold text-red-600">{{ fmt(product.sale_price || product.price) }}₫</span>
-                  <span v-if="product.sale_price" class="text-xs text-gray-400 line-through mb-0.5">{{ fmt(product.price) }}₫</span>
+                  <span class="text-lg font-bold text-red-600">{{ formatMoney(product.sale_price || product.price) }}</span>
+                  <span v-if="product.sale_price" class="text-xs text-gray-400 line-through mb-0.5">{{ formatMoney(product.price) }}</span>
                 </div>
               </div>
             </NuxtLink>
@@ -571,7 +592,7 @@ onMounted(() => {
     <!-- ============ WHY CHOOSE US ============ -->
     <section class="py-14 bg-white">
       <div :ref="(el: any) => whyRef = el" class="container mx-auto px-4">
-        <h2 class="text-2xl font-bold text-center text-gray-900 mb-10">Tại sao chọn PC Shop?</h2>
+        <h2 class="text-2xl font-bold text-center text-gray-900 mb-10">Tại sao chọn {{ siteName }}?</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div data-reveal="up" class="text-center p-4">
             <div class="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
@@ -606,7 +627,7 @@ onMounted(() => {
     </section>
 
     <!-- ============ BRAND CAROUSEL ============ -->
-    <section class="py-8 bg-gray-50 border-t border-gray-100">
+    <section v-if="showBrands && brands && brands.length > 0" class="py-8 bg-gray-50 border-t border-gray-100">
       <div class="container mx-auto px-4 mb-4">
         <h3 class="text-center text-sm font-semibold text-gray-500 uppercase tracking-wider">Thương hiệu hàng đầu</h3>
       </div>
@@ -623,7 +644,7 @@ onMounted(() => {
     </section>
 
     <!-- ============ FEATURED POSTS ============ -->
-    <section v-if="featuredPosts && featuredPosts.length > 0" class="py-12 bg-white">
+    <section v-if="showPosts && featuredPosts && featuredPosts.length > 0" class="py-12 bg-white">
       <div class="container mx-auto px-4">
         <div class="flex items-center justify-between mb-6">
           <div>

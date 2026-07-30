@@ -46,9 +46,10 @@ interface CategoryResponse {
 const config = useRuntimeConfig()
 const route = useRoute()
 const router = useRouter()
+const { siteName, formatMoney } = useSettings()
 
 const slug = route.params.category as string
-const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
+const fmt = (n: number) => formatMoney(n)
 
 // ---- Reactive filter state ----
 const page = ref(Number(route.query.page) || 1)
@@ -218,8 +219,8 @@ const getDiscount = (p: Product) => {
 const showMobileFilters = ref(false)
 
 useSeoMeta({
-  title: () => category.value?.name ? `${category.value.name} - PC Shop` : 'Danh mục - PC Shop',
-  description: () => category.value?.description || `Khám phá sản phẩm ${category.value?.name} tại PC Shop`,
+  title: () => category.value?.name ? `${category.value.name} - ${siteName.value}` : `Danh mục - ${siteName.value}`,
+  description: () => category.value?.description || `Khám phá sản phẩm ${category.value?.name} tại ${siteName.value}`,
 })
 </script>
 
@@ -294,7 +295,7 @@ useSeoMeta({
                 <button @click="toggleBrand(b)" class="text-primary-400 hover:text-primary-600">✕</button>
               </span>
               <span v-if="minPrice || maxPrice" class="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs">
-                {{ minPrice ? fmt(minPrice) : '0' }}₫ - {{ maxPrice ? fmt(maxPrice) : '∞' }}₫
+                {{ minPrice ? fmt(minPrice) : fmt(0) }} - {{ maxPrice ? fmt(maxPrice) : '∞' }}
                 <button @click="minPrice = undefined; maxPrice = undefined; resetPage()" class="text-green-400 hover:text-green-600">✕</button>
               </span>
               <span v-if="inStock" class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs">
@@ -491,8 +492,8 @@ useSeoMeta({
                 <h3 class="font-semibold text-sm text-gray-900 line-clamp-2 mb-1 group-hover:text-primary-600 transition-colors">{{ product.name }}</h3>
                 <p class="text-xs text-gray-500 line-clamp-1 mb-3">{{ product.short_description }}</p>
                 <div class="flex items-end gap-2">
-                  <span class="text-lg font-bold text-red-600">{{ fmt(product.sale_price || product.price) }}₫</span>
-                  <span v-if="product.sale_price" class="text-xs text-gray-400 line-through mb-0.5">{{ fmt(product.price) }}₫</span>
+                  <span class="text-lg font-bold text-red-600">{{ fmt(product.sale_price || product.price) }}</span>
+                  <span v-if="product.sale_price" class="text-xs text-gray-400 line-through mb-0.5">{{ fmt(product.price) }}</span>
                 </div>
               </div>
             </NuxtLink>
@@ -519,8 +520,8 @@ useSeoMeta({
                   <p class="text-sm text-gray-500 line-clamp-2">{{ product.short_description }}</p>
                 </div>
                 <div class="flex items-center gap-3 mt-2">
-                  <span class="text-xl font-bold text-red-600">{{ fmt(product.sale_price || product.price) }}₫</span>
-                  <span v-if="product.sale_price" class="text-sm text-gray-400 line-through">{{ fmt(product.price) }}₫</span>
+                  <span class="text-xl font-bold text-red-600">{{ fmt(product.sale_price || product.price) }}</span>
+                  <span v-if="product.sale_price" class="text-sm text-gray-400 line-through">{{ fmt(product.price) }}</span>
                   <span v-if="getDiscount(product)" class="bg-red-50 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">
                     -{{ getDiscount(product) }}%
                   </span>

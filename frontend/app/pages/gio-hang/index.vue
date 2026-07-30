@@ -2,6 +2,7 @@
 const config = useRuntimeConfig()
 const { getHeaders } = useCartSession()
 const toast = useToast()
+const { siteName, shippingFreeThreshold, shippingDefaultFee, formatMoney } = useSettings()
 
 interface CartItem {
   id: number
@@ -27,6 +28,9 @@ const { data, refresh, status } = await useFetch<{ items: CartItem[], total: num
 
 const cartItems = computed(() => data.value?.items || [])
 const cartTotal = computed(() => data.value?.total || 0)
+const cartShippingFee = computed(() => shippingFreeThreshold.value > 0 && cartTotal.value >= shippingFreeThreshold.value
+  ? 0
+  : shippingDefaultFee.value)
 
 // Update quantity
 const updating = ref<number | null>(null)
@@ -99,7 +103,7 @@ const getItemTotal = (item: CartItem) => {
 }
 
 useSeoMeta({
-  title: 'Giỏ hàng - PC Shop',
+  title: () => `Giỏ hàng - ${siteName.value}`,
 })
 </script>
 
@@ -149,7 +153,7 @@ useSeoMeta({
             </NuxtLink>
             
             <p class="text-primary-600 font-bold mt-1">
-              {{ new Intl.NumberFormat('vi-VN').format(getItemPrice(item)) }}₫
+              {{ formatMoney(getItemPrice(item)) }}
             </p>
 
             <div class="flex items-center gap-4 mt-3">
@@ -188,7 +192,7 @@ useSeoMeta({
           <!-- Item Total -->
           <div class="text-right">
             <p class="font-bold text-lg">
-              {{ new Intl.NumberFormat('vi-VN').format(getItemTotal(item)) }}₫
+              {{ formatMoney(getItemTotal(item)) }}
             </p>
           </div>
         </div>
@@ -217,18 +221,20 @@ useSeoMeta({
           <div class="space-y-3 mb-4">
             <div class="flex justify-between">
               <span class="text-gray-600">Tạm tính ({{ cartItems.length }} sản phẩm)</span>
-              <span>{{ new Intl.NumberFormat('vi-VN').format(cartTotal) }}₫</span>
+              <span>{{ formatMoney(cartTotal) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Phí vận chuyển</span>
-              <span class="text-green-600">Miễn phí</span>
+              <span :class="cartShippingFee === 0 ? 'text-green-600' : ''">
+                {{ cartShippingFee === 0 ? 'Miễn phí' : formatMoney(cartShippingFee) }}
+              </span>
             </div>
           </div>
 
           <div class="border-t pt-4 mb-6">
             <div class="flex justify-between text-lg font-bold">
               <span>Tổng cộng</span>
-              <span class="text-primary-600">{{ new Intl.NumberFormat('vi-VN').format(cartTotal) }}₫</span>
+              <span class="text-primary-600">{{ formatMoney(cartTotal + cartShippingFee) }}</span>
             </div>
           </div>
 
@@ -237,7 +243,7 @@ useSeoMeta({
           </UButton>
 
           <p class="text-xs text-gray-500 text-center mt-4">
-            Miễn phí vận chuyển cho đơn hàng từ 500.000₫
+            Miễn phí vận chuyển cho đơn hàng từ {{ formatMoney(shippingFreeThreshold) }}
           </p>
         </div>
       </div>

@@ -1,7 +1,16 @@
 <script setup lang="ts">
+const {
+  siteName,
+  siteHotline,
+  shippingFreeThreshold,
+  shippingDefaultFee,
+  shippingExpressFee,
+  formatMoney,
+} = useSettings()
+
 useSeoMeta({
-  title: 'Chính sách vận chuyển - PC Shop',
-  description: 'Chính sách vận chuyển và giao hàng tại PC Shop - Miễn phí nội thành, giao nhanh toàn quốc.',
+  title: () => `Chính sách vận chuyển - ${siteName.value}`,
+  description: () => `Chính sách vận chuyển và giao hàng tại ${siteName.value}.`,
 })
 </script>
 
@@ -12,8 +21,8 @@ useSeoMeta({
     <div class="prose prose-lg max-w-none text-gray-700 space-y-6">
       <div class="bg-green-50 border border-green-200 rounded-xl p-6 mb-8">
         <p class="text-green-800 font-medium">
-          PC Shop cung cấp dịch vụ giao hàng toàn quốc với nhiều phương thức linh hoạt.
-          Miễn phí giao hàng nội thành TP.HCM và Hà Nội cho đơn hàng từ 500.000₫.
+          {{ siteName }} cung cấp dịch vụ giao hàng toàn quốc với nhiều phương thức linh hoạt.
+          Miễn phí giao hàng cho đơn hàng từ {{ formatMoney(shippingFreeThreshold) }}.
         </p>
       </div>
 
@@ -28,9 +37,9 @@ useSeoMeta({
             </tr>
           </thead>
           <tbody class="text-sm">
-            <tr><td class="border border-gray-200 px-4 py-2">Nội thành HCM & HN</td><td class="border border-gray-200 px-4 py-2 text-green-600 font-medium">Miễn phí (đơn ≥ 500K)</td><td class="border border-gray-200 px-4 py-2">2 – 4 giờ</td></tr>
-            <tr class="bg-gray-50"><td class="border border-gray-200 px-4 py-2">Ngoại thành HCM & HN</td><td class="border border-gray-200 px-4 py-2">20.000₫ – 40.000₫</td><td class="border border-gray-200 px-4 py-2">1 – 2 ngày</td></tr>
-            <tr><td class="border border-gray-200 px-4 py-2">Tỉnh thành khác</td><td class="border border-gray-200 px-4 py-2">30.000₫ – 80.000₫</td><td class="border border-gray-200 px-4 py-2">2 – 5 ngày</td></tr>
+            <tr><td class="border border-gray-200 px-4 py-2">Đơn đủ điều kiện miễn phí</td><td class="border border-gray-200 px-4 py-2 text-green-600 font-medium">Miễn phí (đơn ≥ {{ formatMoney(shippingFreeThreshold) }})</td><td class="border border-gray-200 px-4 py-2">Theo khu vực</td></tr>
+            <tr class="bg-gray-50"><td class="border border-gray-200 px-4 py-2">Giao hàng tiêu chuẩn</td><td class="border border-gray-200 px-4 py-2">{{ formatMoney(shippingDefaultFee) }}</td><td class="border border-gray-200 px-4 py-2">1 – 5 ngày</td></tr>
+            <tr><td class="border border-gray-200 px-4 py-2">Giao hàng nhanh</td><td class="border border-gray-200 px-4 py-2">{{ formatMoney(shippingExpressFee) }}</td><td class="border border-gray-200 px-4 py-2">Theo khu vực</td></tr>
           </tbody>
         </table>
       </div>
@@ -46,7 +55,7 @@ useSeoMeta({
       <ul class="list-disc pl-6 space-y-2">
         <li>Kiểm tra tình trạng bên ngoài kiện hàng trước khi nhận</li>
         <li>Quay video khi mở hộp để đảm bảo quyền lợi</li>
-        <li>Liên hệ ngay Hotline 1900 xxxx nếu phát hiện sai / thiếu sản phẩm</li>
+        <li>Liên hệ ngay Hotline {{ siteHotline }} nếu phát hiện sai / thiếu sản phẩm</li>
         <li>Thời gian khiếu nại: trong vòng 24 giờ kể từ khi nhận hàng</li>
       </ul>
 
