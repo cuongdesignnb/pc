@@ -7,6 +7,10 @@ return [
     'feed_cache_seconds' => (int) env('CATALOG_FEED_CACHE_SECONDS', 900),
     'sync_chunk_size' => (int) env('CATALOG_SYNC_CHUNK_SIZE', 250),
     'sync_lock_seconds' => (int) env('CATALOG_SYNC_LOCK_SECONDS', 1800),
+    'website' => [
+        'price_source' => env('CATALOG_WEBSITE_PRICE_SOURCE', 'retail_price'),
+        'fallback_policy' => env('CATALOG_WEBSITE_PRICE_FALLBACK', 'none'),
+    ],
     'google_sheets' => [
         'enabled' => env('GOOGLE_SHEETS_ENABLED', false),
         'spreadsheet_id' => env('GOOGLE_SHEETS_SPREADSHEET_ID'),
@@ -23,5 +27,6 @@ return [
     'meta_catalog' => [
         'enabled' => env('META_CATALOG_ENABLED', false),
         'artifact' => 'meta-products.csv',
+        'test_mode' => env('META_CATALOG_TEST_MODE', true),
     ],
 ];

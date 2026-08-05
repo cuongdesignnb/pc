@@ -114,6 +114,11 @@ class Product extends Model
             });
     }
 
+    public function catalogPrices(): HasMany
+    {
+        return $this->hasMany(CatalogProductPrice::class);
+    }
+
     public function scopeVisibleOnStorefront(Builder $query): Builder
     {
         return $query->where('is_active', true)

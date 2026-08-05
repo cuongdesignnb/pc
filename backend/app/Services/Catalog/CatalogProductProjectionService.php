@@ -5,6 +5,8 @@ namespace App\Services\Catalog;
 use App\Data\Catalog\CatalogProductData;
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\Catalog\Pricing\CatalogChannelPriceResolver;
+use App\Services\Catalog\Pricing\CatalogPriceResolver;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -12,7 +14,11 @@ use Illuminate\Support\Str;
 
 class CatalogProductProjectionService
 {
-    public function __construct(private readonly CatalogProductChecksum $checksum) {}
+    public function __construct(
+        private readonly CatalogProductChecksum $checksum,
+        private readonly CatalogPriceResolver $prices,
+        private readonly CatalogChannelPriceResolver $channelPrices,
+    ) {}
 
     public function query(): Builder
     {
@@ -23,6 +29,7 @@ class CatalogProductProjectionService
                 'category:id,parent_id,name,slug,is_active,provider,show_on_pc_website,provider_sync_status',
                 'brand:id,name',
                 'images' => fn ($query) => $query->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
+                'catalogPrices',
             ]);
     }
 
@@ -47,7 +54,7 @@ class CatalogProductProjectionService
 
     public function project(Product $product, ?Collection $categories = null): CatalogProductData
     {
-        $product->loadMissing(['category', 'brand', 'images']);
+        $product->loadMissing(['category', 'brand', 'images', 'catalogPrices']);
         $categories ??= Category::query()->get()->keyBy('id');
         $category = $product->category;
         $categoryVisible = $category?->isVisibleOnStorefront() === true;
@@ -68,6 +75,16 @@ class CatalogProductProjectionService
             ->unique()
             ->values();
         $primaryImage = (string) ($images->first() ?? '');
+        $priceData = $this->prices->forProduct($product);
+        $channelPrices = $this->channelPrices->resolveAll($product);
+        $selectedChannelPrices = [];
+        $priceIssues = [];
+        foreach ($channelPrices as $channel => $resolved) {
+            $selectedChannelPrices[$channel] = $resolved['value'];
+            if ($resolved['issue']) {
+                $priceIssues[$channel] = $resolved['issue'];
+            }
+        }
         $payload = [
             'id' => (int) $product->id,
             'external_id' => $this->externalId($product),
@@ -82,7 +99,7 @@ class CatalogProductProjectionService
             'condition' => 'new',
             'availability' => $inventory > 0 && ! $underRepair ? 'in_stock' : 'out_of_stock',
             'inventory' => $inventory,
-            'price' => max(0, (int) $product->price),
+            'price' => $priceData['retail_price'],
             'currency' => 'VND',
             'sale_price' => $product->sale_price !== null ? max(0, (int) $product->sale_price) : null,
             'product_url' => $this->productUrl($product, $category),
@@ -93,6 +110,9 @@ class CatalogProductProjectionService
             'is_under_repair' => $underRepair,
             'is_deleted' => $isDeleted,
             'updated_at' => CarbonImmutable::instance($product->updated_at ?? now()),
+            'price_books' => $priceData['price_books'],
+            'selected_channel_prices' => $selectedChannelPrices,
+            'price_issues' => $priceIssues,
         ];
 
         return new CatalogProductData(
@@ -121,6 +141,10 @@ class CatalogProductProjectionService
             isDeleted: $payload['is_deleted'],
             updatedAt: $payload['updated_at'],
             checksum: $this->checksum->make($payload),
+            priceBooks: $payload['price_books'],
+            selectedChannelPrices: $payload['selected_channel_prices'],
+            priceIssues: $payload['price_issues'],
+            selectedPrice: $priceData['selected_price'],
         );
     }
 

@@ -172,12 +172,21 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
             ->name('integrations.catalog-channels.google-sheets.dry-run');
         Route::post('integrations/catalog-channels/google-sheets/sync', [CatalogChannelController::class, 'syncGoogleSheets'])
             ->name('integrations.catalog-channels.google-sheets.sync');
+        Route::patch('integrations/catalog-channels/{channel}/price', [CatalogChannelController::class, 'updatePriceSelection'])
+            ->whereIn('channel', ['website', 'google_sheets', 'google_merchant', 'meta_catalog'])
+            ->name('integrations.catalog-channels.price');
+        Route::post('integrations/catalog-channels/price-books/sync', [CatalogChannelController::class, 'syncPriceBooks'])
+            ->name('integrations.catalog-channels.price-books.sync');
+        Route::post('integrations/catalog-channels/product-prices/sync', [CatalogChannelController::class, 'syncProductPrices'])
+            ->name('integrations.catalog-channels.product-prices.sync');
         Route::patch('integrations/catalog-channels/{channel}/flags', [CatalogChannelController::class, 'updateFlags'])
             ->whereIn('channel', ['google_merchant', 'meta_catalog'])
             ->name('integrations.catalog-channels.flags');
         Route::post('integrations/catalog-channels/{channel}/validate', [CatalogChannelController::class, 'validateFeed'])
             ->whereIn('channel', ['google_merchant', 'meta_catalog'])
             ->name('integrations.catalog-channels.validate');
+        Route::post('integrations/catalog-channels/meta_catalog/test-connection', [CatalogChannelController::class, 'testMetaConnection'])
+            ->name('integrations.catalog-channels.meta_catalog.test-connection');
         Route::post('integrations/catalog-channels/{channel}/rebuild', [CatalogChannelController::class, 'rebuildFeed'])
             ->whereIn('channel', ['google_merchant', 'meta_catalog'])
             ->name('integrations.catalog-channels.rebuild');

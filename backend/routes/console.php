@@ -32,6 +32,18 @@ Schedule::job(new SyncGoogleSheetsCatalogJob)
     ->onOneServer()
     ->when(fn () => app(CatalogChannelManager::class)->isEnabled(CatalogChannelConnection::GOOGLE_SHEETS));
 
+Schedule::command('kiot:price-books:sync')
+    ->hourly()
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => app(KiotConfigurationResolver::class)->resolve()->productSyncEnabled);
+
+Schedule::command('kiot:product-prices:sync')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => app(KiotConfigurationResolver::class)->resolve()->productSyncEnabled);
+
 Schedule::job(new BuildCatalogFeedCacheJob(CatalogChannelConnection::GOOGLE_MERCHANT))
     ->everyFifteenMinutes()
     ->withoutOverlapping(20)
