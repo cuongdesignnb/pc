@@ -328,6 +328,6 @@ class SettingSeeder extends Seeder
             );
         }
 
-        $this->command->info('Seeded ' . count($settings) . ' settings');
+        $this->command->info('Seeded '.count($settings).' settings');
     }
 }
