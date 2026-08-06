@@ -48,18 +48,58 @@ class CatalogChannelController extends Controller
             'recentEvents' => CatalogChannelEvent::with('connection:id,channel')->latest()->limit(25)->get(),
             'priceBooks' => CatalogPriceBook::query()->withCount(['prices', 'prices as positive_prices_count' => fn ($query) => $query->where('price', '>', 0), 'prices as zero_prices_count' => fn ($query) => $query->where('price', 0)])->orderBy('name')->get(),
             'priceSettings' => app(CatalogChannelPriceSettingsService::class)->all(),
+            'googleSheetsPriceColumns' => app(CatalogChannelPriceSettingsService::class)->googleSheetsColumns(),
         ]);
     }
 
     public function updatePriceSelection(Request $request, string $channel, CatalogChannelPriceSettingsService $settings): RedirectResponse
     {
+        $this->assertPricingPermission($request, 'catalog_channels.manage_pricing');
         $validated = $request->validate([
             'price_source' => ['required', 'string', 'max:64'],
             'fallback_policy' => ['required', 'in:none,retail_price,selected_price'],
         ]);
-        $settings->update($channel, $validated['price_source'], $validated['fallback_policy'], $request->user()->id);
+        $before = $settings->forChannel($channel);
+        $updated = $settings->update($channel, $validated['price_source'], $validated['fallback_policy'], $request->user()->id);
+        $connection = $this->channels->connection($channel);
+        if ($before->price_source !== $updated->price_source) {
+            $this->audit->record($connection, 'CHANNEL_PRICE_SOURCE_UPDATED', $request->user(), [
+                'channel' => $channel,
+                'old_source' => $before->price_source,
+                'new_source' => $updated->price_source,
+                'old_fallback' => $before->fallback_policy,
+                'new_fallback' => $updated->fallback_policy,
+            ], $request);
+        }
+        if ($before->fallback_policy !== $updated->fallback_policy) {
+            $this->audit->record($connection, 'CHANNEL_FALLBACK_POLICY_UPDATED', $request->user(), [
+                'channel' => $channel,
+                'old_fallback' => $before->fallback_policy,
+                'new_fallback' => $updated->fallback_policy,
+            ], $request);
+        }
 
         return back()->with('success', 'Đã lưu nguồn giá cho channel.');
+    }
+
+    public function updateGoogleSheetsPriceColumns(Request $request, CatalogChannelPriceSettingsService $settings): RedirectResponse
+    {
+        $this->assertPricingPermission($request, 'catalog_channels.manage_google_sheets');
+        $validated = $request->validate([
+            'sources' => ['required', 'array', 'min:1', 'max:20'],
+            'sources.*' => ['required', 'string', 'max:64', 'distinct'],
+        ]);
+        $before = $settings->googleSheetsSources();
+        $columns = $settings->updateGoogleSheetsSources($validated['sources']);
+        $connection = $this->channels->connection(CatalogChannelConnection::GOOGLE_SHEETS);
+        $this->audit->record($connection, 'GOOGLE_SHEETS_PRICE_COLUMNS_UPDATED', $request->user(), [
+            'channel' => CatalogChannelConnection::GOOGLE_SHEETS,
+            'old_source' => $before,
+            'new_source' => $columns->pluck('price_source')->values()->all(),
+            'selected_columns' => $columns->pluck('column_key')->values()->all(),
+        ], $request);
+
+        return back()->with('success', 'Google Sheets price columns saved.');
     }
 
     public function syncPriceBooks(Request $request, KiotPriceBookSyncService $service): RedirectResponse
@@ -312,6 +352,17 @@ class CatalogChannelController extends Controller
             'FEED_EMPTY' => 'Feed chưa có artifact hoặc không có sản phẩm hợp lệ.',
             default => 'Catalog channel không hoàn thành yêu cầu.',
         };
+    }
+
+    private function assertPricingPermission(Request $request, string $permission): void
+    {
+        $user = $request->user();
+        $allowed = $user !== null
+            && ($user->hasRole('super-admin')
+                || $user->can('catalog-channels.manage')
+                || $user->can($permission));
+
+        abort_unless($allowed, 403);
     }
 
     private function assertCommerceChannel(string $channel): void

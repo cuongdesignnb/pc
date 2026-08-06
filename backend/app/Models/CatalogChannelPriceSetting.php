@@ -17,7 +17,7 @@ class CatalogChannelPriceSetting extends Model
 
     public const CHANNELS = [self::WEBSITE, self::GOOGLE_SHEETS, self::GOOGLE_MERCHANT, self::META_CATALOG];
 
-    public const PRICE_SOURCES = ['retail_price', 'selected_price', 'all_price_books'];
+    public const PRICE_SOURCES = ['retail_price', 'selected_price'];
 
     public const FALLBACK_POLICIES = ['none', 'retail_price', 'selected_price'];
 

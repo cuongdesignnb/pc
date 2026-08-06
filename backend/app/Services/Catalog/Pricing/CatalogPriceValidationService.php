@@ -8,10 +8,7 @@ class CatalogPriceValidationService
 {
     public function validateSource(string $source, ?int $priceBookId = null): array
     {
-        if (in_array($source, ['retail_price', 'selected_price', 'all_price_books'], true)) {
-            return [];
-        }
-        if ($source === 'price_book' && $priceBookId && CatalogPriceBook::query()->whereKey($priceBookId)->where('is_active', true)->exists()) {
+        if (in_array($source, ['retail_price', 'selected_price'], true)) {
             return [];
         }
         if (preg_match('/^price_book:(\d+)$/', $source, $matches) === 1

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
@@ -9,6 +9,7 @@ const props = defineProps({
     recentEvents: { type: Array, default: () => [] },
     priceBooks: { type: Array, default: () => [] },
     priceSettings: { type: Object, default: () => ({}) },
+    googleSheetsPriceColumns: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -20,10 +21,31 @@ const meta = computed(() => connection('meta_catalog'));
 const permissions = computed(() => page.props.auth?.user?.permissions || []);
 const roles = computed(() => page.props.auth?.user?.roles || []);
 const canManage = computed(() => roles.value.includes('super-admin') || permissions.value.includes('catalog-channels.manage'));
+const canManagePricing = computed(() => canManage.value || permissions.value.includes('catalog_channels.manage_pricing'));
+const canManageGoogleSheetsPricing = computed(() => canManage.value || permissions.value.includes('catalog_channels.manage_google_sheets'));
 const revealedFeedUrl = computed(() => page.props.flash?.feed_url || '');
 const catalogResult = computed(() => page.props.flash?.catalog_result || null);
-const priceSources = ['retail_price', 'selected_price', 'all_price_books'];
 const fallbackPolicies = ['none', 'retail_price', 'selected_price'];
+const priceSources = ['retail_price', 'selected_price'];
+const singlePriceChannels = ['website', 'google_merchant', 'meta_catalog'];
+const googleSheetsSources = ref([]);
+
+const priceOptions = computed(() => [
+    { value: 'retail_price', label: 'Retail price', active: true },
+    { value: 'selected_price', label: 'Selected price', active: true },
+    ...props.priceBooks.map((book) => ({
+        value: `price_book:${book.id}`,
+        label: `Price book: ${book.name}`,
+        active: Boolean(book.is_active),
+        book,
+    })),
+]);
+
+watch(() => props.googleSheetsPriceColumns, (columns) => {
+    googleSheetsSources.value = columns?.length
+        ? columns.map((column) => column.price_source)
+        : ['retail_price'];
+}, { immediate: true });
 
 const googleForm = useForm({
     spreadsheet_id: google.value.spreadsheet_id || '',
@@ -48,9 +70,18 @@ function toggleChannel(channel, enabled) {
 }
 
 function savePrice(channel, item) {
+    if (channel === 'website' && !window.confirm('Changing the Website price source can change public prices. Continue?')) {
+        return;
+    }
     router.patch(`/admin/integrations/catalog-channels/${channel}/price`, {
         price_source: item.price_source,
         fallback_policy: item.fallback_policy,
+    }, { preserveScroll: true });
+}
+
+function saveGoogleSheetsSources() {
+    router.patch('/admin/integrations/catalog-channels/google-sheets/price-columns', {
+        sources: googleSheetsSources.value,
     }, { preserveScroll: true });
 }
 
@@ -60,6 +91,31 @@ function priceSetting(channel) {
 
 function priceBookSource(book) {
     return `price_book:${book.id}`;
+}
+
+function isSelected(channel, source) {
+    return channel === 'google_sheets'
+        ? googleSheetsSources.value.includes(source)
+        : priceSetting(channel).price_source === source;
+}
+
+function setSingleSource(channel, source) {
+    if (priceOptions.value.find((option) => option.value === source)?.active !== false) {
+        priceSetting(channel).price_source = source;
+    }
+}
+
+function toggleGoogleSource(source, checked) {
+    if (checked && !googleSheetsSources.value.includes(source)) {
+        googleSheetsSources.value = [...googleSheetsSources.value, source];
+    }
+    if (!checked && googleSheetsSources.value.length > 1) {
+        googleSheetsSources.value = googleSheetsSources.value.filter((item) => item !== source);
+    }
+}
+
+function inactiveSelected(option) {
+    return option.active === false && ['website', 'google_sheets', 'google_merchant', 'meta_catalog'].some((channel) => isSelected(channel, option.value));
 }
 
 async function copyFeedUrl() {
@@ -111,6 +167,84 @@ function formatTime(value) {
             </section>
 
             <section class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 class="font-semibold text-white">Channel price source matrix</h2>
+                        <p class="mt-1 text-sm text-slate-400">Website, Google Merchant and Meta use one source; Google Sheets can export several independent columns.</p>
+                    </div>
+                    <span class="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">Fallback default: none</span>
+                </div>
+                <div class="mt-4 overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="text-left text-xs uppercase text-slate-500">
+                            <tr>
+                                <th class="px-2 py-2">Price source</th>
+                                <th class="px-2 py-2">{{ label('website') }}</th>
+                                <th class="px-2 py-2">{{ label('google_sheets') }}</th>
+                                <th class="px-2 py-2">{{ label('google_merchant') }}</th>
+                                <th class="px-2 py-2">{{ label('meta_catalog') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800">
+                            <tr v-for="option in priceOptions" :key="option.value">
+                                <td class="px-2 py-3 text-slate-200">
+                                    <div>{{ option.label }}</div>
+                                    <span v-if="option.book" class="text-xs text-slate-500">ID {{ option.book.remote_price_book_id }} · {{ option.book.code || 'no code' }}</span>
+                                    <span v-if="option.active === false" class="ml-2 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">Inactive</span>
+                                    <span v-if="inactiveSelected(option)" class="ml-2 text-xs text-amber-300">Currently selected</span>
+                                </td>
+                                <td class="px-2 py-3 text-center">
+                                    <input
+                                        name="price-source-website"
+                                        :checked="isSelected('website', option.value)"
+                                        :disabled="!canManagePricing || option.active === false"
+                                        type="radio"
+                                        @change="setSingleSource('website', option.value)"
+                                    >
+                                </td>
+                                <td class="px-2 py-3 text-center">
+                                    <input
+                                        :checked="isSelected('google_sheets', option.value)"
+                                        :disabled="!canManageGoogleSheetsPricing || option.active === false || (googleSheetsSources.length === 1 && isSelected('google_sheets', option.value))"
+                                        type="checkbox"
+                                        @change="toggleGoogleSource(option.value, $event.target.checked)"
+                                    >
+                                </td>
+                                <td v-for="channel in ['google_merchant', 'meta_catalog']" :key="channel" class="px-2 py-3 text-center">
+                                    <input
+                                        :name="`price-source-${channel}`"
+                                        :checked="isSelected(channel, option.value)"
+                                        :disabled="!canManagePricing || option.active === false"
+                                        type="radio"
+                                        @change="setSingleSource(channel, option.value)"
+                                    >
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 grid gap-4 md:grid-cols-3">
+                    <div v-for="channel in singlePriceChannels" :key="channel" class="rounded-lg border border-slate-800 p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-sm text-slate-200">{{ label(channel) }}</span>
+                            <button v-if="canManagePricing" class="text-xs text-cyan-300" @click="savePrice(channel, priceSetting(channel))">Save</button>
+                        </div>
+                        <select v-model="priceSetting(channel).fallback_policy" :disabled="!canManagePricing" class="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                            <option v-for="fallback in fallbackPolicies" :key="fallback" :value="fallback">Fallback: {{ fallback }}</option>
+                        </select>
+                        <p v-if="channel === 'website'" class="mt-3 text-xs text-amber-300">Changing this source can change public prices.</p>
+                    </div>
+                    <div class="rounded-lg border border-slate-800 p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-sm text-slate-200">Google Sheets columns</span>
+                            <button v-if="canManageGoogleSheetsPricing" class="text-xs text-cyan-300" @click="saveGoogleSheetsSources">Save</button>
+                        </div>
+                        <p class="mt-3 text-xs text-slate-400">Selected sources are exported as separate stable columns. Fallback is not used.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section v-if="false" class="rounded-xl border border-slate-800 bg-slate-900 p-5">
                 <h2 class="font-semibold text-white">Channel Price Selection</h2>
                 <div class="mt-4 grid gap-4 md:grid-cols-2">
                     <div v-for="channel in ['website', 'google_sheets', 'google_merchant', 'meta_catalog']" :key="channel" class="rounded-lg border border-slate-800 p-4">
@@ -118,6 +252,27 @@ function formatTime(value) {
                         <select v-model="priceSetting(channel).price_source" class="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"><option v-for="source in priceSources" :key="source" :value="source">{{ source }}</option><option v-for="book in priceBooks.filter((entry) => entry.is_active)" :key="priceBookSource(book)" :value="priceBookSource(book)">{{ priceBookSource(book) }} · {{ book.name }}</option></select>
                         <select v-model="priceSetting(channel).fallback_policy" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"><option v-for="fallback in fallbackPolicies" :key="fallback" :value="fallback">fallback: {{ fallback }}</option></select>
                     </div>
+                </div>
+            </section>
+
+            <section class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                <h2 class="font-semibold text-white">Price book details</h2>
+                <div class="mt-4 grid gap-3 md:grid-cols-2">
+                    <div v-for="book in priceBooks" :key="`details-${book.id}`" class="rounded-lg border border-slate-800 p-4 text-sm">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="font-medium text-slate-200">{{ book.name }}</span>
+                            <span :class="book.is_active ? 'text-emerald-300' : 'text-amber-300'">{{ book.is_active ? 'Active' : 'Inactive' }}</span>
+                        </div>
+                        <dl class="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
+                            <div><dt>Code</dt><dd class="text-slate-200">{{ book.code || '—' }}</dd></div>
+                            <div><dt>Remote ID</dt><dd class="text-slate-200">{{ book.remote_price_book_id }}</dd></div>
+                            <div><dt>SKUs with price</dt><dd class="text-slate-200">{{ book.prices_count || 0 }}</dd></div>
+                            <div><dt>Price &gt; 0</dt><dd class="text-emerald-300">{{ book.positive_prices_count || 0 }}</dd></div>
+                            <div><dt>Price = 0</dt><dd class="text-amber-300">{{ book.zero_prices_count || 0 }}</dd></div>
+                            <div><dt>Last sync</dt><dd class="text-slate-200">{{ formatTime(book.synced_at) }}</dd></div>
+                        </dl>
+                    </div>
+                    <p v-if="!priceBooks.length" class="text-sm text-slate-500">No price books synced.</p>
                 </div>
             </section>
 

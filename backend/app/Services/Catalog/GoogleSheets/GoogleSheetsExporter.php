@@ -8,10 +8,12 @@ use App\Models\CatalogChannelConnection;
 use App\Models\CatalogChannelItemState;
 use App\Models\CatalogChannelSyncConflict;
 use App\Models\CatalogChannelSyncRun;
-use App\Models\CatalogPriceBook;
+use App\Models\CatalogGoogleSheetPriceColumn;
 use App\Services\Catalog\CatalogChannelManager;
 use App\Services\Catalog\CatalogProductProjectionService;
 use App\Services\Catalog\CatalogProductValidator;
+use App\Services\Catalog\Pricing\CatalogChannelPriceSettingsService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
@@ -31,6 +33,7 @@ class GoogleSheetsExporter
         private readonly CatalogProductProjectionService $projection,
         private readonly CatalogProductValidator $validator,
         private readonly CatalogChannelManager $channels,
+        private readonly CatalogChannelPriceSettingsService $priceSettings,
     ) {}
 
     public function dryRun(?int $requestedBy = null): array
@@ -107,7 +110,8 @@ class GoogleSheetsExporter
 
     private function prepare(array $existingRows, array $configuration, bool $dryRun): array
     {
-        $headers = $this->headers();
+        $selectedColumns = $this->priceSettings->googleSheetsColumns();
+        $headers = $this->headers($selectedColumns);
         $existingHeaders = isset($existingRows[0]) ? array_map('strval', $existingRows[0]) : [];
         $headerMatches = $existingHeaders === $headers;
         $headerIndex = array_flip($headers);
@@ -143,6 +147,7 @@ class GoogleSheetsExporter
         $seenSku = [];
         $states = [];
         $counts = [
+            'SELECTED_PRICE_COLUMNS' => $selectedColumns->pluck('column_key')->values()->all(),
             'TOTAL_PRODUCTS' => 0,
             'VALID_PRODUCTS' => 0,
             'INVALID_PRODUCTS' => 0,
@@ -157,7 +162,7 @@ class GoogleSheetsExporter
 
         $this->projection->each(function (CatalogProductData $product) use (
             &$counts, &$ranges, &$nextRow, &$seenExternal, &$seenSku, &$states,
-            $existing, $existingSkus, $duplicateSheetIds, $configuration, $dryRun, $headers,
+            $existing, $existingSkus, $duplicateSheetIds, $configuration, $dryRun, $headers, $selectedColumns,
         ): void {
             $counts['TOTAL_PRODUCTS']++;
             $validation = $this->validator->validate($product);
@@ -218,7 +223,7 @@ class GoogleSheetsExporter
             $ranges[] = [
                 'range' => $this->client->rowRange($configuration, $rowNumber),
                 'majorDimension' => 'ROWS',
-                'values' => [$this->row($product, $validation->status($product), $errors, $headers)],
+                'values' => [$this->row($product, $validation->status($product), $errors, $headers, $selectedColumns)],
             ];
             $states[] = [
                 'product_id' => $product->id,
@@ -235,8 +240,14 @@ class GoogleSheetsExporter
         return ['summary' => $counts, 'ranges' => $ranges, 'states' => $states];
     }
 
-    private function row(CatalogProductData $product, string $status, array $errors, array $headers): array
-    {
+    /** @param Collection<int, CatalogGoogleSheetPriceColumn> $selectedColumns */
+    private function row(
+        CatalogProductData $product,
+        string $status,
+        array $errors,
+        array $headers,
+        Collection $selectedColumns,
+    ): array {
         $google = $product->withPrice($product->priceFor('google_merchant'));
         $meta = $product->withPrice($product->priceFor('meta_catalog'));
         $googleEligible = $this->validator->validate($google)->valid;
@@ -276,18 +287,35 @@ class GoogleSheetsExporter
         foreach ($product->priceBooks as $bookId => $price) {
             $values['price_book_'.$bookId] = $price;
         }
+        foreach ($selectedColumns as $column) {
+            $values[$column->column_key] = $this->valueForSource($product, $column->price_source, $column->price_book_id);
+        }
 
         return array_map(fn (string $header) => $values[$header] ?? '', $headers);
     }
 
-    private function headers(): array
+    /** @param Collection<int, CatalogGoogleSheetPriceColumn> $selectedColumns */
+    private function headers(Collection $selectedColumns): array
     {
         $headers = self::HEADERS;
-        foreach (CatalogPriceBook::query()->where('provider', 'kiot')->orderBy('id')->get(['id', 'name']) as $book) {
-            $headers[] = 'price_book_'.$book->id;
+        foreach ($selectedColumns as $column) {
+            if (! in_array($column->column_key, $headers, true)) {
+                $headers[] = $column->column_key;
+            }
         }
 
         return $headers;
+    }
+
+    private function valueForSource(CatalogProductData $product, string $source, ?int $priceBookId): ?int
+    {
+        return match ($source) {
+            'retail_price' => $product->price,
+            'selected_price' => $product->selectedPrice,
+            default => str_starts_with($source, 'price_book:') && $priceBookId !== null
+                ? data_get($product->priceBooks, $priceBookId)
+                : null,
+        };
     }
 
     private function safeText(string $value): string
