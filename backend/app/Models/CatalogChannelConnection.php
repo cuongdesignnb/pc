@@ -8,13 +8,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CatalogChannelConnection extends Model
 {
+    public const WEBSITE = 'website';
+
     public const GOOGLE_SHEETS = 'google_sheets';
 
     public const GOOGLE_MERCHANT = 'google_merchant';
 
     public const META_CATALOG = 'meta_catalog';
 
-    public const CHANNELS = [self::GOOGLE_SHEETS, self::GOOGLE_MERCHANT, self::META_CATALOG];
+    public const CHANNELS = [self::WEBSITE, self::GOOGLE_SHEETS, self::GOOGLE_MERCHANT, self::META_CATALOG];
 
     protected $guarded = [];
 
@@ -44,5 +46,10 @@ class CatalogChannelConnection extends Model
     public function events(): HasMany
     {
         return $this->hasMany(CatalogChannelEvent::class);
+    }
+
+    public function googleSheetPriceColumns(): HasMany
+    {
+        return $this->hasMany(CatalogGoogleSheetPriceColumn::class, 'connection_id');
     }
 }

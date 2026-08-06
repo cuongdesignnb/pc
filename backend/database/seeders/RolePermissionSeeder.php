@@ -125,6 +125,15 @@ class RolePermissionSeeder extends Seeder
             // Catalog channels
             'catalog-channels.view',
             'catalog-channels.manage',
+            'catalog_channels.view',
+            'catalog_channels.preview',
+            'catalog_channels.sync',
+            'catalog_channels.bulk_manage',
+            'catalog_channels.export_validation',
+            'catalog_channels.manage_pricing',
+            'catalog_channels.manage_google_sheets',
+            'catalog_channels.manage_google_merchant',
+            'catalog_channels.manage_meta',
 
             // Users (admin management)
             'users.view',

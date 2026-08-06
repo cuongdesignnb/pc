@@ -36,6 +36,7 @@ final readonly class CatalogProductData
         public array $selectedChannelPrices = [],
         public array $priceIssues = [],
         public ?int $selectedPrice = null,
+        public string $imageStatus = 'missing',
     ) {}
 
     public function toArray(): array
@@ -71,6 +72,7 @@ final readonly class CatalogProductData
             'selected_channel_prices' => $this->selectedChannelPrices,
             'price_issues' => $this->priceIssues,
             'selected_price' => $this->selectedPrice,
+            'image_status' => $this->imageStatus,
         ];
     }
 
@@ -111,6 +113,7 @@ final readonly class CatalogProductData
             selectedChannelPrices: $this->selectedChannelPrices,
             priceIssues: $this->priceIssues,
             selectedPrice: $this->selectedPrice,
+            imageStatus: $this->imageStatus,
         );
     }
 }
