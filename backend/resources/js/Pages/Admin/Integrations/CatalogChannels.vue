@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
@@ -29,6 +29,24 @@ const fallbackPolicies = ['none', 'retail_price', 'selected_price'];
 const priceSources = ['retail_price', 'selected_price'];
 const singlePriceChannels = ['website', 'google_merchant', 'meta_catalog'];
 const googleSheetsSources = ref([]);
+const selectionChannel = ref('google_sheets');
+const selectionProducts = ref([]);
+const selectionCursor = ref(null);
+const selectionFilters = ref({ keyword: '', image_status: '', price_status: '', price_book_id: '', price_book_status: '', under_repair: '', stock_status: '', visibility: '', google_eligible: '', meta_eligible: '', validation_error: '', sync_status: '' });
+const selectionLoading = ref(false);
+const selectionError = ref('');
+const selectedProductIds = ref(new Set());
+const selectionMode = ref('page');
+const excludedProductIds = ref(new Set());
+const selectionPageSelected = ref(false);
+const selectionPreview = ref(null);
+const selectionPreviewLoading = ref(false);
+const selectionActionLoading = ref(false);
+const selectionNotice = ref('');
+const canPreviewSelection = computed(() => canManage.value || permissions.value.includes('catalog_channels.preview'));
+const canSyncSelection = computed(() => canManage.value || permissions.value.includes('catalog_channels.sync'));
+const canBulkManageSelection = computed(() => canManage.value || permissions.value.includes('catalog_channels.bulk_manage'));
+const canExportValidation = computed(() => canManage.value || permissions.value.includes('catalog_channels.export_validation'));
 
 const priceOptions = computed(() => [
     { value: 'retail_price', label: 'Retail price', active: true },
@@ -136,6 +154,152 @@ function label(channel) {
 function formatTime(value) {
     return value ? new Date(value).toLocaleString('vi-VN') : 'Chưa có';
 }
+
+function csrfToken() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+function selectionPayload() {
+    return {
+        mode: selectionMode.value,
+        filters: { ...selectionFilters.value },
+        product_ids: selectionMode.value === 'page' ? [...selectedProductIds.value] : [],
+        excluded_product_ids: [...excludedProductIds.value],
+    };
+}
+
+function selectionPriceSource() {
+    return selectionChannel.value === 'google_sheets'
+        ? (googleSheetsSources.value[0] || 'retail_price')
+        : priceSetting(selectionChannel.value).price_source;
+}
+
+function selectionFallback() {
+    return selectionChannel.value === 'google_sheets' ? 'none' : priceSetting(selectionChannel.value).fallback_policy;
+}
+
+async function loadSelectionProducts(reset = true) {
+    selectionLoading.value = true;
+    selectionError.value = '';
+    if (reset) { selectionCursor.value = null; selectionProducts.value = []; }
+    try {
+        const params = new URLSearchParams({ channel: selectionChannel.value, per_page: '25' });
+        if (selectionCursor.value) params.set('cursor', selectionCursor.value);
+        Object.entries(selectionFilters.value).forEach(([key, value]) => { if (value !== '' && value !== null) params.set(`filters[${key}]`, value); });
+        const response = await fetch(`/admin/integrations/catalog-products?${params}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        selectionProducts.value = reset ? data.data : [...selectionProducts.value, ...data.data];
+        selectionCursor.value = data.next_cursor;
+        if (reset) selectionPageSelected.value = false;
+    } catch (error) {
+        selectionError.value = error.message || 'Unable to load products.';
+    } finally { selectionLoading.value = false; }
+}
+
+function isProductSelected(product) {
+    return selectionMode.value === 'filtered' ? !excludedProductIds.value.has(product.id) : selectedProductIds.value.has(product.id);
+}
+
+function toggleProduct(product, checked) {
+    if (selectionMode.value === 'filtered') {
+        const next = new Set(excludedProductIds.value);
+        checked ? next.delete(product.id) : next.add(product.id);
+        excludedProductIds.value = next;
+        return;
+    }
+    const next = new Set(selectedProductIds.value);
+    checked ? next.add(product.id) : next.delete(product.id);
+    selectedProductIds.value = next;
+}
+
+function togglePageSelection(checked) {
+    if (!checked) { clearSelection(); return; }
+    const next = new Set(selectedProductIds.value);
+    selectionProducts.value.forEach((product) => next.add(product.id));
+    selectedProductIds.value = next;
+    selectionPageSelected.value = true;
+}
+
+function chooseAllFiltered() {
+    selectionMode.value = 'filtered';
+    selectedProductIds.value = new Set();
+    excludedProductIds.value = new Set();
+    selectionPageSelected.value = true;
+}
+
+function clearSelection() {
+    selectionMode.value = 'page';
+    selectedProductIds.value = new Set();
+    excludedProductIds.value = new Set();
+    selectionPageSelected.value = false;
+    selectionPreview.value = null;
+}
+
+async function previewSelection() {
+    selectionPreviewLoading.value = true;
+    selectionError.value = '';
+    try {
+        const response = await fetch('/admin/integrations/catalog-products/preview', {
+            method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+            body: JSON.stringify({ channel: selectionChannel.value, selection: selectionPayload(), price_source: selectionPriceSource(), fallback_policy: selectionFallback() }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Preview failed.');
+        selectionPreview.value = data;
+    } catch (error) { selectionError.value = error.message || 'Preview failed.'; }
+    finally { selectionPreviewLoading.value = false; }
+}
+
+async function syncSelection() {
+    if (!selectionPreview.value) return;
+    const summary = selectionPreview.value.summary;
+    if (summary.ELIGIBLE_COUNT === 0 && selectionChannel.value !== 'google_sheets') return;
+    if (!window.confirm(`Confirm ${summary.SELECTED_COUNT} selected products for ${label(selectionChannel.value)}?`)) return;
+    selectionActionLoading.value = true;
+    try {
+        const response = await fetch('/admin/integrations/catalog-products/sync', {
+            method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+            body: JSON.stringify({ channel: selectionChannel.value, selection: selectionPayload(), price_source: selectionPriceSource(), fallback_policy: selectionFallback(), confirmed: true, preview_token: selectionPreview.value.preview_token }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Bulk sync failed.');
+        selectionNotice.value = `Accepted run #${data.run_id}; remote submitted: ${data.remote_submitted ? 'yes' : 'no'}.`;
+    } catch (error) { selectionError.value = error.message || 'Bulk sync failed.'; }
+    finally { selectionActionLoading.value = false; }
+}
+
+async function exportSelectionValidation() {
+    selectionActionLoading.value = true;
+    try {
+        const response = await fetch('/admin/integrations/catalog-products/export-validation', {
+            method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+            body: JSON.stringify({ channel: selectionChannel.value, selection: selectionPayload(), price_source: selectionPriceSource(), fallback_policy: selectionFallback() }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Export failed.');
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `catalog-validation-${selectionChannel.value}.json`; link.click(); URL.revokeObjectURL(link.href);
+    } catch (error) { selectionError.value = error.message || 'Export failed.'; }
+    finally { selectionActionLoading.value = false; }
+}
+
+async function bulkChannelAction(actionName) {
+    if (!window.confirm(`Confirm ${actionName} selected products for ${label(selectionChannel.value)}?`)) return;
+    selectionActionLoading.value = true;
+    try {
+        const response = await fetch(`/admin/integrations/catalog-products/bulk/${actionName}`, {
+            method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+            body: JSON.stringify({ channel: selectionChannel.value, selection: selectionPayload(), price_source: selectionPriceSource(), fallback_policy: selectionFallback() }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        selectionNotice.value = `Bulk ${actionName} recorded.`;
+    } catch (error) { selectionError.value = error.message || 'Bulk action failed.'; }
+    finally { selectionActionLoading.value = false; }
+}
+
+watch(selectionChannel, () => loadSelectionProducts());
+onMounted(() => loadSelectionProducts());
 </script>
 
 <template>
@@ -242,6 +406,51 @@ function formatTime(value) {
                         <p class="mt-3 text-xs text-slate-400">Selected sources are exported as separate stable columns. Fallback is not used.</p>
                     </div>
                 </div>
+            </section>
+
+            <section class="rounded-xl border border-cyan-500/30 bg-slate-900 p-5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 class="font-semibold text-white">Select products to sync</h2>
+                        <p class="mt-1 text-sm text-slate-400">Choose a channel and price source, filter products, then preview before any bulk action.</p>
+                    </div>
+                    <select v-model="selectionChannel" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+                        <option value="google_sheets">Google Sheets</option>
+                        <option value="google_merchant">Google Merchant</option>
+                        <option value="meta_catalog">Facebook / Meta</option>
+                    </select>
+                </div>
+                <div class="mt-4 grid gap-3 md:grid-cols-4">
+                    <input v-model="selectionFilters.keyword" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm" placeholder="SKU or product name">
+                    <select v-model="selectionFilters.image_status" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">All image states</option><option value="has_image">Has image</option><option value="missing">Missing image</option><option value="invalid">Invalid image URL</option></select>
+                    <select v-model="selectionFilters.price_status" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">All prices</option><option value="positive">Price &gt; 0</option><option value="zero">Price = 0</option></select>
+                    <select v-model="selectionFilters.visibility" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">All visibility</option><option value="visible">Visible</option><option value="hidden">Hidden</option></select>
+                    <select v-model="selectionFilters.stock_status" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">All stock</option><option value="in_stock">In stock</option><option value="out_of_stock">Out of stock</option></select>
+                    <select v-model="selectionFilters.under_repair" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">Repair status</option><option value="true">Under repair</option><option value="false">Ready</option></select>
+                    <select v-model="selectionFilters.sync_status" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"><option value="">Sync status</option><option value="synced">Synced</option><option value="not_synced">Not synced</option></select>
+                    <button class="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-200" :disabled="selectionLoading" @click="loadSelectionProducts()">{{ selectionLoading ? 'Loading...' : 'Apply filters' }}</button>
+                </div>
+                <div v-if="selectionError" class="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{{ selectionError }} <button class="ml-2 underline" @click="loadSelectionProducts()">Retry</button></div>
+                <div v-if="selectionNotice" class="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{{ selectionNotice }}</div>
+                <div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                    <button class="rounded-lg border border-slate-700 px-3 py-2 text-slate-200" :disabled="!selectionProducts.length" @click="togglePageSelection(true)">Select all on page</button>
+                    <button v-if="selectionPageSelected && selectionMode === 'page'" class="rounded-lg border border-cyan-500/40 px-3 py-2 text-cyan-300" @click="chooseAllFiltered">Select all filtered products</button>
+                    <button class="rounded-lg border border-slate-700 px-3 py-2 text-slate-300" :disabled="!selectedProductIds.size && selectionMode !== 'filtered'" @click="clearSelection">Clear selection</button>
+                    <span class="text-slate-400">Selected: {{ selectionMode === 'filtered' ? 'all filtered (backend count)' : selectedProductIds.size }}</span>
+                    <button v-if="canPreviewSelection" class="rounded-lg bg-cyan-600 px-3 py-2 text-sm text-white disabled:opacity-40" :disabled="selectionPreviewLoading || (!selectedProductIds.size && selectionMode !== 'filtered')" @click="previewSelection">{{ selectionPreviewLoading ? 'Previewing...' : 'Preview sync' }}</button>
+                    <button v-if="canExportValidation" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200" :disabled="selectionActionLoading" @click="exportSelectionValidation">Export validation</button>
+                    <button v-if="canSyncSelection" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-40" :disabled="selectionActionLoading || !selectionPreview || (selectionPreview.summary.ELIGIBLE_COUNT === 0 && selectionChannel !== 'google_sheets')" @click="syncSelection">Sync selected</button>
+                    <button v-if="canBulkManageSelection" class="rounded-lg border border-amber-500/40 px-3 py-2 text-sm text-amber-300" :disabled="selectionActionLoading" @click="bulkChannelAction('disable')">Disable selected</button>
+                </div>
+                <div v-if="selectionMode === 'page' && selectionPageSelected" class="mt-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm text-cyan-100">Selected {{ selectionProducts.length }} products on this page. Select all filtered products to include every matching product without sending all IDs from the browser.</div>
+                <div class="mt-4 overflow-x-auto rounded-lg border border-slate-800">
+                    <table class="min-w-[1500px] text-xs">
+                        <thead class="bg-slate-800/60 text-left uppercase text-slate-500"><tr><th class="px-2 py-2"><input type="checkbox" :checked="selectionProducts.length > 0 && selectionProducts.every(isProductSelected)" @change="togglePageSelection($event.target.checked)"></th><th class="px-2 py-2">SKU</th><th class="px-2 py-2">Name</th><th class="px-2 py-2">Category</th><th class="px-2 py-2">Image</th><th class="px-2 py-2">Retail</th><th class="px-2 py-2">Selected price</th><th class="px-2 py-2">Source</th><th class="px-2 py-2">Stock</th><th class="px-2 py-2">Repair</th><th class="px-2 py-2">Visible</th><th class="px-2 py-2">Google</th><th class="px-2 py-2">Meta</th><th class="px-2 py-2">Errors</th><th class="px-2 py-2">Last sync</th></tr></thead>
+                        <tbody class="divide-y divide-slate-800"><tr v-for="product in selectionProducts" :key="product.id"><td class="px-2 py-2"><input type="checkbox" :checked="isProductSelected(product)" @change="toggleProduct(product, $event.target.checked)"></td><td class="px-2 py-2 font-mono text-cyan-300">{{ product.sku }}</td><td class="max-w-[220px] px-2 py-2 text-slate-200">{{ product.name }}</td><td class="px-2 py-2 text-slate-400">{{ product.category || '—' }}</td><td class="px-2 py-2"><img v-if="product.image_status === 'has_image'" :src="product.image_url" class="h-8 w-8 rounded object-cover" :alt="product.sku"><span v-else class="rounded bg-red-500/10 px-2 py-1 text-red-300">{{ product.image_status }}</span></td><td class="px-2 py-2 text-slate-300">{{ product.retail_price }}</td><td class="px-2 py-2 text-slate-300">{{ product.selected_price ?? '—' }}</td><td class="px-2 py-2 text-slate-400">{{ product.price_source }}</td><td class="px-2 py-2 text-slate-300">{{ product.stock }}</td><td class="px-2 py-2" :class="product.repair_status === 'repairing' ? 'text-amber-300' : 'text-slate-400'">{{ product.repair_status }}</td><td class="px-2 py-2">{{ product.is_visible ? 'yes' : 'no' }}</td><td class="px-2 py-2" :class="product.google_eligible ? 'text-emerald-300' : 'text-red-300'">{{ product.google_eligible ? 'yes' : 'no' }}</td><td class="px-2 py-2" :class="product.meta_eligible ? 'text-emerald-300' : 'text-red-300'">{{ product.meta_eligible ? 'yes' : 'no' }}</td><td class="max-w-[220px] px-2 py-2 text-red-300">{{ product.validation_errors.join(', ') || '—' }}</td><td class="px-2 py-2 text-slate-500">{{ formatTime(product.last_sync) }}</td></tr><tr v-if="!selectionLoading && !selectionProducts.length"><td colspan="15" class="px-3 py-8 text-center text-slate-500">No products match these filters.</td></tr></tbody>
+                    </table>
+                </div>
+                <button v-if="selectionCursor" class="mt-3 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300" :disabled="selectionLoading" @click="loadSelectionProducts(false)">Load next page</button>
+                <div v-if="selectionPreview" class="mt-5 rounded-lg border border-cyan-500/30 bg-slate-950 p-4"><div class="flex flex-wrap items-center justify-between gap-2"><h3 class="font-semibold text-white">Preview: {{ selectionPreview.summary.CHANNEL }}</h3><span class="text-xs text-slate-400">{{ selectionPreview.summary.PRICE_SOURCE }} · {{ selectionPreview.summary.SELECTION_SCOPE }}</span></div><div class="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-3 md:grid-cols-6"><span>Selected {{ selectionPreview.summary.SELECTED_COUNT }}</span><span>Eligible {{ selectionPreview.summary.ELIGIBLE_COUNT }}</span><span>Invalid {{ selectionPreview.summary.INVALID_COUNT }}</span><span>Missing image {{ selectionPreview.summary.IMAGE_MISSING_COUNT }}</span><span>Zero price {{ selectionPreview.summary.PRICE_ZERO_COUNT }}</span><span>Under repair {{ selectionPreview.summary.UNDER_REPAIR_COUNT }}</span><span>Create {{ selectionPreview.summary.CREATE_COUNT }}</span><span>Update {{ selectionPreview.summary.UPDATE_COUNT }}</span><span>Unchanged {{ selectionPreview.summary.UNCHANGED_COUNT }}</span><span>Skipped {{ selectionPreview.summary.SKIPPED_COUNT }}</span></div><div class="mt-3 max-h-72 overflow-auto"><table class="min-w-full text-xs"><thead class="text-left text-slate-500"><tr><th class="px-2 py-1">SKU</th><th class="px-2 py-1">Image</th><th class="px-2 py-1">Price</th><th class="px-2 py-1">Eligibility</th><th class="px-2 py-1">Errors</th><th class="px-2 py-1">Action</th></tr></thead><tbody class="divide-y divide-slate-800"><tr v-for="item in selectionPreview.items" :key="item.id"><td class="px-2 py-1 font-mono text-cyan-300">{{ item.sku }}</td><td class="px-2 py-1 text-slate-400">{{ item.image_status }}</td><td class="px-2 py-1">{{ item.selected_price ?? '—' }}</td><td class="px-2 py-1" :class="item.eligible ? 'text-emerald-300' : 'text-red-300'">{{ item.eligible ? 'eligible' : 'invalid' }}</td><td class="px-2 py-1 text-red-300">{{ item.validation_errors.join(', ') || '—' }}</td><td class="px-2 py-1 text-slate-300">{{ item.action }}</td></tr></tbody></table></div></div>
             </section>
 
             <section v-if="false" class="rounded-xl border border-slate-800 bg-slate-900 p-5">

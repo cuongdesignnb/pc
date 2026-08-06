@@ -14,6 +14,8 @@ class CatalogChannelPriceSettingsService
 {
     public const DEFAULT_GOOGLE_SHEETS_SOURCES = ['retail_price'];
 
+    private ?array $cachedSettings = null;
+
     public function __construct(
         private readonly CatalogPriceValidationService $validator,
         private readonly CatalogChannelManager $channels,
@@ -21,6 +23,10 @@ class CatalogChannelPriceSettingsService
 
     public function all(): array
     {
+        if ($this->cachedSettings !== null) {
+            return $this->cachedSettings;
+        }
+
         $existing = CatalogChannelPriceSetting::query()->get()->keyBy('channel');
         $settings = [];
         foreach (CatalogChannelPriceSetting::CHANNELS as $channel) {
@@ -32,7 +38,7 @@ class CatalogChannelPriceSettingsService
             ]);
         }
 
-        return $settings;
+        return $this->cachedSettings = $settings;
     }
 
     public function forChannel(string $channel): CatalogChannelPriceSetting
@@ -59,7 +65,7 @@ class CatalogChannelPriceSettingsService
             throw ValidationException::withMessages($errors);
         }
 
-        return CatalogChannelPriceSetting::updateOrCreate(
+        $updated = CatalogChannelPriceSetting::updateOrCreate(
             ['channel' => $channel],
             [
                 'price_source' => $priceSource,
@@ -69,6 +75,9 @@ class CatalogChannelPriceSettingsService
                 'configured_at' => now(),
             ],
         );
+        $this->cachedSettings = null;
+
+        return $updated;
     }
 
     /** @return Collection<int, CatalogGoogleSheetPriceColumn> */

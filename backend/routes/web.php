@@ -202,6 +202,28 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
             ->name('integrations.catalog-channels.google-sheets.price-columns');
     });
 
+    Route::middleware('permission:catalog-channels.view|catalog_channels.view')->group(function () {
+        Route::get('integrations/catalog-products', [CatalogChannelController::class, 'catalogProducts'])
+            ->name('integrations.catalog-products.index');
+    });
+    Route::middleware('permission:catalog-channels.manage|catalog_channels.preview')->group(function () {
+        Route::post('integrations/catalog-products/preview', [CatalogChannelController::class, 'previewCatalogProducts'])
+            ->name('integrations.catalog-products.preview');
+    });
+    Route::middleware('permission:catalog-channels.manage|catalog_channels.sync')->group(function () {
+        Route::post('integrations/catalog-products/sync', [CatalogChannelController::class, 'syncCatalogProducts'])
+            ->name('integrations.catalog-products.sync');
+    });
+    Route::middleware('permission:catalog-channels.manage|catalog_channels.export_validation')->group(function () {
+        Route::post('integrations/catalog-products/export-validation', [CatalogChannelController::class, 'exportCatalogValidation'])
+            ->name('integrations.catalog-products.export-validation');
+    });
+    Route::middleware('permission:catalog-channels.manage|catalog_channels.bulk_manage')->group(function () {
+        Route::post('integrations/catalog-products/bulk/{action}', [CatalogChannelController::class, 'bulkCatalogChannelAction'])
+            ->whereIn('action', ['enable', 'disable', 'reset'])
+            ->name('integrations.catalog-products.bulk');
+    });
+
     // AI Articles
     Route::get('ai-articles', [AiArticleController::class, 'index'])->name('ai-articles.index');
     Route::get('ai-articles/create', [AiArticleController::class, 'create'])->name('ai-articles.create');

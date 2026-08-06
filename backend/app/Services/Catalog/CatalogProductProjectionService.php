@@ -75,6 +75,10 @@ class CatalogProductProjectionService
             ->unique()
             ->values();
         $primaryImage = (string) ($images->first() ?? '');
+        $imageStatus = $primaryImage === ''
+            ? 'missing'
+            : ($product->images->contains(fn ($image): bool => $image->provider === 'kiot' && blank($image->storage_path)
+            ) ? 'not_mirrored' : 'has_image');
         $priceData = $this->prices->forProduct($product);
         $channelPrices = $this->channelPrices->resolveAll($product);
         $selectedChannelPrices = [];
@@ -145,6 +149,7 @@ class CatalogProductProjectionService
             selectedChannelPrices: $payload['selected_channel_prices'],
             priceIssues: $payload['price_issues'],
             selectedPrice: $priceData['selected_price'],
+            imageStatus: $imageStatus,
         );
     }
 

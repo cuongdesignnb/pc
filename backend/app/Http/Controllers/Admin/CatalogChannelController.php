@@ -10,8 +10,13 @@ use App\Models\CatalogChannelConnection;
 use App\Models\CatalogChannelEvent;
 use App\Models\CatalogChannelSyncRun;
 use App\Models\CatalogPriceBook;
+use App\Models\Category;
+use App\Services\Catalog\CatalogBulkSyncService;
 use App\Services\Catalog\CatalogChannelAuditService;
+use App\Services\Catalog\CatalogChannelEligibilityService;
 use App\Services\Catalog\CatalogChannelManager;
+use App\Services\Catalog\CatalogProductSelectionService;
+use App\Services\Catalog\CatalogSelectionPreviewService;
 use App\Services\Catalog\GoogleMerchant\GoogleMerchantFeedBuilder;
 use App\Services\Catalog\GoogleSheets\GoogleSheetsConnectionTestService;
 use App\Services\Catalog\GoogleSheets\GoogleSheetsExporter;
@@ -20,6 +25,7 @@ use App\Services\Catalog\Meta\MetaCatalogFeedBuilder;
 use App\Services\Catalog\Pricing\CatalogChannelPriceSettingsService;
 use App\Services\Integrations\Kiot\KiotPriceBookSyncService;
 use App\Services\Integrations\Kiot\KiotProductPriceSyncService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -100,6 +106,106 @@ class CatalogChannelController extends Controller
         ], $request);
 
         return back()->with('success', 'Google Sheets price columns saved.');
+    }
+
+    public function catalogProducts(
+        Request $request,
+        CatalogProductSelectionService $selection,
+        CatalogChannelEligibilityService $eligibility,
+    ): JsonResponse {
+        $this->assertSelectionPermission($request, 'catalog_channels.view');
+        $channel = (string) $request->query('channel', CatalogChannelConnection::GOOGLE_SHEETS);
+        $this->assertCatalogSelectionChannel($channel);
+        $filters = $request->query('filters', $request->query());
+        $page = $selection->page(['mode' => 'filtered', 'filters' => (array) $filters], (int) $request->query('per_page', 25), (int) $request->query('cursor', 0) ?: null);
+        $categories = Category::query()->get()->keyBy('id');
+        $states = $selection->states($channel, $page['products']->pluck('id')->map(fn ($id): int => (int) $id)->all());
+        $items = $page['products']->map(function ($product) use ($categories, $eligibility, $channel, $states): array {
+            $projection = app(\App\Services\Catalog\CatalogProductProjectionService::class)->project($product, $categories);
+            $selected = $eligibility->evaluate($projection, $channel);
+            $google = $eligibility->evaluate($projection, CatalogChannelConnection::GOOGLE_MERCHANT);
+            $meta = $eligibility->evaluate($projection, CatalogChannelConnection::META_CATALOG);
+
+            return [
+                'id' => $projection->id,
+                'external_id' => $projection->externalId,
+                'sku' => $projection->sku,
+                'name' => $projection->title,
+                'category' => $projection->categoryName,
+                'image_url' => $projection->imageUrl,
+                'image_status' => $selected['image_status'],
+                'retail_price' => $projection->price,
+                'selected_price' => $selected['price'],
+                'price_source' => $selected['price_source'],
+                'stock' => $projection->inventory,
+                'repair_status' => $projection->isUnderRepair ? 'repairing' : 'ready',
+                'is_visible' => $projection->isVisible,
+                'is_active' => $projection->isActive,
+                'google_eligible' => $google['eligible'],
+                'meta_eligible' => $meta['eligible'],
+                'validation_errors' => $selected['errors'],
+                'last_sync' => ($states[$projection->id] ?? null)?->last_synced_at,
+            ];
+        })->values();
+
+        return response()->json([
+            'data' => $items,
+            'next_cursor' => $page['next_cursor'],
+            'filters' => $selection->filtersSummary((array) $filters),
+            'channel' => $channel,
+        ]);
+    }
+
+    public function previewCatalogProducts(Request $request, CatalogSelectionPreviewService $preview): JsonResponse
+    {
+        $this->assertSelectionPermission($request, 'catalog_channels.preview');
+        $result = $preview->preview($request->all());
+        $connection = $this->channels->connection($result['summary']['CHANNEL']);
+        $this->audit->record($connection, 'CATALOG_SELECTION_PREVIEWED', $request->user(), [
+            'channel' => $result['summary']['CHANNEL'],
+            'selection_mode' => $result['summary']['SELECTION_SCOPE'],
+            'filter_summary' => $result['summary']['filter_snapshot'],
+            'selected_count' => $result['summary']['SELECTED_COUNT'],
+            'eligible_count' => $result['summary']['ELIGIBLE_COUNT'],
+            'invalid_count' => $result['summary']['INVALID_COUNT'],
+            'price_source' => $result['summary']['PRICE_SOURCE'],
+        ], $request);
+
+        return response()->json($result);
+    }
+
+    public function syncCatalogProducts(Request $request, CatalogBulkSyncService $bulk): JsonResponse
+    {
+        $this->assertSelectionPermission($request, 'catalog_channels.sync');
+        $result = $bulk->sync($request->all(), $request->user(), $request);
+
+        return response()->json($result);
+    }
+
+    public function exportCatalogValidation(Request $request, CatalogSelectionPreviewService $preview): JsonResponse
+    {
+        $this->assertSelectionPermission($request, 'catalog_channels.export_validation');
+        $result = $preview->preview($request->all());
+        $connection = $this->channels->connection($result['summary']['CHANNEL']);
+        $this->audit->record($connection, 'CATALOG_VALIDATION_EXPORTED', $request->user(), [
+            'channel' => $result['summary']['CHANNEL'],
+            'selection_mode' => $result['summary']['SELECTION_SCOPE'],
+            'filter_summary' => $result['summary']['filter_snapshot'],
+            'selected_count' => $result['summary']['SELECTED_COUNT'],
+            'eligible_count' => $result['summary']['ELIGIBLE_COUNT'],
+            'invalid_count' => $result['summary']['INVALID_COUNT'],
+            'price_source' => $result['summary']['PRICE_SOURCE'],
+        ], $request);
+
+        return response()->json($result);
+    }
+
+    public function bulkCatalogChannelAction(Request $request, string $action, CatalogBulkSyncService $bulk): JsonResponse
+    {
+        $this->assertSelectionPermission($request, 'catalog_channels.bulk_manage');
+        abort_unless(in_array($action, ['enable', 'disable', 'reset'], true), 404);
+
+        return response()->json($bulk->override($request->all(), $action, $request->user(), $request));
     }
 
     public function syncPriceBooks(Request $request, KiotPriceBookSyncService $service): RedirectResponse
@@ -363,6 +469,26 @@ class CatalogChannelController extends Controller
                 || $user->can($permission));
 
         abort_unless($allowed, 403);
+    }
+
+    private function assertSelectionPermission(Request $request, string $permission): void
+    {
+        $user = $request->user();
+        $allowed = $user !== null
+            && ($user->hasRole('super-admin')
+                || $user->can('catalog-channels.manage')
+                || $user->can($permission));
+
+        abort_unless($allowed, 403);
+    }
+
+    private function assertCatalogSelectionChannel(string $channel): void
+    {
+        abort_unless(in_array($channel, [
+            CatalogChannelConnection::GOOGLE_SHEETS,
+            CatalogChannelConnection::GOOGLE_MERCHANT,
+            CatalogChannelConnection::META_CATALOG,
+        ], true), 422);
     }
 
     private function assertCommerceChannel(string $channel): void
