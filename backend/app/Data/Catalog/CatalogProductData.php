@@ -32,6 +32,10 @@ final readonly class CatalogProductData
         public bool $isDeleted,
         public CarbonImmutable $updatedAt,
         public string $checksum,
+        public array $priceBooks = [],
+        public array $selectedChannelPrices = [],
+        public array $priceIssues = [],
+        public ?int $selectedPrice = null,
     ) {}
 
     public function toArray(): array
@@ -62,6 +66,51 @@ final readonly class CatalogProductData
             'is_deleted' => $this->isDeleted,
             'updated_at' => $this->updatedAt->toIso8601String(),
             'checksum' => $this->checksum,
+            'retail_price' => $this->price,
+            'price_books' => $this->priceBooks,
+            'selected_channel_prices' => $this->selectedChannelPrices,
+            'price_issues' => $this->priceIssues,
+            'selected_price' => $this->selectedPrice,
         ];
+    }
+
+    public function priceFor(string $channel): ?int
+    {
+        return data_get($this->selectedChannelPrices, $channel);
+    }
+
+    public function withPrice(?int $price): self
+    {
+        return new self(
+            id: $this->id,
+            externalId: $this->externalId,
+            sku: $this->sku,
+            title: $this->title,
+            description: $this->description,
+            categoryId: $this->categoryId,
+            categoryName: $this->categoryName,
+            categoryPath: $this->categoryPath,
+            categoryVisible: $this->categoryVisible,
+            brand: $this->brand,
+            condition: $this->condition,
+            availability: $this->availability,
+            inventory: $this->inventory,
+            price: max(0, (int) ($price ?? 0)),
+            currency: $this->currency,
+            salePrice: $this->salePrice,
+            productUrl: $this->productUrl,
+            imageUrl: $this->imageUrl,
+            additionalImageUrls: $this->additionalImageUrls,
+            isActive: $this->isActive,
+            isVisible: $this->isVisible,
+            isUnderRepair: $this->isUnderRepair,
+            isDeleted: $this->isDeleted,
+            updatedAt: $this->updatedAt,
+            checksum: $this->checksum,
+            priceBooks: $this->priceBooks,
+            selectedChannelPrices: $this->selectedChannelPrices,
+            priceIssues: $this->priceIssues,
+            selectedPrice: $this->selectedPrice,
+        );
     }
 }

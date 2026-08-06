@@ -10,6 +10,7 @@ use App\Models\CatalogChannelSyncConflict;
 use App\Models\CatalogChannelSyncRun;
 use App\Services\Catalog\CatalogProductProjectionService;
 use App\Services\Catalog\CatalogProductValidator;
+use App\Services\Catalog\Pricing\CatalogChannelPriceResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -20,6 +21,7 @@ class CatalogCommerceFeedBuilder
     public function __construct(
         private readonly CatalogProductProjectionService $projection,
         private readonly CatalogProductValidator $validator,
+        private readonly CatalogChannelPriceResolver $prices,
     ) {}
 
     public function build(
@@ -70,9 +72,14 @@ class CatalogCommerceFeedBuilder
         try {
             $products = function () use (&$summary, &$states, &$seen, $channel, $existingStates): \Generator {
                 foreach ($this->projection->projected() as [$product]) {
+                    $resolvedPrice = $this->prices->resolveData($product, $channel);
+                    $product = $product->withPrice($resolvedPrice['value']);
                     $summary['TOTAL_PRODUCTS']++;
                     $validation = $this->validator->validate($product);
                     $errors = $validation->errors;
+                    if ($resolvedPrice['issue']) {
+                        $errors[] = $resolvedPrice['issue'];
+                    }
                     if (isset($seen[$product->externalId])) {
                         $errors[] = 'DUPLICATE_EXTERNAL_ID';
                     }
@@ -117,7 +124,7 @@ class CatalogCommerceFeedBuilder
 
             $renderer->render($products(), $temporaryPath);
             $validation = $feedValidator->validate($temporaryPath);
-            if (($validation['items'] ?? 0) === 0) {
+            if (($validation['items'] ?? 0) === 0 && ! $dryRun) {
                 throw new CatalogChannelException('FEED_EMPTY', 'Feed không có sản phẩm hợp lệ.');
             }
 

@@ -7,6 +7,8 @@ const props = defineProps({
     connections: { type: Array, required: true },
     recentRuns: { type: Array, default: () => [] },
     recentEvents: { type: Array, default: () => [] },
+    priceBooks: { type: Array, default: () => [] },
+    priceSettings: { type: Object, default: () => ({}) },
 });
 
 const page = usePage();
@@ -20,6 +22,8 @@ const roles = computed(() => page.props.auth?.user?.roles || []);
 const canManage = computed(() => roles.value.includes('super-admin') || permissions.value.includes('catalog-channels.manage'));
 const revealedFeedUrl = computed(() => page.props.flash?.feed_url || '');
 const catalogResult = computed(() => page.props.flash?.catalog_result || null);
+const priceSources = ['retail_price', 'selected_price', 'all_price_books'];
+const fallbackPolicies = ['none', 'retail_price', 'selected_price'];
 
 const googleForm = useForm({
     spreadsheet_id: google.value.spreadsheet_id || '',
@@ -43,6 +47,21 @@ function toggleChannel(channel, enabled) {
     router.patch(`/admin/integrations/catalog-channels/${channel}/flags`, { is_enabled: enabled }, { preserveScroll: true });
 }
 
+function savePrice(channel, item) {
+    router.patch(`/admin/integrations/catalog-channels/${channel}/price`, {
+        price_source: item.price_source,
+        fallback_policy: item.fallback_policy,
+    }, { preserveScroll: true });
+}
+
+function priceSetting(channel) {
+    return props.priceSettings[channel] || { price_source: 'retail_price', fallback_policy: 'none' };
+}
+
+function priceBookSource(book) {
+    return `price_book:${book.id}`;
+}
+
 async function copyFeedUrl() {
     if (revealedFeedUrl.value) {
         await navigator.clipboard.writeText(revealedFeedUrl.value);
@@ -51,6 +70,7 @@ async function copyFeedUrl() {
 
 function label(channel) {
     return {
+        website: 'Website storefront',
         google_sheets: 'Google Sheets',
         google_merchant: 'Google Merchant',
         meta_catalog: 'Facebook / Meta Catalog',
@@ -81,6 +101,25 @@ function formatTime(value) {
                 </div>
             </div>
             <pre v-if="catalogResult" class="overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs text-cyan-200">{{ JSON.stringify(catalogResult, null, 2) }}</pre>
+
+            <section class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div><h2 class="font-semibold text-white">KIOT Price Books</h2><p class="mt-1 text-sm text-slate-400">Chỉ lưu giá provider trả về; không tự chọn bảng giá chính thức.</p></div>
+                    <div class="flex gap-2"><button v-if="canManage" class="rounded-lg border border-cyan-500/40 px-3 py-2 text-sm text-cyan-300" @click="action('/admin/integrations/catalog-channels/price-books/sync')">Sync price books</button><button v-if="canManage" class="rounded-lg border border-cyan-500/40 px-3 py-2 text-sm text-cyan-300" @click="action('/admin/integrations/catalog-channels/product-prices/sync')">Sync product prices</button></div>
+                </div>
+                <div class="mt-4 overflow-x-auto"><table class="min-w-full text-sm"><thead class="text-left text-xs uppercase text-slate-500"><tr><th class="px-2 py-2">ID</th><th class="px-2 py-2">Name</th><th class="px-2 py-2">Active</th><th class="px-2 py-2">Rows</th><th class="px-2 py-2">Positive</th><th class="px-2 py-2">Zero</th></tr></thead><tbody class="divide-y divide-slate-800"><tr v-for="book in priceBooks" :key="book.id"><td class="px-2 py-2 text-cyan-300">{{ book.id }}</td><td class="px-2 py-2 text-slate-200">{{ book.name }}</td><td class="px-2 py-2 text-slate-300">{{ book.is_active ? 'yes' : 'no' }}</td><td class="px-2 py-2 text-slate-300">{{ book.prices_count || 0 }}</td><td class="px-2 py-2 text-emerald-300">{{ book.positive_prices_count || 0 }}</td><td class="px-2 py-2 text-amber-300">{{ book.zero_prices_count || 0 }}</td></tr><tr v-if="!priceBooks.length"><td colspan="6" class="px-2 py-4 text-slate-500">Chưa có price book.</td></tr></tbody></table></div>
+            </section>
+
+            <section class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+                <h2 class="font-semibold text-white">Channel Price Selection</h2>
+                <div class="mt-4 grid gap-4 md:grid-cols-2">
+                    <div v-for="channel in ['website', 'google_sheets', 'google_merchant', 'meta_catalog']" :key="channel" class="rounded-lg border border-slate-800 p-4">
+                        <div class="flex items-center justify-between"><span class="text-sm text-slate-200">{{ label(channel) }}</span><button v-if="canManage" class="text-xs text-cyan-300" @click="savePrice(channel, priceSetting(channel))">Save</button></div>
+                        <select v-model="priceSetting(channel).price_source" class="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"><option v-for="source in priceSources" :key="source" :value="source">{{ source }}</option><option v-for="book in priceBooks.filter((entry) => entry.is_active)" :key="priceBookSource(book)" :value="priceBookSource(book)">{{ priceBookSource(book) }} · {{ book.name }}</option></select>
+                        <select v-model="priceSetting(channel).fallback_policy" class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"><option v-for="fallback in fallbackPolicies" :key="fallback" :value="fallback">fallback: {{ fallback }}</option></select>
+                    </div>
+                </div>
+            </section>
 
             <div class="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
                 <button
@@ -142,6 +181,7 @@ function formatTime(value) {
                         </dl>
                         <div class="mt-5 flex flex-wrap gap-3">
                             <button :disabled="!canManage" class="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300 disabled:opacity-40" @click="action(`/admin/integrations/catalog-channels/${item.channel}/rotate-token`)">Rotate token</button>
+                            <button v-if="item.channel === 'meta_catalog'" :disabled="!canManage" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:opacity-40" @click="action('/admin/integrations/catalog-channels/meta_catalog/test-connection')">Test connection</button>
                             <button :disabled="!canManage" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:opacity-40" @click="action(`/admin/integrations/catalog-channels/${item.channel}/validate`)">Validate feed</button>
                             <button :disabled="!canManage || !item.is_enabled" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white disabled:opacity-40" @click="action(`/admin/integrations/catalog-channels/${item.channel}/rebuild`)">Rebuild feed</button>
                         </div>

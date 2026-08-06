@@ -9,12 +9,17 @@ use App\Jobs\Catalog\SyncGoogleSheetsCatalogJob;
 use App\Models\CatalogChannelConnection;
 use App\Models\CatalogChannelEvent;
 use App\Models\CatalogChannelSyncRun;
+use App\Models\CatalogPriceBook;
 use App\Services\Catalog\CatalogChannelAuditService;
 use App\Services\Catalog\CatalogChannelManager;
 use App\Services\Catalog\GoogleMerchant\GoogleMerchantFeedBuilder;
 use App\Services\Catalog\GoogleSheets\GoogleSheetsConnectionTestService;
 use App\Services\Catalog\GoogleSheets\GoogleSheetsExporter;
+use App\Services\Catalog\Meta\MetaCatalogConnectionTestService;
 use App\Services\Catalog\Meta\MetaCatalogFeedBuilder;
+use App\Services\Catalog\Pricing\CatalogChannelPriceSettingsService;
+use App\Services\Integrations\Kiot\KiotPriceBookSyncService;
+use App\Services\Integrations\Kiot\KiotProductPriceSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -41,7 +46,34 @@ class CatalogChannelController extends Controller
             'connections' => $connections,
             'recentRuns' => CatalogChannelSyncRun::latest()->limit(25)->get(),
             'recentEvents' => CatalogChannelEvent::with('connection:id,channel')->latest()->limit(25)->get(),
+            'priceBooks' => CatalogPriceBook::query()->withCount(['prices', 'prices as positive_prices_count' => fn ($query) => $query->where('price', '>', 0), 'prices as zero_prices_count' => fn ($query) => $query->where('price', 0)])->orderBy('name')->get(),
+            'priceSettings' => app(CatalogChannelPriceSettingsService::class)->all(),
         ]);
+    }
+
+    public function updatePriceSelection(Request $request, string $channel, CatalogChannelPriceSettingsService $settings): RedirectResponse
+    {
+        $validated = $request->validate([
+            'price_source' => ['required', 'string', 'max:64'],
+            'fallback_policy' => ['required', 'in:none,retail_price,selected_price'],
+        ]);
+        $settings->update($channel, $validated['price_source'], $validated['fallback_policy'], $request->user()->id);
+
+        return back()->with('success', 'Đã lưu nguồn giá cho channel.');
+    }
+
+    public function syncPriceBooks(Request $request, KiotPriceBookSyncService $service): RedirectResponse
+    {
+        session()->flash('catalog_result', $service->sync(false));
+
+        return back()->with('success', 'Đã đồng bộ danh sách bảng giá KIOT.');
+    }
+
+    public function syncProductPrices(Request $request, KiotProductPriceSyncService $service): RedirectResponse
+    {
+        session()->flash('catalog_result', $service->sync(false));
+
+        return back()->with('success', 'Đã đồng bộ giá sản phẩm theo bảng giá.');
     }
 
     public function updateGoogleSheets(Request $request): RedirectResponse
@@ -150,6 +182,15 @@ class CatalogChannelController extends Controller
         });
     }
 
+    public function testMetaConnection(Request $request, MetaCatalogConnectionTestService $tester): RedirectResponse
+    {
+        return $this->perform($request, CatalogChannelConnection::META_CATALOG, 'CONNECTION_TESTED', function () use ($tester) {
+            session()->flash('catalog_result', $tester->test());
+
+            return 'Meta Catalog test mode sẵn sàng; chưa gửi dữ liệu remote.';
+        });
+    }
+
     public function rebuildFeed(Request $request, string $channel): RedirectResponse
     {
         $this->assertCommerceChannel($channel);
@@ -210,6 +251,7 @@ class CatalogChannelController extends Controller
             'last_error_code' => $connection->last_error_code,
             'last_error_message' => $connection->last_error_message,
             'last_run' => $lastRun,
+            'price_setting' => app(CatalogChannelPriceSettingsService::class)->all()[$connection->channel] ?? null,
         ];
     }
 
