@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Services\Integrations\Kiot\KiotOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -33,6 +34,26 @@ class StorefrontSettingsTest extends TestCase
             ->assertJsonPath('site_name', 'HPCOM Việt Nam')
             ->assertJsonPath('google_analytics_id', 'G-ABC123')
             ->assertJsonMissingPath('chatgpt_api_key');
+    }
+
+    public function test_category_localhost_assets_are_normalized_for_storefront(): void
+    {
+        URL::forceRootUrl('https://admin.example.test');
+        URL::forceScheme('https');
+
+        Category::create([
+            'name' => 'CPU',
+            'slug' => 'cpu-icons-test',
+            'icon' => 'http://localhost:8901/storage/icons/cpu.svg',
+            'image' => '/storage/media/category.webp',
+            'is_active' => true,
+            'show_on_pc_website' => true,
+        ]);
+
+        $this->getJson('/api/v1/categories')
+            ->assertOk()
+            ->assertJsonPath('0.icon', 'https://admin.example.test/storage/icons/cpu.svg')
+            ->assertJsonPath('0.image', 'https://admin.example.test/storage/media/category.webp');
     }
 
     public function test_order_totals_use_shipping_settings(): void

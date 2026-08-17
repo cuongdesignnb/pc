@@ -40,6 +40,45 @@ class Category extends Model
         'sort_order' => 'integer',
     ];
 
+    /**
+     * Category assets may have been seeded with a localhost URL in a local
+     * environment. Convert those internal URLs to the current public app URL
+     * when serializing API responses so storefront browsers can load them.
+     */
+    public function getIconAttribute(?string $value): ?string
+    {
+        return $this->normalizePublicAssetUrl($value);
+    }
+
+    public function getImageAttribute(?string $value): ?string
+    {
+        return $this->normalizePublicAssetUrl($value);
+    }
+
+    private function normalizePublicAssetUrl(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return $value;
+        }
+
+        if (str_starts_with($value, '/storage/')) {
+            return url($value);
+        }
+
+        $parts = parse_url($value);
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $localHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
+
+        if (! in_array($host, $localHosts, true) || empty($parts['path'])) {
+            return $value;
+        }
+
+        $path = '/'.ltrim($parts['path'], '/');
+        $query = isset($parts['query']) ? '?'.$parts['query'] : '';
+
+        return url($path.$query);
+    }
+
     public function scopeVisibleOnStorefront(Builder $query): Builder
     {
         return $query->where('is_active', true)
