@@ -108,6 +108,26 @@ class StorefrontSettingsTest extends TestCase
             ->assertJsonMissing(['id' => $product->id]);
     }
 
+    public function test_blocked_legacy_kiot_products_remain_hidden(): void
+    {
+        $blocked = $this->product([
+            'inventory_source' => 'kiot',
+            'kiot_sellable' => false,
+            'stock_quantity' => 0,
+        ]);
+        $deleted = $this->product([
+            'inventory_source' => 'kiot',
+            'kiot_sellable' => false,
+            'kiot_sync_status' => 'deleted',
+            'stock_quantity' => 0,
+        ]);
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonMissing(['id' => $blocked->id])
+            ->assertJsonMissing(['id' => $deleted->id]);
+    }
+
     public function test_disabled_cod_is_rejected_by_checkout(): void
     {
         $this->setting('payment_cod_enabled', '0', 'boolean');

@@ -124,7 +124,17 @@ class Product extends Model
         return $query->where('is_active', true)
             ->where('show_on_pc_website', true)
             ->where(function (Builder $query) {
-                $query->whereNull('provider')
+                $query->where(function (Builder $query) {
+                    $query->whereNull('provider')
+                        ->where(function (Builder $query) {
+                            $query->whereNull('inventory_source')
+                                ->orWhere('inventory_source', '!=', 'kiot')
+                                ->orWhere(function (Builder $query) {
+                                    $query->where('inventory_source', 'kiot')
+                                        ->where('stock_quantity', '>', 0);
+                                });
+                        });
+                })
                     ->orWhere(function (Builder $query) {
                         $query->where('provider', 'kiot')
                             ->where('kiot_sync_status', 'active')
@@ -155,7 +165,9 @@ class Product extends Model
     public function isVisibleOnStorefront(): bool
     {
         if ($this->provider !== 'kiot') {
-            return $this->is_active && $this->show_on_pc_website;
+            return $this->is_active
+                && $this->show_on_pc_website
+                && ($this->inventory_source !== 'kiot' || $this->stock_quantity > 0);
         }
 
         $category = $this->relationLoaded('category') ? $this->category : $this->category()->first();
