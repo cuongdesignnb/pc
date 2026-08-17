@@ -73,6 +73,41 @@ class StorefrontSettingsTest extends TestCase
             ->assertJsonCount(2, '0.products');
     }
 
+    public function test_active_out_of_stock_product_remains_visible_but_cannot_be_purchased(): void
+    {
+        $category = Category::create([
+            'name' => 'Linh kiện',
+            'slug' => 'linh-kien',
+            'is_active' => true,
+            'show_on_pc_website' => true,
+        ]);
+        $product = $this->product([
+            'category_id' => $category->id,
+            'stock_quantity' => 0,
+            'show_on_pc_website' => true,
+        ]);
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $product->id)
+            ->assertJsonPath('data.0.is_purchasable', false)
+            ->assertJsonPath('data.0.availability_label', 'Hết hàng');
+
+        $this->postJson('/api/v1/cart/items', [
+            'product_id' => $product->id,
+            'quantity' => 1,
+        ])->assertUnprocessable();
+    }
+
+    public function test_product_hidden_from_pc_website_is_not_returned(): void
+    {
+        $product = $this->product(['show_on_pc_website' => false]);
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonMissing(['id' => $product->id]);
+    }
+
     public function test_disabled_cod_is_rejected_by_checkout(): void
     {
         $this->setting('payment_cod_enabled', '0', 'boolean');

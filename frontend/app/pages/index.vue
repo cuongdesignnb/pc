@@ -49,34 +49,34 @@ const {
   formatMoney,
 } = useSettings()
 
-const { data: sections } = await useFetch<HomepageSection[]>(
+const { data: sections, refresh: refreshSections } = await useFetch<HomepageSection[]>(
   `${config.public.apiBase}/categories/homepage-sections`,
   { default: () => [] }
 )
 
-const { data: categories } = await useFetch<Category[]>(
+const { data: categories, refresh: refreshCategories } = await useFetch<Category[]>(
   `${config.public.apiBase}/categories`,
   { default: () => [] }
 )
 
-const { data: brands } = await useFetch<Brand[]>(
+const { data: brands, refresh: refreshBrands } = await useFetch<Brand[]>(
   `${config.public.apiBase}/brands`,
   { default: () => [] }
 )
 
-const { data: featuredPosts } = await useFetch<Post[]>(
+const { data: featuredPosts, refresh: refreshFeaturedPosts } = await useFetch<Post[]>(
   `${config.public.apiBase}/blog/featured`,
   { default: () => [] }
 )
 
 // Fetch hero banners from API
-const { data: heroBanners } = await useFetch<BannerSlide[]>(
+const { data: heroBanners, refresh: refreshHeroBanners } = await useFetch<BannerSlide[]>(
   `${config.public.apiBase}/banners`,
   { params: { position: 'hero' }, default: () => [] }
 )
 
 // Fetch sidebar banners from API
-const { data: sidebarBanners } = await useFetch<BannerSlide[]>(
+const { data: sidebarBanners, refresh: refreshSidebarBanners } = await useFetch<BannerSlide[]>(
   `${config.public.apiBase}/banners`,
   { params: { position: 'sidebar' }, default: () => [] }
 )
@@ -238,6 +238,17 @@ function nextSideSlide() {
 }
 
 onMounted(() => {
+  // The homepage is ISR-cached, so refresh admin-managed content once in the
+  // browser to avoid showing stale products, brands or banners after updates.
+  void Promise.allSettled([
+    refreshSections(),
+    refreshCategories(),
+    refreshBrands(),
+    refreshFeaturedPosts(),
+    refreshHeroBanners(),
+    refreshSidebarBanners(),
+  ])
+
   resetMainTimer()
   sideSlideTimer = setInterval(nextSideSlide, 3000)
 })
