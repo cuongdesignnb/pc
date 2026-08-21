@@ -90,7 +90,8 @@ class GoogleSheetsCatalogTest extends TestCase
         $client->shouldReceive('rowRange')->andReturnUsing(
             fn (array $configuration, int $row, int $columnCount) => "'Products'!A{$row}:AE{$row}",
         );
-        $client->shouldReceive('writeRows')->once()->andReturnUsing(function (array $configuration, array $ranges) use (&$written): void {
+        $client->shouldReceive('writeRows')->once()->andReturnUsing(function (array $configuration, array $ranges, int $columnCount) use (&$written): void {
+            $this->assertSame(count(GoogleSheetsExporter::HEADERS), $columnCount);
             $written = $ranges;
         });
         $this->app->instance(GoogleSheetsClient::class, $client);
@@ -159,6 +160,53 @@ class GoogleSheetsCatalogTest extends TestCase
         $rows = app(GoogleSheetsClient::class)->readRows($this->configurationWithRealTestKey(), 31);
 
         $this->assertSame([GoogleSheetsExporter::HEADERS], $rows);
+    }
+
+    public function test_google_client_expands_worksheet_columns_before_writing(): void
+    {
+        Http::fake(function (Request $request) {
+            if ($request->url() === 'https://oauth2.googleapis.com/token') {
+                return Http::response(['access_token' => 'fake-access-token', 'expires_in' => 3600]);
+            }
+
+            if (array_key_exists('requests', $request->data())) {
+                $this->assertSame([
+                    'requests' => [[
+                        'appendDimension' => [
+                            'sheetId' => 42,
+                            'dimension' => 'COLUMNS',
+                            'length' => 5,
+                        ],
+                    ]],
+                ], $request->data());
+
+                return Http::response(['replies' => [[]]]);
+            }
+
+            if (array_key_exists('valueInputOption', $request->data())) {
+                return Http::response(['responses' => [[]]]);
+            }
+
+            $this->assertSame('spreadsheet_123456789', basename((string) parse_url($request->url(), PHP_URL_PATH)));
+
+            return Http::response([
+                'sheets' => [[
+                    'properties' => [
+                        'sheetId' => 42,
+                        'title' => 'Products',
+                        'gridProperties' => ['columnCount' => 26],
+                    ],
+                ]],
+            ]);
+        });
+
+        app(GoogleSheetsClient::class)->writeRows(
+            $this->configurationWithRealTestKey(),
+            [['range' => "'Products'!A1:AE1", 'values' => [GoogleSheetsExporter::HEADERS]]],
+            31,
+        );
+
+        Http::assertSentCount(4);
     }
 
     private function connection(bool $enabled): CatalogChannelConnection
