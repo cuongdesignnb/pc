@@ -134,8 +134,10 @@ class ChannelPriceSelectionUiTest extends TestCase
         $this->assertSame(300, app(CatalogChannelPriceResolver::class)->resolve($product->fresh(), 'meta_catalog')['value']);
 
         $client = Mockery::mock(GoogleSheetsClient::class);
-        $client->shouldReceive('readRows')->once()->andReturn([]);
-        $client->shouldReceive('rowRange')->andReturnUsing(fn (array $configuration, int $row): string => "'Products'!A{$row}:AZ{$row}");
+        $client->shouldReceive('readRows')->once()->with(Mockery::type('array'), Mockery::type('int'))->andReturn([]);
+        $client->shouldReceive('rowRange')->andReturnUsing(
+            fn (array $configuration, int $row, int $columnCount): string => "'Products'!A{$row}:AZ{$row}",
+        );
         $client->shouldReceive('writeRows')->once();
         $this->app->instance(GoogleSheetsClient::class, $client);
         $report = app(GoogleSheetsExporter::class)->sync();

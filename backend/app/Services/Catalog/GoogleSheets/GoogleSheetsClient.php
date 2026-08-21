@@ -29,9 +29,9 @@ class GoogleSheetsClient
         return ['spreadsheet_id' => (string) $response->json('spreadsheetId'), 'worksheet' => $worksheet];
     }
 
-    public function readRows(array $configuration): array
+    public function readRows(array $configuration, int $columnCount): array
     {
-        $range = $this->quotedWorksheet($configuration).'!A:S';
+        $range = $this->quotedWorksheet($configuration).'!A:'.$this->columnName($columnCount);
         $response = $this->request($configuration)->get(
             $this->spreadsheetUrl($configuration).'/values:batchGet',
             ['majorDimension' => 'ROWS', 'ranges' => $range],
@@ -56,9 +56,9 @@ class GoogleSheetsClient
         }
     }
 
-    public function rowRange(array $configuration, int $row): string
+    public function rowRange(array $configuration, int $row, int $columnCount): string
     {
-        return $this->quotedWorksheet($configuration)."!A{$row}:S{$row}";
+        return $this->quotedWorksheet($configuration)."!A{$row}:{$this->columnName($columnCount)}{$row}";
     }
 
     private function request(array $configuration): PendingRequest
@@ -142,6 +142,22 @@ class GoogleSheetsClient
         }
 
         return "'".str_replace("'", "''", $worksheet)."'";
+    }
+
+    private function columnName(int $columnCount): string
+    {
+        if ($columnCount < 1) {
+            throw new CatalogChannelException('GOOGLE_INVALID_RESPONSE', 'Google Sheets range không hợp lệ.');
+        }
+
+        $name = '';
+        while ($columnCount > 0) {
+            $columnCount--;
+            $name = chr(65 + ($columnCount % 26)).$name;
+            $columnCount = intdiv($columnCount, 26);
+        }
+
+        return $name;
     }
 
     private function assertSuccessful(Response $response, string $fallbackCode): void
