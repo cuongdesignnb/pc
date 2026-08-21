@@ -9,8 +9,10 @@ use App\Models\CatalogChannelItemState;
 use App\Models\CatalogChannelSyncConflict;
 use App\Models\CatalogChannelSyncRun;
 use App\Models\CatalogGoogleSheetPriceColumn;
+use App\Models\Category;
 use App\Services\Catalog\CatalogChannelManager;
 use App\Services\Catalog\CatalogProductProjectionService;
+use App\Services\Catalog\CatalogProductSelectionService;
 use App\Services\Catalog\CatalogProductValidator;
 use App\Services\Catalog\Pricing\CatalogChannelPriceSettingsService;
 use Illuminate\Support\Collection;
@@ -19,6 +21,77 @@ use Throwable;
 
 class GoogleSheetsExporter
 {
+    private const HEADER_LABELS = [
+        'external_id' => 'Mã ngoài',
+        'sku' => 'SKU',
+        'name' => 'Tên sản phẩm',
+        'category' => 'Danh mục',
+        'brand' => 'Thương hiệu',
+        'price' => 'Giá',
+        'currency' => 'Tiền tệ',
+        'inventory' => 'Tồn kho',
+        'availability' => 'Tình trạng tồn kho',
+        'is_visible' => 'Hiển thị',
+        'is_active' => 'Đang hoạt động',
+        'is_under_repair' => 'Đang sửa chữa',
+        'product_url' => 'URL sản phẩm',
+        'image_url' => 'URL ảnh',
+        'validation_status' => 'Trạng thái kiểm tra',
+        'validation_errors' => 'Lỗi kiểm tra',
+        'provider_updated_at' => 'Cập nhật từ KIOT',
+        'synced_at' => 'Đồng bộ lúc',
+        'checksum' => 'Mã kiểm tra',
+        'condition' => 'Tình trạng sản phẩm',
+        'stock_quantity' => 'Số lượng tồn',
+        'available_quantity' => 'Số lượng khả dụng',
+        'repair_status' => 'Trạng thái sửa chữa',
+        'retail_price' => 'Giá bán lẻ',
+        'selected_website_price' => 'Giá Website đã chọn',
+        'selected_google_price' => 'Giá Google đã chọn',
+        'selected_meta_price' => 'Giá Meta đã chọn',
+        'google_eligible' => 'Đủ điều kiện Google',
+        'meta_eligible' => 'Đủ điều kiện Meta',
+        'last_synced_at' => 'Lần đồng bộ gần nhất',
+    ];
+
+    private const VALUE_LABELS = [
+        'in_stock' => 'Còn hàng',
+        'out_of_stock' => 'Hết hàng',
+        'repairing' => 'Đang sửa chữa',
+        'ready' => 'Sẵn sàng',
+        'VALID' => 'Hợp lệ',
+        'ACTIVE' => 'Đang hoạt động',
+        'INVALID' => 'Không hợp lệ',
+        'DELETED' => 'Đã xóa',
+        'HIDDEN' => 'Đang ẩn',
+        'CREATE' => 'Tạo mới',
+        'UPDATE' => 'Cập nhật',
+        'UNCHANGED' => 'Không thay đổi',
+        'SKIP' => 'Bỏ qua',
+    ];
+
+    private const ERROR_LABELS = [
+        'PRODUCT_DELETED' => 'Sản phẩm đã bị xóa',
+        'PRODUCT_INACTIVE' => 'Sản phẩm đang ngừng hoạt động',
+        'PRODUCT_HIDDEN' => 'Sản phẩm đang ẩn',
+        'CATEGORY_HIDDEN' => 'Danh mục đang ẩn',
+        'PRICE_MISSING' => 'Chưa có giá',
+        'PRICE_ZERO' => 'Giá bằng 0',
+        'IMAGE_MISSING' => 'Thiếu ảnh sản phẩm',
+        'IMAGE_INVALID' => 'URL ảnh không hợp lệ',
+        'IMAGE_URL_INVALID' => 'URL ảnh không hợp lệ',
+        'SKU_MISSING' => 'Thiếu SKU',
+        'TITLE_MISSING' => 'Thiếu tên sản phẩm',
+        'PRODUCT_URL_MISSING' => 'Thiếu URL sản phẩm',
+        'PRICE_SOURCE_UNAVAILABLE' => 'Nguồn giá không khả dụng',
+        'PRICE_BOOK_VALUE_MISSING' => 'Chưa có giá trong bảng giá',
+        'OUT_OF_STOCK' => 'Hết hàng',
+        'PRICE_FALLBACK_USED' => 'Đã dùng giá dự phòng',
+        'UNDER_REPAIR' => 'Sản phẩm đang sửa chữa',
+        'DUPLICATE_EXTERNAL_ID' => 'Trùng mã ngoài',
+        'DUPLICATE_SKU' => 'Trùng SKU',
+    ];
+
     public const HEADERS = [
         'external_id', 'sku', 'name', 'category', 'brand', 'price', 'currency', 'inventory',
         'availability', 'is_visible', 'is_active', 'is_under_repair', 'product_url', 'image_url',
@@ -32,6 +105,7 @@ class GoogleSheetsExporter
         private readonly GoogleSheetsClient $client,
         private readonly CatalogProductProjectionService $projection,
         private readonly CatalogProductValidator $validator,
+        private readonly CatalogProductSelectionService $selection,
         private readonly CatalogChannelManager $channels,
         private readonly CatalogChannelPriceSettingsService $priceSettings,
     ) {}
@@ -46,7 +120,12 @@ class GoogleSheetsExporter
         return $this->run(false, $requestedBy);
     }
 
-    private function run(bool $dryRun, ?int $requestedBy): array
+    public function syncSelection(array $selection, ?int $requestedBy = null): array
+    {
+        return $this->run(false, $requestedBy, $selection);
+    }
+
+    private function run(bool $dryRun, ?int $requestedBy, ?array $selection = null): array
     {
         $connection = $this->channels->connection(CatalogChannelConnection::GOOGLE_SHEETS);
         if (! $dryRun && ! $connection->is_enabled) {
@@ -60,7 +139,7 @@ class GoogleSheetsExporter
 
         $run = CatalogChannelSyncRun::create([
             'channel' => CatalogChannelConnection::GOOGLE_SHEETS,
-            'mode' => $dryRun ? 'dry_run' : 'sync',
+            'mode' => $selection !== null ? 'bulk_sync' : ($dryRun ? 'dry_run' : 'sync'),
             'status' => 'running',
             'started_at' => now(),
             'requested_by' => $requestedBy,
@@ -73,7 +152,7 @@ class GoogleSheetsExporter
             $existingRows = $dryRun && ! $this->remoteReadConfigured($configuration)
                 ? []
                 : $this->client->readRows($configuration, $columnCount);
-            $report = $this->prepare($existingRows, $configuration, $dryRun, $columnCount);
+            $report = $this->prepare($existingRows, $configuration, $dryRun, $columnCount, $selection);
             if (! $dryRun) {
                 $this->client->writeRows($configuration, $report['ranges'], $columnCount);
                 $this->persistStates($report['states']);
@@ -110,17 +189,22 @@ class GoogleSheetsExporter
         }
     }
 
-    private function prepare(array $existingRows, array $configuration, bool $dryRun, int $columnCount): array
-    {
+    private function prepare(
+        array $existingRows,
+        array $configuration,
+        bool $dryRun,
+        int $columnCount,
+        ?array $selection = null,
+    ): array {
         $selectedColumns = $this->priceSettings->googleSheetsColumns();
         $headers = $this->headers($selectedColumns);
+        $displayHeaders = $this->displayHeaders($headers, $selectedColumns);
         $existingHeaders = isset($existingRows[0]) ? array_map('strval', $existingRows[0]) : [];
-        $headerMatches = $existingHeaders === $headers;
-        $headerIndex = array_flip($headers);
+        $headerIndex = $this->existingHeaderIndex($existingHeaders, $headers, $displayHeaders);
         $existing = [];
         $existingSkus = [];
         $duplicateSheetIds = [];
-        if ($headerMatches) {
+        if ($headerIndex !== null) {
             foreach (array_slice($existingRows, 1, null, true) as $offset => $row) {
                 $externalId = trim((string) ($row[$headerIndex['external_id']] ?? ''));
                 if ($externalId === '') {
@@ -139,12 +223,27 @@ class GoogleSheetsExporter
             }
         }
 
-        $ranges = $headerMatches ? [] : [[
+        $ranges = $existingHeaders === $displayHeaders ? [] : [[
             'range' => $this->client->rowRange($configuration, 1, $columnCount),
             'majorDimension' => 'ROWS',
-            'values' => [$headers],
+            'values' => [$displayHeaders],
         ]];
-        $nextRow = $headerMatches ? max(2, count($existingRows) + 1) : 2;
+        if ($headerIndex !== null && $existingHeaders !== $displayHeaders) {
+            foreach (array_slice($existingRows, 1, null, true) as $offset => $row) {
+                if (trim((string) ($row[$headerIndex['external_id']] ?? '')) === '') {
+                    continue;
+                }
+                $ranges[] = [
+                    'range' => $this->client->rowRange($configuration, $offset + 1, $columnCount),
+                    'majorDimension' => 'ROWS',
+                    'values' => [array_map(
+                        fn (string $header): string|int|null => $this->sheetValue($header, $row[$headerIndex[$header]] ?? ''),
+                        $headers,
+                    )],
+                ];
+            }
+        }
+        $nextRow = $headerIndex !== null ? max(2, count($existingRows) + 1) : 2;
         $seenExternal = [];
         $seenSku = [];
         $states = [];
@@ -162,7 +261,7 @@ class GoogleSheetsExporter
             'ERRORS_BY_CODE' => [],
         ];
 
-        $this->projection->each(function (CatalogProductData $product) use (
+        $consume = function (CatalogProductData $product) use (
             $columnCount, &$counts, &$ranges, &$nextRow, &$seenExternal, &$seenSku, &$states,
             $existing, $existingSkus, $duplicateSheetIds, $configuration, $dryRun, $headers, $selectedColumns,
         ): void {
@@ -237,7 +336,19 @@ class GoogleSheetsExporter
                 'last_error_code' => $errors[0] ?? null,
                 'last_error_message' => $errors === [] ? null : implode('|', $errors),
             ];
-        });
+        };
+
+        if ($selection === null) {
+            $this->projection->each($consume);
+        } else {
+            $categories = Category::query()->get([
+                'id', 'parent_id', 'name', 'slug', 'is_active', 'provider',
+                'show_on_pc_website', 'provider_sync_status',
+            ])->keyBy('id');
+            foreach ($this->selection->stream($selection) as $product) {
+                $consume($this->projection->project($product, $categories));
+            }
+        }
 
         return ['summary' => $counts, 'ranges' => $ranges, 'states' => $states];
     }
@@ -293,7 +404,10 @@ class GoogleSheetsExporter
             $values[$column->column_key] = $this->valueForSource($product, $column->price_source, $column->price_book_id);
         }
 
-        return array_map(fn (string $header) => $values[$header] ?? '', $headers);
+        return array_map(
+            fn (string $header): string|int|null => $this->sheetValue($header, $values[$header] ?? ''),
+            $headers,
+        );
     }
 
     /** @param Collection<int, CatalogGoogleSheetPriceColumn> $selectedColumns */
@@ -307,6 +421,76 @@ class GoogleSheetsExporter
         }
 
         return $headers;
+    }
+
+    /** @param list<string> $headers */
+    private function displayHeaders(array $headers, Collection $selectedColumns): array
+    {
+        $dynamic = $selectedColumns->keyBy('column_key');
+
+        return array_map(function (string $header) use ($dynamic): string {
+            $column = $dynamic->get($header);
+            if ($column !== null) {
+                return $this->priceColumnLabel($column);
+            }
+
+            return self::HEADER_LABELS[$header] ?? $header;
+        }, $headers);
+    }
+
+    /** @param list<string> $existingHeaders @param list<string> $headers @param list<string> $displayHeaders */
+    private function existingHeaderIndex(array $existingHeaders, array $headers, array $displayHeaders): ?array
+    {
+        if ($existingHeaders === []) {
+            return null;
+        }
+
+        $index = [];
+        foreach ($headers as $position => $header) {
+            $candidate = array_search($header, $existingHeaders, true);
+            if ($candidate === false) {
+                $candidate = array_search($displayHeaders[$position] ?? '', $existingHeaders, true);
+            }
+            if ($candidate === false) {
+                return null;
+            }
+            $index[$header] = $candidate;
+        }
+
+        return $index;
+    }
+
+    private function priceColumnLabel(CatalogGoogleSheetPriceColumn $column): string
+    {
+        return match ($column->price_source) {
+            'retail_price' => 'Giá bán lẻ',
+            'selected_price' => 'Giá đã chọn',
+            default => 'Giá bảng: '.(string) ($column->priceBook?->name ?: $column->column_label),
+        };
+    }
+
+    private function sheetValue(string $header, mixed $value): string|int|null
+    {
+        if (in_array($header, ['is_visible', 'is_active', 'is_under_repair', 'google_eligible', 'meta_eligible'], true)) {
+            $boolean = is_string($value)
+                ? filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)
+                : (bool) $value;
+
+            return $boolean === true ? 'Có' : 'Không';
+        }
+        if ($header === 'validation_errors') {
+            $errors = array_filter(explode('|', (string) $value));
+
+            return implode(', ', array_map(fn (string $error): string => self::ERROR_LABELS[$error] ?? $error, $errors));
+        }
+        if (in_array($header, ['availability', 'repair_status', 'validation_status'], true)) {
+            return self::VALUE_LABELS[(string) $value] ?? (string) $value;
+        }
+        if ($header === 'condition' && (string) $value === 'new') {
+            return 'Mới';
+        }
+
+        return $value;
     }
 
     private function valueForSource(CatalogProductData $product, string $source, ?int $priceBookId): ?int

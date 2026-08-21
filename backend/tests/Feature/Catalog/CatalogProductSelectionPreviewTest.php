@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Catalog;
 
+use App\Models\CatalogChannelSyncRun;
 use App\Models\CatalogChannelSyncRunItem;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -81,10 +83,17 @@ class CatalogProductSelectionPreviewTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('eligible_count');
     }
 
-    public function test_confirmed_bulk_sync_persists_run_item_and_audit_without_remote_submit(): void
+    public function test_confirmed_google_sheets_bulk_sync_submits_selected_products(): void
     {
         $admin = $this->admin(['catalog_channels.preview', 'catalog_channels.sync']);
         $product = $this->product('SKU-SHEET', 'https://cdn.laptopplus.test/sheet.jpg', 120);
+        $run = CatalogChannelSyncRun::create([
+            'channel' => 'google_sheets', 'mode' => 'bulk_sync', 'status' => 'completed',
+            'started_at' => now(), 'completed_at' => now(), 'items_total' => 1,
+        ]);
+        $exporter = Mockery::mock(\App\Services\Catalog\GoogleSheets\GoogleSheetsExporter::class);
+        $exporter->shouldReceive('syncSelection')->once()->andReturn(['run_id' => $run->id]);
+        $this->app->instance(\App\Services\Catalog\GoogleSheets\GoogleSheetsExporter::class, $exporter);
         $response = $this->actingAs($admin)->postJson('/admin/integrations/catalog-products/sync', [
             'channel' => 'google_sheets',
             'selection' => ['mode' => 'ids', 'product_ids' => [$product->id]],
@@ -93,9 +102,10 @@ class CatalogProductSelectionPreviewTest extends TestCase
             'confirmed' => true,
         ]);
 
-        $response->assertOk()->assertJsonPath('remote_submitted', false)->assertJsonPath('summary.SELECTED_COUNT', 1);
+        $response->assertOk()->assertJsonPath('remote_submitted', true)->assertJsonPath('summary.SELECTED_COUNT', 1);
         $this->assertDatabaseCount('catalog_channel_sync_run_items', 1);
         $this->assertInstanceOf(CatalogChannelSyncRunItem::class, CatalogChannelSyncRunItem::first());
+        $this->assertDatabaseHas('catalog_channel_sync_run_items', ['result_status' => 'submitted']);
         $this->assertDatabaseHas('catalog_channel_events', ['event' => 'CATALOG_BULK_SYNC_REQUESTED']);
     }
 

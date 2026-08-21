@@ -104,11 +104,17 @@ class GoogleSheetsCatalogTest extends TestCase
         $this->assertCount(4, $written);
         $this->assertSame("'Products'!A1:AE1", $written[0]['range']);
         $this->assertSame("'Products'!A2:AE2", $written[1]['range']);
-        $this->assertSame(GoogleSheetsExporter::HEADERS, $written[0]['values'][0]);
+        $this->assertSame('Mã ngoài', $written[0]['values'][0][0]);
+        $this->assertSame('SKU', $written[0]['values'][0][1]);
+        $this->assertSame('Tên sản phẩm', $written[0]['values'][0][2]);
+        $this->assertSame('Tình trạng tồn kho', $written[0]['values'][0][8]);
+        $this->assertSame('Hiển thị', $written[0]['values'][0][9]);
         $this->assertStringStartsWith("'=", $written[1]['values'][0][2]);
-        $this->assertSame('INVALID', $written[2]['values'][0][14]);
-        $this->assertStringContainsString('PRICE_MISSING', $written[2]['values'][0][15]);
-        $this->assertSame('DELETED', $written[3]['values'][0][14]);
+        $this->assertSame('Còn hàng', $written[1]['values'][0][8]);
+        $this->assertSame('Có', $written[1]['values'][0][9]);
+        $this->assertSame('Không hợp lệ', $written[2]['values'][0][14]);
+        $this->assertStringContainsString('Chưa có giá', $written[2]['values'][0][15]);
+        $this->assertSame('Đã xóa', $written[3]['values'][0][14]);
         $this->assertSame(3, CatalogChannelItemState::where('channel', 'google_sheets')->count());
     }
 
@@ -134,6 +140,75 @@ class GoogleSheetsCatalogTest extends TestCase
         $this->assertDatabaseCount('catalog_channel_item_states', 0);
         $this->assertDatabaseCount('catalog_channel_sync_conflicts', 0);
         $this->assertDatabaseHas('catalog_channel_sync_runs', ['mode' => 'dry_run', 'status' => 'completed']);
+    }
+
+    public function test_selection_sync_exports_only_selected_products(): void
+    {
+        $this->connection(enabled: true);
+        $category = $this->category();
+        $selected = $this->product($category, 20);
+        $notSelected = $this->product($category, 21);
+        $selected->images()->create(['url' => 'https://cdn.laptopplus.test/selected.jpg', 'is_primary' => true]);
+        $notSelected->images()->create(['url' => 'https://cdn.laptopplus.test/not-selected.jpg', 'is_primary' => true]);
+
+        $written = [];
+        $client = Mockery::mock(GoogleSheetsClient::class);
+        $client->shouldReceive('readRows')->once()->andReturn([]);
+        $client->shouldReceive('rowRange')->andReturnUsing(
+            fn (array $configuration, int $row, int $columnCount): string => "'Products'!A{$row}:AE{$row}",
+        );
+        $client->shouldReceive('writeRows')->once()->andReturnUsing(function (array $configuration, array $ranges, int $columnCount) use (&$written): void {
+            $written = $ranges;
+        });
+        $this->app->instance(GoogleSheetsClient::class, $client);
+
+        $report = app(GoogleSheetsExporter::class)->syncSelection([
+            'mode' => 'ids',
+            'product_ids' => [$selected->id],
+        ]);
+
+        $this->assertSame(1, $report['TOTAL_PRODUCTS']);
+        $this->assertCount(2, $written);
+        $this->assertSame('SKU-20', $written[1]['values'][0][1]);
+        $this->assertDatabaseCount('catalog_channel_item_states', 1);
+    }
+
+    public function test_existing_english_headers_and_values_are_localized_in_place(): void
+    {
+        $this->connection(enabled: true);
+        $category = $this->category();
+        $product = $this->product($category, 20);
+
+        $legacy = array_fill(0, count(GoogleSheetsExporter::HEADERS), '');
+        $legacy[0] = 'kiot:999';
+        $legacy[1] = 'LEGACY-999';
+        $legacy[8] = 'out_of_stock';
+        $legacy[9] = false;
+        $legacy[10] = false;
+        $legacy[14] = 'INVALID';
+        $legacy[15] = 'PRICE_MISSING|IMAGE_MISSING';
+        $legacy[19] = 'new';
+
+        $written = [];
+        $client = Mockery::mock(GoogleSheetsClient::class);
+        $client->shouldReceive('readRows')->once()->andReturn([GoogleSheetsExporter::HEADERS, $legacy]);
+        $client->shouldReceive('rowRange')->andReturnUsing(
+            fn (array $configuration, int $row, int $columnCount): string => "'Products'!A{$row}:AE{$row}",
+        );
+        $client->shouldReceive('writeRows')->once()->andReturnUsing(function (array $configuration, array $ranges) use (&$written): void {
+            $written = $ranges;
+        });
+        $this->app->instance(GoogleSheetsClient::class, $client);
+
+        app(GoogleSheetsExporter::class)->syncSelection(['mode' => 'ids', 'product_ids' => [$product->id]]);
+
+        $legacyRow = collect($written)->firstWhere('range', "'Products'!A2:AE2");
+        $this->assertNotNull($legacyRow);
+        $this->assertSame('Hết hàng', $legacyRow['values'][0][8]);
+        $this->assertSame('Không', $legacyRow['values'][0][9]);
+        $this->assertSame('Không hợp lệ', $legacyRow['values'][0][14]);
+        $this->assertSame('Chưa có giá, Thiếu ảnh sản phẩm', $legacyRow['values'][0][15]);
+        $this->assertSame('Mới', $legacyRow['values'][0][19]);
     }
 
     public function test_google_client_builds_ranges_for_all_export_columns(): void
