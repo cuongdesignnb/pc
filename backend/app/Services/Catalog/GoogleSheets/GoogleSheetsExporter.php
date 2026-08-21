@@ -68,10 +68,12 @@ class GoogleSheetsExporter
 
         try {
             $configuration = (array) $connection->configuration_encrypted;
+            $selectedColumns = $this->priceSettings->googleSheetsColumns();
+            $columnCount = count($this->headers($selectedColumns));
             $existingRows = $dryRun && ! $this->remoteReadConfigured($configuration)
                 ? []
-                : $this->client->readRows($configuration);
-            $report = $this->prepare($existingRows, $configuration, $dryRun);
+                : $this->client->readRows($configuration, $columnCount);
+            $report = $this->prepare($existingRows, $configuration, $dryRun, $columnCount);
             if (! $dryRun) {
                 $this->client->writeRows($configuration, $report['ranges']);
                 $this->persistStates($report['states']);
@@ -108,7 +110,7 @@ class GoogleSheetsExporter
         }
     }
 
-    private function prepare(array $existingRows, array $configuration, bool $dryRun): array
+    private function prepare(array $existingRows, array $configuration, bool $dryRun, int $columnCount): array
     {
         $selectedColumns = $this->priceSettings->googleSheetsColumns();
         $headers = $this->headers($selectedColumns);
@@ -138,7 +140,7 @@ class GoogleSheetsExporter
         }
 
         $ranges = $headerMatches ? [] : [[
-            'range' => $this->client->rowRange($configuration, 1),
+            'range' => $this->client->rowRange($configuration, 1, $columnCount),
             'majorDimension' => 'ROWS',
             'values' => [$headers],
         ]];
@@ -161,7 +163,7 @@ class GoogleSheetsExporter
         ];
 
         $this->projection->each(function (CatalogProductData $product) use (
-            &$counts, &$ranges, &$nextRow, &$seenExternal, &$seenSku, &$states,
+            $columnCount, &$counts, &$ranges, &$nextRow, &$seenExternal, &$seenSku, &$states,
             $existing, $existingSkus, $duplicateSheetIds, $configuration, $dryRun, $headers, $selectedColumns,
         ): void {
             $counts['TOTAL_PRODUCTS']++;
@@ -221,7 +223,7 @@ class GoogleSheetsExporter
             $rowNumber = $current ? (int) $current['row'] : $nextRow++;
             $current ? $counts['UPDATE_CANDIDATES']++ : $counts['CREATE_CANDIDATES']++;
             $ranges[] = [
-                'range' => $this->client->rowRange($configuration, $rowNumber),
+                'range' => $this->client->rowRange($configuration, $rowNumber, $columnCount),
                 'majorDimension' => 'ROWS',
                 'values' => [$this->row($product, $validation->status($product), $errors, $headers, $selectedColumns)],
             ];

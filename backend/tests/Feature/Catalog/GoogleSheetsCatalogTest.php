@@ -83,8 +83,13 @@ class GoogleSheetsCatalogTest extends TestCase
 
         $written = [];
         $client = Mockery::mock(GoogleSheetsClient::class);
-        $client->shouldReceive('readRows')->once()->andReturn([]);
-        $client->shouldReceive('rowRange')->andReturnUsing(fn (array $configuration, int $row) => "'Products'!A{$row}:S{$row}");
+        $client->shouldReceive('readRows')
+            ->once()
+            ->with(Mockery::type('array'), count(GoogleSheetsExporter::HEADERS))
+            ->andReturn([]);
+        $client->shouldReceive('rowRange')->andReturnUsing(
+            fn (array $configuration, int $row, int $columnCount) => "'Products'!A{$row}:AE{$row}",
+        );
         $client->shouldReceive('writeRows')->once()->andReturnUsing(function (array $configuration, array $ranges) use (&$written): void {
             $written = $ranges;
         });
@@ -96,6 +101,8 @@ class GoogleSheetsCatalogTest extends TestCase
         $this->assertSame(1, $report['VALID_PRODUCTS']);
         $this->assertSame(2, $report['INVALID_PRODUCTS']);
         $this->assertCount(4, $written);
+        $this->assertSame("'Products'!A1:AE1", $written[0]['range']);
+        $this->assertSame("'Products'!A2:AE2", $written[1]['range']);
         $this->assertSame(GoogleSheetsExporter::HEADERS, $written[0]['values'][0]);
         $this->assertStringStartsWith("'=", $written[1]['values'][0][2]);
         $this->assertSame('INVALID', $written[2]['values'][0][14]);
@@ -115,7 +122,7 @@ class GoogleSheetsCatalogTest extends TestCase
         $client = Mockery::mock(GoogleSheetsClient::class);
         $client->shouldNotReceive('readRows');
         $client->shouldReceive('rowRange')->twice()->andReturnUsing(
-            fn (array $configuration, int $row): string => "'Products'!A{$row}:S{$row}",
+            fn (array $configuration, int $row, int $columnCount): string => "'Products'!A{$row}:AE{$row}",
         );
         $client->shouldNotReceive('writeRows');
         $this->app->instance(GoogleSheetsClient::class, $client);
@@ -126,6 +133,32 @@ class GoogleSheetsCatalogTest extends TestCase
         $this->assertDatabaseCount('catalog_channel_item_states', 0);
         $this->assertDatabaseCount('catalog_channel_sync_conflicts', 0);
         $this->assertDatabaseHas('catalog_channel_sync_runs', ['mode' => 'dry_run', 'status' => 'completed']);
+    }
+
+    public function test_google_client_builds_ranges_for_all_export_columns(): void
+    {
+        $client = app(GoogleSheetsClient::class);
+        $configuration = ['worksheet' => 'Products'];
+
+        $this->assertSame("'Products'!A1:AE1", $client->rowRange($configuration, 1, 31));
+    }
+
+    public function test_google_client_reads_all_export_columns(): void
+    {
+        Http::fake(function (Request $request) {
+            if ($request->url() === 'https://oauth2.googleapis.com/token') {
+                return Http::response(['access_token' => 'fake-access-token', 'expires_in' => 3600]);
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+            $this->assertSame("'Products'!A:AE", $query['ranges'] ?? null);
+
+            return Http::response(['valueRanges' => [['values' => [GoogleSheetsExporter::HEADERS]]]]);
+        });
+
+        $rows = app(GoogleSheetsClient::class)->readRows($this->configurationWithRealTestKey(), 31);
+
+        $this->assertSame([GoogleSheetsExporter::HEADERS], $rows);
     }
 
     private function connection(bool $enabled): CatalogChannelConnection
