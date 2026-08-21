@@ -75,7 +75,7 @@ class GoogleSheetsExporter
                 : $this->client->readRows($configuration, $columnCount);
             $report = $this->prepare($existingRows, $configuration, $dryRun, $columnCount);
             if (! $dryRun) {
-                $this->client->writeRows($configuration, $report['ranges']);
+                $this->client->writeRows($configuration, $report['ranges'], $columnCount);
                 $this->persistStates($report['states']);
                 $connection->update([
                     'status' => 'connected',

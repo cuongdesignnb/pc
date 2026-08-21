@@ -41,11 +41,13 @@ class GoogleSheetsClient
         return (array) $response->json('valueRanges.0.values', []);
     }
 
-    public function writeRows(array $configuration, array $ranges): void
+    public function writeRows(array $configuration, array $ranges, int $columnCount): void
     {
         if ($ranges === []) {
             return;
         }
+
+        $this->ensureColumnCapacity($configuration, $columnCount);
 
         foreach (array_chunk($ranges, max(1, (int) config('catalog.sync_chunk_size', 250))) as $chunk) {
             $response = $this->request($configuration)->post(
@@ -54,6 +56,45 @@ class GoogleSheetsClient
             );
             $this->assertSuccessful($response, 'GOOGLE_WRITE_FAILED');
         }
+    }
+
+    private function ensureColumnCapacity(array $configuration, int $columnCount): void
+    {
+        $response = $this->request($configuration)->get($this->spreadsheetUrl($configuration), [
+            'fields' => 'sheets.properties',
+        ]);
+        $this->assertSuccessful($response, 'GOOGLE_WRITE_FAILED');
+
+        $worksheet = (string) ($configuration['worksheet'] ?? 'Products');
+        $sheet = collect($response->json('sheets', []))->first(
+            fn (array $candidate): bool => data_get($candidate, 'properties.title') === $worksheet,
+        );
+        if (! is_array($sheet)) {
+            throw new CatalogChannelException('GOOGLE_WORKSHEET_NOT_FOUND', 'Không tìm thấy worksheet đã cấu hình.');
+        }
+
+        $sheetId = (int) data_get($sheet, 'properties.sheetId', -1);
+        $currentColumnCount = (int) data_get($sheet, 'properties.gridProperties.columnCount', 0);
+        if ($currentColumnCount >= $columnCount) {
+            return;
+        }
+        if ($sheetId < 0) {
+            throw new CatalogChannelException('GOOGLE_INVALID_RESPONSE', 'Google Sheets worksheet metadata không hợp lệ.');
+        }
+
+        $response = $this->request($configuration)->post(
+            $this->spreadsheetUrl($configuration).':batchUpdate',
+            [
+                'requests' => [[
+                    'appendDimension' => [
+                        'sheetId' => $sheetId,
+                        'dimension' => 'COLUMNS',
+                        'length' => $columnCount - $currentColumnCount,
+                    ],
+                ]],
+            ],
+        );
+        $this->assertSuccessful($response, 'GOOGLE_WRITE_FAILED');
     }
 
     public function rowRange(array $configuration, int $row, int $columnCount): string
