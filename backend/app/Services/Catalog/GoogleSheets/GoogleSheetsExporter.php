@@ -163,7 +163,7 @@ class GoogleSheetsExporter
         ];
 
         $this->projection->each(function (CatalogProductData $product) use (
-            &$counts, &$ranges, &$nextRow, &$seenExternal, &$seenSku, &$states,
+            $columnCount, &$counts, &$ranges, &$nextRow, &$seenExternal, &$seenSku, &$states,
             $existing, $existingSkus, $duplicateSheetIds, $configuration, $dryRun, $headers, $selectedColumns,
         ): void {
             $counts['TOTAL_PRODUCTS']++;
