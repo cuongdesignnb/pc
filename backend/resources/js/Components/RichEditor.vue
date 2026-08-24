@@ -212,7 +212,7 @@ function insertImageByUrl() {
 <template>
 <div class="rich-editor border border-gray-300 rounded-lg overflow-hidden bg-white">
     <!-- Toolbar -->
-    <div v-if="editor" class="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+    <div v-if="editor" class="flex max-h-24 flex-wrap items-center gap-1 overflow-y-auto border-b border-gray-200 bg-slate-50 px-3 py-2">
         <!-- Text style -->
         <div class="flex items-center gap-0.5 pr-2 border-r border-gray-200">
             <button type="button" @click="editor.chain().focus().toggleHeading({ level: 2 }).run()" :class="editor.isActive('heading', { level: 2 }) ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-200'" class="px-1.5 py-1 rounded text-xs font-bold" title="Heading 2">H2</button>
@@ -307,7 +307,9 @@ function insertImageByUrl() {
     </div>
 
     <!-- Editor content -->
-    <EditorContent :editor="editor" />
+    <div class="bg-white px-1 py-1">
+        <EditorContent :editor="editor" />
+    </div>
 
     <!-- Media Library Modal -->
     <Teleport to="body">
@@ -418,12 +420,18 @@ function insertImageByUrl() {
 <style>
 /* TipTap editor styles */
 .rich-editor .tiptap {
+    min-height: inherit;
     outline: none;
+    color: #1f2937;
+    caret-color: #4f46e5;
+    font-size: 0.95rem;
+    line-height: 1.75;
+    background: #ffffff;
 }
 .rich-editor .tiptap p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
     float: left;
-    color: #9ca3af;
+    color: #94a3b8;
     pointer-events: none;
     height: 0;
 }
@@ -444,6 +452,9 @@ function insertImageByUrl() {
 .rich-editor .tiptap img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
 .rich-editor .tiptap hr { border: none; border-top: 2px solid #e5e7eb; margin: 1em 0; }
 .rich-editor .tiptap mark { background-color: #fef08a; padding: 0.1em 0.2em; border-radius: 2px; }
+.rich-editor .tiptap:focus { box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.14); }
+.rich-editor .tiptap > :first-child { margin-top: 0; }
+.rich-editor .tiptap > :last-child { margin-bottom: 0; }
 
 /* Table styles */
 .rich-editor .tiptap table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }

@@ -12,6 +12,8 @@ use App\Services\Ai\AiGenerationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class AiGenerationController extends Controller
@@ -43,6 +45,12 @@ class AiGenerationController extends Controller
 
     public function storeSchedule(Request $request): JsonResponse
     {
+        $request->merge([
+            'category_id' => $request->filled('category_id') ? $request->input('category_id') : null,
+            'product_id' => $request->filled('product_id') ? $request->input('product_id') : null,
+            'image_count' => $request->filled('image_count') ? $request->input('image_count') : 0,
+        ]);
+
         $data = $request->validate([
             'topic' => 'required|string|max:500',
             'keywords' => 'nullable|string|max:1000',
@@ -53,7 +61,7 @@ class AiGenerationController extends Controller
             'with_images' => 'boolean',
             'image_count' => 'integer|min:0|max:10',
             'auto_publish' => 'boolean',
-            'category_id' => 'nullable|integer',
+            'category_id' => 'nullable|integer|exists:post_categories,id',
             'product_id' => 'nullable|exists:products,id',
             'scheduled_at' => 'required|date',
         ]);
@@ -62,12 +70,28 @@ class AiGenerationController extends Controller
             return response()->json(['success' => false, 'message' => 'Mô tả sản phẩm cần chọn sản phẩm.'], 422);
         }
 
-        $schedule = AiGenerationSchedule::create([
-            ...$data,
-            'scheduled_at' => Carbon::parse($data['scheduled_at']),
-            'created_by' => $request->user()?->id,
-            'status' => 'pending',
-        ]);
+        try {
+            $schedule = DB::transaction(fn () => AiGenerationSchedule::create([
+                ...$data,
+                'scheduled_at' => Carbon::parse($data['scheduled_at']),
+                'created_by' => $request->user()?->id,
+                'status' => 'pending',
+            ]));
+        } catch (\Throwable $e) {
+            Log::error('AI schedule could not be saved.', [
+                'type' => $data['type'] ?? null,
+                'has_product' => filled($data['product_id'] ?? null),
+                'has_category' => filled($data['category_id'] ?? null),
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_code' => 'AI_SCHEDULE_SAVE_FAILED',
+                'message' => 'Không thể lưu lịch viết AI. Vui lòng kiểm tra cấu hình cơ sở dữ liệu và thử lại.',
+            ], 500);
+        }
 
         return response()->json(['success' => true, 'schedule' => $schedule], 201);
     }

@@ -85,7 +85,7 @@ function removeVariant(index) {
 <AdminLayout title="Thêm sản phẩm">
     <div class="max-w-5xl">
         <div class="flex items-center justify-between mb-6">
-            <div class="flex items-center gap-3"><h3 class="text-lg font-semibold text-slate-200">Thêm sản phẩm mới</h3><AiGeneratePanel type="product_description" :topic="form.name" :existing-content="form.description" @generated="applyAi" /></div>
+            <h3 class="text-lg font-semibold text-slate-200">Thêm sản phẩm mới</h3>
             <Link href="/admin/products" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link>
         </div>
         <form @submit.prevent="submit" class="space-y-6">
@@ -125,7 +125,22 @@ function removeVariant(index) {
                     </div>
                 </div>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Mô tả ngắn</label><textarea v-model="form.short_description" rows="2" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
-                <div><label class="block text-sm font-medium text-slate-300 mb-1">Mô tả chi tiết</label><RichEditor v-model="form.description" placeholder="Nhập mô tả chi tiết sản phẩm..." /></div>
+                <div class="rounded-xl border border-violet-500/25 bg-violet-500/5 p-4">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-violet-100">Trợ lý viết mô tả bằng AI</p>
+                            <p class="mt-1 text-xs text-slate-400">Tạo nội dung từ tên và thông tin sản phẩm. Bạn có thể chỉnh sửa trước khi lưu.</p>
+                        </div>
+                        <AiGeneratePanel type="product_description" :topic="form.name" :existing-content="form.description" @generated="applyAi" />
+                    </div>
+                </div>
+                <div>
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                        <label class="block text-sm font-medium text-slate-300">Mô tả chi tiết</label>
+                        <span class="text-xs text-slate-500">Có thể định dạng tiêu đề, danh sách, ảnh và bảng</span>
+                    </div>
+                    <RichEditor v-model="form.description" placeholder="Nhập mô tả chi tiết sản phẩm..." min-height="360px" />
+                </div>
             </div>
 
             <!-- Hình ảnh -->

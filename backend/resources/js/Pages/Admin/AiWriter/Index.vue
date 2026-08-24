@@ -4,7 +4,8 @@ import { router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
 const props = defineProps({ schedules: Object, categories: Array, products: Array, configured: Boolean });
-const form = ref({ topic: '', keywords: '', type: 'article', tone: 'professional', length: 'medium', full_article: true, with_images: false, image_count: 0, auto_publish: false, category_id: '', product_id: '', scheduled_at: '' });
+const initialForm = () => ({ topic: '', keywords: '', type: 'article', tone: 'professional', length: 'medium', full_article: true, with_images: false, image_count: 0, auto_publish: false, category_id: null, product_id: null, scheduled_at: '' });
+const form = ref(initialForm());
 const error = ref('');
 const saving = ref(false);
 const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -14,7 +15,7 @@ async function save() {
     try {
         await window.axios.post('/admin/ai-writer/schedules', form.value, { headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf() } });
         router.reload({ only: ['schedules'] });
-        form.value.topic = ''; form.value.keywords = ''; form.value.scheduled_at = '';
+        form.value = initialForm();
     } catch (e) { error.value = e.response?.data?.message || 'Không thể lưu lịch AI.'; }
     finally { saving.value = false; }
 }
