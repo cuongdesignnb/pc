@@ -10,12 +10,14 @@ class CartItem extends Model
     protected $fillable = [
         'cart_id',
         'product_id',
+        'variant_id',
         'quantity',
         'price',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'variant_id' => 'integer',
         'price' => 'decimal:0',
     ];
 
@@ -27,6 +29,11 @@ class CartItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function variant(): BelongsTo
+    {
+        return $this->belongsTo(ProductVariant::class, 'variant_id');
     }
 
     public function getSubtotalAttribute(): float

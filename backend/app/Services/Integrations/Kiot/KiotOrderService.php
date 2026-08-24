@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Setting;
 use App\Services\Catalog\ProductPurchasabilityService;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -38,15 +39,37 @@ class KiotOrderService
                     return $this->existingResult($existing, $data['order_access_token'], $userId);
                 }
 
-                $requested = collect($data['items'])->groupBy('product_id')->map(fn ($rows) => $rows->sum('quantity'));
-                $products = Product::whereIn('id', $requested->keys())->lockForUpdate()->get()->keyBy('id');
+                $requested = collect($data['items'])
+                    ->groupBy(fn (array $item): string => (int) $item['product_id'].':'.(int) ($item['variant_id'] ?? 0))
+                    ->map(function ($rows): array {
+                        $first = $rows->first();
+
+                        return [
+                            'product_id' => (int) $first['product_id'],
+                            'variant_id' => ! empty($first['variant_id']) ? (int) $first['variant_id'] : null,
+                            'quantity' => $rows->sum('quantity'),
+                        ];
+                    });
+                $products = Product::whereIn('id', $requested->pluck('product_id'))->lockForUpdate()->get()->keyBy('id');
+                $variants = ProductVariant::whereIn('id', $requested->pluck('variant_id')->filter())
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
                 $subtotal = 0;
                 $weight = 0;
                 $snapshots = [];
 
-                foreach ($requested as $productId => $quantity) {
-                    $product = $products->get($productId);
-                    if (! $product || ! $this->purchasability->isPurchasable($product, (int) $quantity)) {
+                foreach ($requested as $line) {
+                    $product = $products->get($line['product_id']);
+                    $variant = $line['variant_id'] ? $variants->get($line['variant_id']) : null;
+                    $quantity = (int) $line['quantity'];
+                    $isPurchasable = $variant
+                        ? $variant->product_id === $product?->id
+                            && $variant->is_active
+                            && $variant->stock_quantity >= $quantity
+                            && $product?->isVisibleOnStorefront()
+                        : $product && $this->purchasability->isPurchasable($product, $quantity);
+                    if (! $product || ! $isPurchasable) {
                         throw new KiotIntegrationException(
                             'INSUFFICIENT_AVAILABLE_STOCK',
                             $product ? "Sản phẩm {$product->name} không đủ số lượng khả dụng." : 'Sản phẩm không tồn tại.',
@@ -54,15 +77,17 @@ class KiotOrderService
                             422,
                         );
                     }
-                    $unitPrice = $this->purchasability->unitPrice($product);
-                    $lineTotal = $unitPrice * (int) $quantity;
+                    $unitPrice = $variant?->display_price ?? $this->purchasability->unitPrice($product);
+                    $lineTotal = $unitPrice * $quantity;
                     $subtotal += $lineTotal;
-                    $weight += (int) ($product->weight ?? 0) * (int) $quantity;
+                    $weight += (int) ($product->weight ?? 0) * $quantity;
                     $snapshots[] = [
                         'product_id' => $product->id,
                         'product_name' => $product->name,
-                        'sku' => $product->sku,
-                        'quantity' => (int) $quantity,
+                        'variant_id' => $variant?->id,
+                        'variant_name' => $variant?->name,
+                        'sku' => $variant?->sku ?: $product->sku,
+                        'quantity' => $quantity,
                         'price' => $unitPrice,
                         'total' => $lineTotal,
                     ];

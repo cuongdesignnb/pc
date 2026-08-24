@@ -98,6 +98,7 @@ const placeOrder = async () => {
         order_access_token: orderAccessToken.value,
         items: cartItems.value.map((item: any) => ({
           product_id: item.product_id,
+          variant_id: item.variant_id || null,
           quantity: item.quantity,
         })),
       },

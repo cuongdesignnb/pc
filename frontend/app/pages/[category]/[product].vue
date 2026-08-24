@@ -3,7 +3,6 @@ import type { Product, ComponentType } from '~/types'
 
 interface ProductDetailResponse {
   product: Product
-  related: Product[]
 }
 
 interface SuggestionGroup {
@@ -18,7 +17,7 @@ interface SuggestionsResponse {
 const config = useRuntimeConfig()
 const route = useRoute()
 const { user, isAuthenticated, token } = useAuth()
-const { siteName, formatMoney } = useSettings()
+const { siteName, formatMoney, warehouseAddresses, warrantyInformation } = useSettings()
 
 const slug = route.params.product as string
 
@@ -26,7 +25,14 @@ const slug = route.params.product as string
 const { data } = await useFetch<ProductDetailResponse>(`${config.public.apiBase}/products/${slug}`)
 
 const product = computed(() => data.value?.product)
-const relatedProducts = computed(() => data.value?.related || [])
+const selectedVariantId = ref<number | null>(null)
+const selectedVariant = computed(() => product.value?.variants?.find(variant => variant.id === selectedVariantId.value) || null)
+const displayPrice = computed(() => selectedVariant.value?.display_price ?? Number(product.value?.sale_price || product.value?.price || 0))
+const displayOriginalPrice = computed(() => selectedVariant.value?.sale_price ? Number(selectedVariant.value.price) : Number(product.value?.price || 0))
+const displaySalePrice = computed(() => selectedVariant.value?.sale_price ? Number(selectedVariant.value.sale_price) : (selectedVariant.value ? null : product.value?.sale_price))
+const displayStock = computed(() => selectedVariant.value?.stock_quantity ?? product.value?.quantity ?? 0)
+const displaySku = computed(() => selectedVariant.value?.sku || product.value?.sku || '')
+const displayPurchasable = computed(() => selectedVariant.value ? selectedVariant.value.is_available : Boolean(product.value?.is_purchasable))
 
 // Compatible product suggestions (lazy AJAX)
 const suggestions = ref<SuggestionGroup[]>([])
@@ -96,10 +102,10 @@ const cart = useCart()
 const toast = useToast()
 
 const addToCart = async () => {
-  if (!product.value?.is_purchasable) return
+  if (!product.value || !displayPurchasable.value) return
   addingToCart.value = true
   try {
-    const success = await cart.addItem(product.value.id, quantity.value)
+    const success = await cart.addItem(product.value.id, quantity.value, selectedVariant.value?.id)
     if (success) {
       addedToCart.value = true
       toast.add({
@@ -132,8 +138,12 @@ const addToCart = async () => {
 
 // Calculate discount percentage
 const discountPercent = computed(() => {
-  if (!product.value?.sale_price) return 0
-  return Math.round((1 - product.value.sale_price / product.value.price) * 100)
+  if (!displaySalePrice.value || !displayOriginalPrice.value) return 0
+  return Math.round((1 - Number(displaySalePrice.value) / displayOriginalPrice.value) * 100)
+})
+
+watch(selectedVariantId, () => {
+  quantity.value = 1
 })
 
 // Average rating
@@ -270,7 +280,7 @@ onUnmounted(() => {
                 @click="isImageModalOpen = true"
               >
                 <!-- Sale badge -->
-                <div v-if="product.sale_price" class="absolute top-4 left-4 z-10">
+                <div v-if="displaySalePrice" class="absolute top-4 left-4 z-10">
                   <div class="bg-gradient-to-r from-red-500 to-rose-500 text-white text-sm font-bold px-3 py-1.5 rounded-full shadow-lg shadow-red-200">
                     -{{ discountPercent }}%
                   </div>
@@ -350,7 +360,7 @@ onUnmounted(() => {
                   {{ product.reviews?.length || 0 }} đánh giá
                 </button>
                 <span class="text-sm text-gray-400">|</span>
-                <span class="text-sm text-gray-500">SKU: {{ product.sku }}</span>
+                <span class="text-sm text-gray-500">SKU: {{ displaySku }}</span>
               </div>
 
               <!-- Divider -->
@@ -360,15 +370,48 @@ onUnmounted(() => {
               <div class="bg-gradient-to-r from-primary-50/80 to-orange-50/50 rounded-xl p-5 my-5">
                 <div class="flex items-end gap-3">
                   <span class="text-3xl lg:text-4xl font-extrabold text-primary-600">
-                    {{ formatPrice(product.sale_price || product.price) }}
+                    {{ formatPrice(displayPrice) }}
                   </span>
-                  <span v-if="product.sale_price" class="text-lg text-gray-400 line-through mb-0.5">
-                    {{ formatPrice(product.price) }}
+                  <span v-if="displaySalePrice" class="text-lg text-gray-400 line-through mb-0.5">
+                    {{ formatPrice(displayOriginalPrice) }}
                   </span>
-                  <span v-if="product.sale_price" class="mb-1 inline-flex items-center gap-1 px-2.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-md">
+                  <span v-if="displaySalePrice" class="mb-1 inline-flex items-center gap-1 px-2.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-md">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
                     {{ discountPercent }}%
                   </span>
+                </div>
+              </div>
+
+              <!-- Product variants -->
+              <div v-if="product.variants?.length" class="mb-5 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <p class="text-sm font-bold text-gray-800">Chọn phiên bản</p>
+                    <p class="text-xs text-gray-500">Chọn cấu hình để xem đúng giá và tồn kho.</p>
+                  </div>
+                  <span v-if="selectedVariant" class="text-xs font-semibold text-primary-600">Đã chọn</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    v-for="variant in product.variants"
+                    :key="variant.id"
+                    type="button"
+                    :disabled="!variant.is_available"
+                    :class="[
+                      'text-left rounded-lg border px-3 py-2.5 transition-all',
+                      selectedVariantId === variant.id
+                        ? 'border-primary-500 bg-white ring-2 ring-primary-100'
+                        : 'border-gray-200 bg-white hover:border-primary-300',
+                      !variant.is_available && 'opacity-50 cursor-not-allowed'
+                    ]"
+                    @click="selectedVariantId = variant.id"
+                  >
+                    <span class="block text-sm font-semibold text-gray-800 line-clamp-2">{{ variant.name }}</span>
+                    <span class="mt-1 flex items-center justify-between gap-2 text-xs">
+                      <span class="font-bold text-primary-600">{{ formatPrice(variant.display_price) }}</span>
+                      <span :class="variant.is_available ? 'text-emerald-600' : 'text-gray-400'">{{ variant.is_available ? `Còn ${variant.stock_quantity}` : 'Hết hàng' }}</span>
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -379,16 +422,16 @@ onUnmounted(() => {
 
               <!-- Stock status -->
               <div class="mb-5">
-                <div v-if="product.is_purchasable" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
+                <div v-if="displayPurchasable" class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
                   <span class="relative flex h-2.5 w-2.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  <span class="text-sm font-medium text-emerald-700">{{ product.availability_label }} · {{ product.quantity }} sản phẩm</span>
+                  <span class="text-sm font-medium text-emerald-700">Còn hàng · {{ displayStock }} sản phẩm</span>
                 </div>
                 <div v-else class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-50 border border-red-200">
                   <span class="w-2.5 h-2.5 rounded-full bg-red-400"></span>
-                  <span class="text-sm font-medium text-red-600">{{ product.availability_label }}</span>
+                  <span class="text-sm font-medium text-red-600">{{ selectedVariant ? 'Hết hàng' : product.availability_label }}</span>
                 </div>
               </div>
 
@@ -397,7 +440,7 @@ onUnmounted(() => {
                 <div class="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden">
                   <button 
                     class="px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors disabled:opacity-30"
-                    :disabled="!product.is_purchasable || quantity <= 1"
+                    :disabled="!displayPurchasable || quantity <= 1"
                     @click="quantity--"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M20 12H4"/></svg>
@@ -406,12 +449,12 @@ onUnmounted(() => {
                     v-model.number="quantity" 
                     type="number" 
                     min="1" 
-                    :max="product.quantity"
+                    :max="displayStock"
                     class="w-14 text-center border-0 focus:ring-0 font-semibold text-gray-800"
                   >
                   <button 
                     class="px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors disabled:opacity-30"
-                    :disabled="!product.is_purchasable || quantity >= product.quantity"
+                    :disabled="!displayPurchasable || quantity >= displayStock"
                     @click="quantity++"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
@@ -419,13 +462,13 @@ onUnmounted(() => {
                 </div>
 
                 <button
-                  :disabled="!product.is_purchasable || addingToCart"
+                  :disabled="!displayPurchasable || addingToCart"
                   :class="[
                     'flex-1 sm:flex-none flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl font-semibold text-white transition-all duration-300 shadow-lg',
                     addedToCart 
                       ? 'bg-emerald-500 shadow-emerald-200'
                       : 'bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 shadow-primary-200 hover:shadow-primary-300 hover:shadow-xl active:scale-[0.98]',
-                    (!product.is_purchasable || addingToCart) && 'opacity-50 cursor-not-allowed !shadow-none'
+                    (!displayPurchasable || addingToCart) && 'opacity-50 cursor-not-allowed !shadow-none'
                   ]"
                   @click="addToCart"
                 >
@@ -435,7 +478,7 @@ onUnmounted(() => {
                   </svg>
                   <svg v-else-if="addedToCart" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
                   <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"/></svg>
-                  <span>{{ addedToCart ? 'Đã thêm!' : (product.is_purchasable ? 'Thêm vào giỏ hàng' : product.availability_label) }}</span>
+                  <span>{{ addedToCart ? 'Đã thêm!' : (displayPurchasable ? 'Thêm vào giỏ hàng' : (selectedVariant ? 'Biến thể hết hàng' : product.availability_label)) }}</span>
                 </button>
               </div>
 
@@ -552,6 +595,31 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- ===== KHO HÀNG + BẢO HÀNH ===== -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <section v-if="warehouseAddresses" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-amber-50 to-transparent">
+              <div class="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-lg">📍</div>
+              <div>
+                <h2 class="text-lg font-bold text-gray-900">Địa chỉ kho hàng</h2>
+                <p class="text-xs text-gray-500">Nơi có thể xem và nhận sản phẩm</p>
+              </div>
+            </div>
+            <div class="px-6 py-5 text-sm leading-7 text-gray-700 whitespace-pre-line">{{ warehouseAddresses }}</div>
+          </section>
+          <section v-if="warrantyInformation || product.warranty_months" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-transparent">
+              <div class="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-lg">🛡️</div>
+              <div>
+                <h2 class="text-lg font-bold text-gray-900">Thông tin bảo hành</h2>
+                <p v-if="product.warranty_months" class="text-xs text-emerald-700">Bảo hành {{ product.warranty_months }} tháng</p>
+              </div>
+            </div>
+            <div v-if="warrantyInformation" class="px-6 py-5 text-sm leading-7 text-gray-700 whitespace-pre-line">{{ warrantyInformation }}</div>
+            <div v-else class="px-6 py-5 text-sm text-gray-600">Sản phẩm được bảo hành theo chính sách của cửa hàng.</div>
+          </section>
         </div>
 
         <!-- ===== ĐÁNH GIÁ SẢN PHẨM ===== -->
@@ -844,43 +912,6 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- ===== Related Products ===== -->
-        <div v-if="relatedProducts.length" class="mb-8">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-2xl font-bold text-gray-900">Sản phẩm liên quan</h2>
-            <NuxtLink :to="`/${product.category?.slug || route.params.category}`" class="text-sm text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1">
-              Xem tất cả
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-            </NuxtLink>
-          </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
-            <NuxtLink 
-              v-for="related in relatedProducts" 
-              :key="related.id"
-              :to="`/${related.category?.slug || route.params.category}/${related.slug}`"
-              class="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-primary-200 transition-all duration-300"
-            >
-              <div class="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
-                <img 
-                  v-if="related.images?.[0]" 
-                  :src="related.images[0].url" 
-                  :alt="related.name"
-                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                >
-                <span v-else class="text-4xl text-gray-300">📦</span>
-              </div>
-              <div class="p-4">
-                <h3 class="font-semibold text-gray-800 line-clamp-2 mb-2 group-hover:text-primary-600 transition-colors">{{ related.name }}</h3>
-                <p class="text-lg font-bold text-primary-600">
-                  {{ formatPrice(related.sale_price || related.price) }}
-                </p>
-                <p v-if="related.sale_price" class="text-sm text-gray-400 line-through">
-                  {{ formatPrice(related.price) }}
-                </p>
-              </div>
-            </NuxtLink>
-          </div>
-        </div>
       </template>
     </div>
 

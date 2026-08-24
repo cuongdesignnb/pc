@@ -11,7 +11,16 @@ class SettingController extends Controller
 {
     public function index()
     {
-        $settings = Setting::orderBy('group')->orderBy('id')->get()->groupBy('group');
+        $settings = Setting::orderBy('group')->orderBy('id')->get()->map(function (Setting $setting) {
+            if ($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) {
+                $setting->type = 'password';
+            }
+            if ($setting->type === 'password' && filled($setting->value)) {
+                $setting->value = '********';
+            }
+
+            return $setting;
+        })->groupBy('group');
 
         return Inertia::render('Admin/Settings/Index', [
             'settings' => $settings,
@@ -28,7 +37,7 @@ class SettingController extends Controller
 
         foreach ($request->input('settings') as $item) {
             $setting = Setting::where('key', $item['key'])->first();
-            if ($setting) {
+            if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'], ['', '********'], true))) {
                 $value = $item['value'];
                 if (is_array($value)) {
                     $value = json_encode($value);

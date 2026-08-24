@@ -55,6 +55,7 @@ class OrderController extends Controller
             'payment_method' => 'required|in:sepay,cod',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer|exists:products,id',
+            'items.*.variant_id' => 'nullable|integer|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
         ]);
 
@@ -209,7 +210,9 @@ class OrderController extends Controller
             $result['items'] = $order->items->map(fn ($item) => [
                 'id' => $item->id,
                 'product_id' => $item->product_id,
+                'variant_id' => $item->variant_id,
                 'product_name' => $item->product_name,
+                'variant_name' => $item->variant_name,
                 'sku' => $item->sku,
                 'quantity' => $item->quantity,
                 'price' => $item->price,

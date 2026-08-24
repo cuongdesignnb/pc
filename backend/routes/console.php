@@ -60,3 +60,8 @@ Schedule::job(new CleanupCatalogSyncRunsJob)
     ->dailyAt('02:30')
     ->withoutOverlapping()
     ->onOneServer();
+
+Schedule::command('ai:process-schedules')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();

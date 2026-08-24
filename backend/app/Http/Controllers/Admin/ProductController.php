@@ -10,7 +10,9 @@ use App\Models\Product;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -65,7 +67,7 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'name' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products',
             'sku' => 'required|string|max:100|unique:products',
@@ -91,15 +93,28 @@ class ProductController extends Controller
             'compatibility_specs' => 'nullable|array',
             'compatibility_specs.*.specification_key_id' => 'required|exists:specification_keys,id',
             'compatibility_specs.*.value' => 'nullable|string|max:500',
-        ]);
+            // Variants
+            'variants' => 'nullable|array|max:100',
+            'variants.*.id' => 'nullable|integer',
+            'variants.*.name' => 'required|string|max:255',
+            'variants.*.price' => 'required|numeric|min:0',
+            'variants.*.sale_price' => 'nullable|numeric|min:0',
+            'variants.*.stock_quantity' => 'required|integer|min:0',
+            'variants.*.is_active' => 'boolean',
+            'variants.*.sort_order' => 'nullable|integer|min:0',
+        ], $this->variantSkuRules($request, false)));
 
         // Check slug collision with categories
         if (Category::where('slug', $validated['slug'])->exists()) {
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
-        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs'])->toArray();
+        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants'])->toArray();
         $product = Product::create($productData);
+
+        if (array_key_exists('variants', $validated)) {
+            $this->syncVariants($product, $validated['variants'] ?? []);
+        }
 
         // Save images
         $sortOrder = 0;
@@ -147,7 +162,7 @@ class ProductController extends Controller
 
     public function edit(Product $product)
     {
-        $product->load(['category', 'brand', 'componentType', 'images', 'specifications.specificationKey']);
+        $product->load(['category', 'brand', 'componentType', 'images', 'variants', 'specifications.specificationKey']);
         $product->makeVisible('stock_quantity');
 
         return Inertia::render('Admin/Products/Edit', [
@@ -160,7 +175,7 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'name' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products,slug,'.$product->id,
             'sku' => 'required|string|max:100|unique:products,sku,'.$product->id,
@@ -186,18 +201,31 @@ class ProductController extends Controller
             'compatibility_specs' => 'nullable|array',
             'compatibility_specs.*.specification_key_id' => 'required|exists:specification_keys,id',
             'compatibility_specs.*.value' => 'nullable|string|max:500',
-        ]);
+            // Variants
+            'variants' => 'nullable|array|max:100',
+            'variants.*.id' => 'nullable|integer',
+            'variants.*.name' => 'required|string|max:255',
+            'variants.*.price' => 'required|numeric|min:0',
+            'variants.*.sale_price' => 'nullable|numeric|min:0',
+            'variants.*.stock_quantity' => 'required|integer|min:0',
+            'variants.*.is_active' => 'boolean',
+            'variants.*.sort_order' => 'nullable|integer|min:0',
+        ], $this->variantSkuRules($request, true)));
 
         // Check slug collision with categories
         if (Category::where('slug', $validated['slug'])->exists()) {
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
-        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs'])->toArray();
+        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants'])->toArray();
         if ($product->inventory_source === 'kiot') {
             unset($productData['sku'], $productData['price'], $productData['stock_quantity']);
         }
         $product->update($productData);
+
+        if (array_key_exists('variants', $validated)) {
+            $this->syncVariants($product, $validated['variants'] ?? []);
+        }
 
         // Rebuild images
         $product->images()->delete();
@@ -251,6 +279,64 @@ class ProductController extends Controller
 
         return redirect()->route('admin.products.index')
             ->with('success', 'Xóa sản phẩm thành công');
+    }
+
+    /**
+     * Build per-row SKU rules while allowing an existing variant to keep its SKU.
+     */
+    private function variantSkuRules(Request $request, bool $updating): array
+    {
+        $rules = [];
+        foreach ((array) $request->input('variants', []) as $index => $variant) {
+            if (! is_array($variant)) {
+                continue;
+            }
+
+            $rule = Rule::unique('product_variants', 'sku');
+            if ($updating && ! empty($variant['id'])) {
+                $rule = $rule->ignore((int) $variant['id']);
+            }
+            $rules["variants.$index.sku"] = ['nullable', 'string', 'max:100', $rule];
+        }
+
+        return $rules;
+    }
+
+    private function syncVariants(Product $product, array $variants): void
+    {
+        DB::transaction(function () use ($product, $variants): void {
+            $keptIds = [];
+
+            foreach (array_values($variants) as $index => $variant) {
+                $model = ! empty($variant['id'])
+                    ? $product->variants()->whereKey((int) $variant['id'])->first()
+                    : null;
+
+                $attributes = [
+                    'name' => $variant['name'],
+                    'sku' => filled($variant['sku'] ?? null) ? trim((string) $variant['sku']) : null,
+                    'price' => $variant['price'],
+                    'sale_price' => $variant['sale_price'] ?? null,
+                    'stock_quantity' => $variant['stock_quantity'],
+                    'is_active' => $variant['is_active'] ?? true,
+                    'sort_order' => $variant['sort_order'] ?? $index,
+                ];
+
+                if ($model) {
+                    $model->update($attributes);
+                } else {
+                    $model = $product->variants()->create($attributes);
+                }
+
+                $keptIds[] = $model->id;
+            }
+
+            $product->variants()->when(
+                $keptIds !== [],
+                fn ($query) => $query->whereNotIn('id', $keptIds),
+                fn ($query) => $query,
+            )->delete();
+        });
     }
 
     public function export(Request $request): StreamedResponse

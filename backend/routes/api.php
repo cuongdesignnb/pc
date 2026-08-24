@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BlogController;
@@ -101,4 +102,11 @@ Route::prefix('v1')->group(function () {
         // User orders
         Route::get('/orders', [OrderController::class, 'index']);
     });
+});
+
+// Admin-only AI writing endpoints. The web middleware keeps the existing admin session;
+// API keys never leave the server.
+Route::prefix('ai')->middleware(['web', 'admin.auth', 'permission:ai-articles.create|posts.create|products.create|products.edit', 'throttle:ai-generation'])->group(function () {
+    Route::post('/content', [AiGenerationController::class, 'content'])->name('api.ai.content');
+    Route::post('/content-with-images', [AiGenerationController::class, 'contentWithImages'])->name('api.ai.content-with-images');
 });

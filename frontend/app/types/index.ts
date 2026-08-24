@@ -23,6 +23,19 @@ export interface Product {
   specifications?: ProductSpecification[]
   parsed_specifications?: { label: string; value: string }[]
   reviews?: Review[]
+  variants?: ProductVariant[]
+}
+
+export interface ProductVariant {
+  id: number
+  name: string
+  sku: string | null
+  price: number
+  sale_price: number | null
+  stock_quantity: number
+  display_price: number
+  is_active: boolean
+  is_available: boolean
 }
 
 export interface ProductImage {

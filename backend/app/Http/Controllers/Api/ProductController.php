@@ -101,6 +101,10 @@ class ProductController extends Controller
             'brand',
             'componentType',
             'images',
+            'variants' => fn ($query) => $query
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('id'),
             'reviews' => fn ($query) => $query
                 ->where('is_approved', true)
                 ->latest()
@@ -113,17 +117,8 @@ class ProductController extends Controller
         // Append parsed specifications
         $product->append('parsed_specifications');
 
-        // Get related products
-        $related = Product::with(['images'])
-            ->where('category_id', $product->category_id)
-            ->where('id', '!=', $product->id)
-            ->visibleOnStorefront()
-            ->limit(4)
-            ->get();
-
         return response()->json([
             'product' => $product,
-            'related' => $related,
         ]);
     }
 
