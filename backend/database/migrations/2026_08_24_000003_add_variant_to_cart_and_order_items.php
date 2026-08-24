@@ -13,6 +13,7 @@ return new class extends Migration
         });
 
         Schema::table('cart_items', function (Blueprint $table) {
+            $table->dropForeign(['cart_id']);
             $table->dropForeign(['product_id']);
         });
 
@@ -22,6 +23,7 @@ return new class extends Migration
 
         Schema::table('cart_items', function (Blueprint $table) {
             $table->unique(['cart_id', 'product_id', 'variant_id']);
+            $table->foreign('cart_id')->references('id')->on('carts')->cascadeOnDelete();
             $table->foreign('product_id')->references('id')->on('products')->cascadeOnDelete();
         });
 
@@ -39,6 +41,7 @@ return new class extends Migration
         });
 
         Schema::table('cart_items', function (Blueprint $table) {
+            $table->dropForeign(['cart_id']);
             $table->dropForeign(['product_id']);
         });
 
@@ -48,6 +51,7 @@ return new class extends Migration
 
         Schema::table('cart_items', function (Blueprint $table) {
             $table->unique(['cart_id', 'product_id']);
+            $table->foreign('cart_id')->references('id')->on('carts')->cascadeOnDelete();
             $table->foreign('product_id')->references('id')->on('products')->cascadeOnDelete();
         });
 
