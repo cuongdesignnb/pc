@@ -14,6 +14,9 @@ return new class extends Migration
 
         Schema::table('cart_items', function (Blueprint $table) {
             $table->dropForeign(['product_id']);
+        });
+
+        Schema::table('cart_items', function (Blueprint $table) {
             $table->dropUnique(['cart_id', 'product_id']);
         });
 
@@ -37,6 +40,9 @@ return new class extends Migration
 
         Schema::table('cart_items', function (Blueprint $table) {
             $table->dropForeign(['product_id']);
+        });
+
+        Schema::table('cart_items', function (Blueprint $table) {
             $table->dropUnique(['cart_id', 'product_id', 'variant_id']);
         });
 
