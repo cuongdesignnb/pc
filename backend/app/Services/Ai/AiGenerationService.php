@@ -16,7 +16,9 @@ class AiGenerationService
     public function generate(array $input, ?int $userId = null): array
     {
         $product = ! empty($input['product_id']) ? Product::find($input['product_id']) : null;
-        $category = ! empty($input['category_id']) ? Category::find($input['category_id']) : null;
+        $category = $input['type'] === 'category_description' && ! empty($input['category_id'])
+            ? Category::find($input['category_id'])
+            : null;
         if ($product) {
             $facts = "Tên: {$product->name}\nSKU: {$product->sku}\nMô tả hiện có: ".($product->description ?: 'trống')."\nThông số: ".($product->specifications_text ?: 'không có');
             $input['existing_content'] = trim(($input['existing_content'] ?? '')."\n".$facts);
