@@ -84,6 +84,7 @@ class CartController extends Controller
         return response()->json([
             'message' => 'Đã thêm vào giỏ hàng',
             'cart' => $cart,
+            'items' => $cart->items,
             'count' => $cart->items->sum('quantity'),
         ]);
     }

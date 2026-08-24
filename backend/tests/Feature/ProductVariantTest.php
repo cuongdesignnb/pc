@@ -75,22 +75,26 @@ class ProductVariantTest extends TestCase
 
     public function test_storefront_detail_settings_are_public_and_keep_newlines(): void
     {
-        Setting::create([
-            'key' => 'storefront_warehouse_addresses',
-            'value' => "Kho 1\n34 Hồ Tùng Mậu",
-            'group' => 'contact',
-            'type' => 'textarea',
-            'label' => 'Kho hàng',
-            'is_public' => true,
-        ]);
-        Setting::create([
-            'key' => 'storefront_warranty_information',
-            'value' => "Bảo hành 12 tháng\nĐổi trả trong 7 ngày",
-            'group' => 'contact',
-            'type' => 'textarea',
-            'label' => 'Bảo hành',
-            'is_public' => true,
-        ]);
+        Setting::updateOrCreate(
+            ['key' => 'storefront_warehouse_addresses'],
+            [
+                'value' => "Kho 1\n34 Hồ Tùng Mậu",
+                'group' => 'contact',
+                'type' => 'textarea',
+                'label' => 'Kho hàng',
+                'is_public' => true,
+            ],
+        );
+        Setting::updateOrCreate(
+            ['key' => 'storefront_warranty_information'],
+            [
+                'value' => "Bảo hành 12 tháng\nĐổi trả trong 7 ngày",
+                'group' => 'contact',
+                'type' => 'textarea',
+                'label' => 'Bảo hành',
+                'is_public' => true,
+            ],
+        );
 
         $this->getJson('/api/v1/settings')
             ->assertOk()
