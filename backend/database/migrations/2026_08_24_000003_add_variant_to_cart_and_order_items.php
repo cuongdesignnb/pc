@@ -10,8 +10,16 @@ return new class extends Migration
     {
         Schema::table('cart_items', function (Blueprint $table) {
             $table->foreignId('variant_id')->nullable()->after('product_id')->constrained('product_variants')->nullOnDelete();
+        });
+
+        Schema::table('cart_items', function (Blueprint $table) {
+            $table->dropForeign(['product_id']);
             $table->dropUnique(['cart_id', 'product_id']);
+        });
+
+        Schema::table('cart_items', function (Blueprint $table) {
             $table->unique(['cart_id', 'product_id', 'variant_id']);
+            $table->foreign('product_id')->references('id')->on('products')->cascadeOnDelete();
         });
 
         Schema::table('order_items', function (Blueprint $table) {
@@ -28,8 +36,16 @@ return new class extends Migration
         });
 
         Schema::table('cart_items', function (Blueprint $table) {
+            $table->dropForeign(['product_id']);
             $table->dropUnique(['cart_id', 'product_id', 'variant_id']);
+        });
+
+        Schema::table('cart_items', function (Blueprint $table) {
             $table->unique(['cart_id', 'product_id']);
+            $table->foreign('product_id')->references('id')->on('products')->cascadeOnDelete();
+        });
+
+        Schema::table('cart_items', function (Blueprint $table) {
             $table->dropForeign(['variant_id']);
             $table->dropColumn('variant_id');
         });
