@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AiArticleController;
+use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BannerController;
 use App\Http\Controllers\Admin\BrandController;
@@ -225,6 +226,9 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     });
 
     // AI Articles
+    Route::get('ai-writer', [AiGenerationController::class, 'index'])->name('ai-writer.index');
+    Route::post('ai-writer/schedules', [AiGenerationController::class, 'storeSchedule'])->name('ai-writer.schedules.store');
+    Route::delete('ai-writer/schedules/{schedule}', [AiGenerationController::class, 'cancel'])->name('ai-writer.schedules.cancel');
     Route::get('ai-articles', [AiArticleController::class, 'index'])->name('ai-articles.index');
     Route::get('ai-articles/create', [AiArticleController::class, 'create'])->name('ai-articles.create');
     Route::post('ai-articles', [AiArticleController::class, 'store'])->name('ai-articles.store');

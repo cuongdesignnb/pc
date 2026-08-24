@@ -4,6 +4,7 @@ import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
+import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 
 const props = defineProps({
     categories: Array,
@@ -57,6 +58,14 @@ watch(() => form.component_type_id, () => {
 
 function submit() { form.post('/admin/products'); }
 
+function applyAi(data) {
+    form.description = data.content || data.body || form.description;
+    form.short_description = data.short_description || data.excerpt || form.short_description;
+    form.meta_title = data.meta_title || form.meta_title;
+    form.meta_description = data.meta_description || form.meta_description;
+    if (data.thumbnail) form.thumbnail = data.thumbnail;
+}
+
 function addVariant() {
     form.variants.push({
         name: '',
@@ -76,7 +85,7 @@ function removeVariant(index) {
 <AdminLayout title="Thêm sản phẩm">
     <div class="max-w-5xl">
         <div class="flex items-center justify-between mb-6">
-            <h3 class="text-lg font-semibold text-slate-200">Thêm sản phẩm mới</h3>
+            <div class="flex items-center gap-3"><h3 class="text-lg font-semibold text-slate-200">Thêm sản phẩm mới</h3><AiGeneratePanel type="product_description" :topic="form.name" :existing-content="form.description" @generated="applyAi" /></div>
             <Link href="/admin/products" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link>
         </div>
         <form @submit.prevent="submit" class="space-y-6">

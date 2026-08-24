@@ -4,10 +4,12 @@ import { ref } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
+import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 const props = defineProps({ categories: Array });
 const form = useForm({ title: '', slug: '', excerpt: '', body: '', featured_image: '', post_category_id: '', status: 'draft', is_featured: false, published_at: '', meta_title: '', meta_description: '' });
 function genSlug() { form.slug = form.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
 function submit() { form.post('/admin/posts'); }
+function applyAi(data) { form.title = data.title || form.title; form.excerpt = data.excerpt || form.excerpt; form.body = data.content || data.body || form.body; form.meta_title = data.meta_title || form.meta_title; form.meta_description = data.meta_description || form.meta_description; if (data.thumbnail) form.featured_image = data.thumbnail; }
 
 // AI Generation
 const aiModal = ref(false);
@@ -58,7 +60,7 @@ async function generateWithAI() {
 <AdminLayout title="Viet bai">
     <div class="max-w-3xl">
         <div class="flex items-center justify-between mb-6">
-            <h3 class="text-lg font-bold text-slate-200">Viet bai moi</h3>
+            <div class="flex items-center gap-3"><h3 class="text-lg font-bold text-slate-200">Viet bai moi</h3><AiGeneratePanel type="article" :topic="form.title" :existing-content="form.body" @generated="applyAi" /></div>
             <div class="flex items-center gap-2">
                 <button
                     @click="aiModal = true"

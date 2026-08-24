@@ -3,15 +3,17 @@ import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
+import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 const props = defineProps({ post: Object, categories: Array });
 const p = props.post;
 const form = useForm({ title: p.title, slug: p.slug, excerpt: p.excerpt || '', body: p.body || '', featured_image: p.featured_image || '', post_category_id: p.post_category_id || '', status: p.status || 'draft', is_featured: p.is_featured ?? false, published_at: p.published_at ? p.published_at.slice(0,16) : '', meta_title: p.meta_title || '', meta_description: p.meta_description || '' });
 function submit() { form.put(`/admin/posts/${p.id}`); }
+function applyAi(data) { form.title = data.title || form.title; form.excerpt = data.excerpt || form.excerpt; form.body = data.content || data.body || form.body; form.meta_title = data.meta_title || form.meta_title; form.meta_description = data.meta_description || form.meta_description; if (data.thumbnail) form.featured_image = data.thumbnail; }
 </script>
 <template>
 <AdminLayout title="Sửa bài viết">
     <div class="max-w-3xl">
-        <div class="flex items-center justify-between mb-6"><h3 class="text-lg font-semibold text-slate-200">Sửa: {{ post.title }}</h3><Link href="/admin/posts" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link></div>
+        <div class="flex items-center justify-between mb-6"><div class="flex items-center gap-3"><h3 class="text-lg font-semibold text-slate-200">Sửa: {{ post.title }}</h3><AiGeneratePanel type="article" :topic="form.title" :existing-content="form.body" @generated="applyAi" /></div><Link href="/admin/posts" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link></div>
         <form @submit.prevent="submit" class="space-y-6">
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
                 <h4 class="font-medium text-slate-200">Nội dung</h4>

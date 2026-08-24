@@ -169,16 +169,17 @@ function getSettingsForGroup(group) {
                                     </template>
 
                                     <!-- Text / Color input -->
-                                    <template v-else-if="item.type === 'text' || item.type === 'color'">
+                                    <template v-else-if="item.type === 'text' || item.type === 'color' || item.type === 'password'">
                                         <input
                                             v-model="formData[item.key]"
-                                            :type="item.type === 'color' ? 'color' : 'text'"
+                                            :type="item.type === 'color' ? 'color' : item.type === 'password' ? 'password' : 'text'"
                                             :placeholder="item.label"
                                             :class="[
                                                 'w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50',
                                                 item.type === 'color' ? 'h-10 p-1' : ''
                                             ]"
                                         />
+                                        <p v-if="item.type === 'password'" class="text-xs text-slate-500 mt-1">Để trống để giữ key hiện tại. Key chỉ được dùng ở backend, không gửi ra trình duyệt.</p>
                                     </template>
 
                                     <!-- Textarea -->
