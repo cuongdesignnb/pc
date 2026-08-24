@@ -186,9 +186,11 @@ function getSettingsForGroup(group) {
                                         v-else-if="item.type === 'textarea'"
                                         v-model="formData[item.key]"
                                         :placeholder="item.label"
-                                        rows="3"
+                                        :rows="item.key === 'storefront_warehouse_addresses' || item.key === 'storefront_warranty_information' ? 8 : 3"
                                         class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
                                     />
+                                    <p v-if="item.key === 'storefront_warehouse_addresses'" class="text-xs text-slate-500 mt-1">Mỗi kho một nhóm dòng; có thể dùng ký hiệu 📍 và ☎, xuống dòng sẽ được giữ nguyên ngoài trang sản phẩm.</p>
+                                    <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
 
                                     <!-- Boolean toggle -->
                                     <label v-else-if="item.type === 'boolean'" class="relative inline-flex items-center cursor-pointer mt-1">

@@ -57,6 +57,8 @@ export const useSettings = () => {
   const siteAddress = computed(() => getString('contact_address'))
   const businessHours = computed(() => getString('business_hours'))
   const contactMap = computed(() => getString('contact_map'))
+  const warehouseAddresses = computed(() => getString('storefront_warehouse_addresses'))
+  const warrantyInformation = computed(() => getString('storefront_warranty_information'))
 
   const socialFacebook = computed(() => getString('social_facebook'))
   const socialYoutube = computed(() => getString('social_youtube'))
@@ -107,6 +109,8 @@ export const useSettings = () => {
     siteAddress,
     businessHours,
     contactMap,
+    warehouseAddresses,
+    warrantyInformation,
     socialFacebook,
     socialYoutube,
     socialTiktok,

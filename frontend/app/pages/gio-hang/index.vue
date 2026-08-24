@@ -7,7 +7,9 @@ const { siteName, shippingFreeThreshold, shippingDefaultFee, formatMoney } = use
 interface CartItem {
   id: number
   product_id: number
+  variant_id?: number | null
   quantity: number
+  variant?: { id: number; name: string; sku?: string | null } | null
   product: {
     id: number
     name: string
@@ -151,6 +153,7 @@ useSeoMeta({
                 {{ item.product.name }}
               </h3>
             </NuxtLink>
+            <p v-if="item.variant" class="text-xs text-primary-600 mt-1">Biến thể: {{ item.variant.name }}</p>
             
             <p class="text-primary-600 font-bold mt-1">
               {{ formatMoney(getItemPrice(item)) }}

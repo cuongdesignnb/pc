@@ -18,6 +18,7 @@ const form = useForm({
     meta_title: '', meta_description: '',
     thumbnail: '',
     gallery: [],
+    variants: [],
     specifications_text: '',
     compatibility_specs: [],
 });
@@ -55,6 +56,21 @@ watch(() => form.component_type_id, () => {
 });
 
 function submit() { form.post('/admin/products'); }
+
+function addVariant() {
+    form.variants.push({
+        name: '',
+        sku: '',
+        price: form.price || 0,
+        sale_price: '',
+        stock_quantity: 0,
+        is_active: true,
+    });
+}
+
+function removeVariant(index) {
+    form.variants.splice(index, 1);
+}
 </script>
 <template>
 <AdminLayout title="Thêm sản phẩm">
@@ -129,6 +145,34 @@ function submit() { form.post('/admin/products'); }
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá sale</label><input v-model="form.sale_price" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label><input v-model="form.stock_quantity" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
+                </div>
+            </div>
+
+            <!-- Biến thể -->
+            <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Biến thể sản phẩm</h4>
+                        <p class="text-xs text-slate-400 mt-1">Dùng cho các cấu hình như RAM, ổ cứng, màu sắc hoặc phiên bản. Mỗi dòng có thể có giá và tồn kho riêng.</p>
+                    </div>
+                    <button type="button" @click="addVariant" class="shrink-0 px-3 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700">+ Thêm biến thể</button>
+                </div>
+                <div v-if="!form.variants.length" class="rounded-lg border border-dashed border-slate-700 px-4 py-5 text-sm text-slate-500 text-center">Chưa có biến thể. Sản phẩm sẽ dùng giá và tồn kho chính.</div>
+                <div v-else class="space-y-3">
+                    <div v-for="(variant, index) in form.variants" :key="index" class="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm font-semibold text-slate-300">Biến thể {{ index + 1 }}</span>
+                            <button type="button" @click="removeVariant(index)" class="text-xs text-red-400 hover:text-red-300">Xóa</button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+                            <label class="lg:col-span-2"><span class="block text-xs text-slate-400 mb-1">Tên biến thể *</span><input v-model="variant.name" placeholder="Macbook Neo · RAM 16GB" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
+                            <label><span class="block text-xs text-slate-400 mb-1">SKU</span><input v-model="variant.sku" placeholder="SKU-001" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
+                            <label><span class="block text-xs text-slate-400 mb-1">Giá *</span><input v-model="variant.price" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
+                            <label><span class="block text-xs text-slate-400 mb-1">Giá khuyến mại</span><input v-model="variant.sale_price" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
+                            <label><span class="block text-xs text-slate-400 mb-1">Tồn kho *</span><input v-model="variant.stock_quantity" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
+                        </div>
+                        <label class="inline-flex items-center gap-2 mt-3 text-sm text-slate-300"><input v-model="variant.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị biến thể này</label>
+                    </div>
                 </div>
             </div>
 

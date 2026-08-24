@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Services\Catalog\ProductPurchasabilityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,7 @@ class CartController extends Controller
     {
         $cart = $this->getOrCreateCart($request);
 
-        $cart->load(['items.product.images', 'items.product.brand', 'items.product.category']);
+        $cart->load(['items.product.images', 'items.product.brand', 'items.product.category', 'items.variant']);
 
         return response()->json([
             'cart' => $cart,
@@ -36,32 +37,49 @@ class CartController extends Controller
     {
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
+            'variant_id' => 'nullable|integer|exists:product_variants,id',
             'quantity' => 'required|integer|min:1',
         ]);
 
         $cart = $this->getOrCreateCart($request);
         $product = Product::findOrFail($validated['product_id']);
+        $variant = null;
+        if (! empty($validated['variant_id'])) {
+            $variant = ProductVariant::whereKey($validated['variant_id'])
+                ->where('product_id', $product->id)
+                ->where('is_active', true)
+                ->first();
+            if (! $variant || $variant->stock_quantity < (int) $validated['quantity'] || ! $product->isVisibleOnStorefront()) {
+                return response()->json(['message' => 'Biến thể đã chọn không còn đủ số lượng khả dụng.'], 422);
+            }
+        }
 
-        if (! $purchasability->isPurchasable($product, (int) $validated['quantity'])) {
+        if (! $variant && ! $purchasability->isPurchasable($product, (int) $validated['quantity'])) {
             return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
         }
 
         // Check if product already in cart
-        $cartItem = $cart->items()->where('product_id', $product->id)->first();
+        $cartItem = $cart->items()
+            ->where('product_id', $product->id)
+            ->when($variant, fn ($query) => $query->where('variant_id', $variant->id), fn ($query) => $query->whereNull('variant_id'))
+            ->first();
+        $unitPrice = $variant?->display_price ?? $purchasability->unitPrice($product);
 
         if ($cartItem) {
             $cartItem->update([
                 'quantity' => $cartItem->quantity + $validated['quantity'],
+                'price' => $unitPrice,
             ]);
         } else {
             $cart->items()->create([
                 'product_id' => $product->id,
+                'variant_id' => $variant?->id,
                 'quantity' => $validated['quantity'],
-                'price' => $purchasability->unitPrice($product),
+                'price' => $unitPrice,
             ]);
         }
 
-        $cart->load(['items.product.images']);
+        $cart->load(['items.product.images', 'items.variant']);
 
         return response()->json([
             'message' => 'Đã thêm vào giỏ hàng',
@@ -80,12 +98,16 @@ class CartController extends Controller
         ]);
 
         $product = $cartItem->product;
-        if (! $purchasability->isPurchasable($product, (int) $validated['quantity'])) {
+        $variant = $cartItem->variant;
+        $isAvailable = $variant
+            ? $variant->is_active && $variant->stock_quantity >= (int) $validated['quantity'] && $product->isVisibleOnStorefront()
+            : $purchasability->isPurchasable($product, (int) $validated['quantity']);
+        if (! $isAvailable) {
             return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
         }
         $cartItem->update(['quantity' => $validated['quantity']]);
 
-        $cart = $cartItem->cart->load(['items.product.images']);
+        $cart = $cartItem->cart->load(['items.product.images', 'items.variant']);
 
         return response()->json([
             'message' => 'Đã cập nhật giỏ hàng',
@@ -102,7 +124,7 @@ class CartController extends Controller
         $cart = $cartItem->cart;
         $cartItem->delete();
 
-        $cart->load(['items.product.images']);
+        $cart->load(['items.product.images', 'items.variant']);
 
         return response()->json([
             'message' => 'Đã xóa khỏi giỏ hàng',
