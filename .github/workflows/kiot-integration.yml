@@ -109,7 +109,10 @@ jobs:
         run: |
           git fetch --no-tags origin main
           mapfile -t files < <(git diff --name-only origin/main...HEAD -- 'backend/**/*.php')
-          test "${#files[@]}" -gt 0
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No changed PHP files; skipping PHP style and syntax checks."
+            exit 0
+          fi
           relative=()
           for file in "${files[@]}"; do relative+=("${file#backend/}"); done
           cd backend
