@@ -406,11 +406,6 @@ const icons = {
     color: #e2e8f0;
 }
 
-/* Buttons - keep specific Tailwind colors but fix text */
-.min-h-screen.bg-slate-950 button {
-    color: inherit;
-}
-
 /* RichEditor owns its own light toolbar and content styles. Keep the
    editor out of the page-wide dark form overrides so content remains
    readable on every admin screen. */
