@@ -411,40 +411,9 @@ const icons = {
     color: inherit;
 }
 
-/* Rich editor / TipTap */
-.min-h-screen.bg-slate-950 .tiptap,
-.min-h-screen.bg-slate-950 .ProseMirror {
-    background-color: rgba(30, 41, 59, 0.6) !important;
-    color: #e2e8f0 !important;
-    border-color: rgba(51, 65, 85, 0.5) !important;
-}
-.min-h-screen.bg-slate-950 .tiptap .is-editor-empty:first-child::before {
-    color: #64748b !important;
-}
-/* Editor toolbar */
-.min-h-screen.bg-slate-950 .editor-toolbar,
-.min-h-screen.bg-slate-950 [class*="toolbar"],
-.min-h-screen.bg-slate-950 [class*="menu-bar"] {
-    background-color: rgba(15, 23, 42, 0.8) !important;
-    border-color: rgba(51, 65, 85, 0.5) !important;
-}
-.min-h-screen.bg-slate-950 .editor-toolbar button,
-.min-h-screen.bg-slate-950 [class*="toolbar"] button,
-.min-h-screen.bg-slate-950 [class*="menu-bar"] button {
-    color: #94a3b8 !important;
-}
-.min-h-screen.bg-slate-950 .editor-toolbar button:hover,
-.min-h-screen.bg-slate-950 [class*="toolbar"] button:hover,
-.min-h-screen.bg-slate-950 [class*="menu-bar"] button:hover {
-    color: #e2e8f0 !important;
-    background-color: rgba(51, 65, 85, 0.5) !important;
-}
-.min-h-screen.bg-slate-950 .editor-toolbar button.is-active,
-.min-h-screen.bg-slate-950 [class*="toolbar"] button.is-active,
-.min-h-screen.bg-slate-950 [class*="menu-bar"] button.is-active {
-    color: #06b6d4 !important;
-    background-color: rgba(6, 182, 212, 0.1) !important;
-}
+/* RichEditor owns its own light toolbar and content styles. Keep the
+   editor out of the page-wide dark form overrides so content remains
+   readable on every admin screen. */
 
 /* File input */
 .min-h-screen.bg-slate-950 input[type="file"] {
