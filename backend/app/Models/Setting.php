@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
@@ -42,6 +43,10 @@ class Setting extends Model
      */
     public static function set(string $key, mixed $value): void
     {
+        if (static::isAssetKey($key) && is_string($value)) {
+            $value = PublicAssetUrl::normalize($value);
+        }
+
         $setting = static::where('key', $key)->first();
 
         if ($setting) {
@@ -83,10 +88,25 @@ class Setting extends Model
             return static::where('is_public', true)
                 ->get()
                 ->mapWithKeys(function ($setting) {
-                    return [$setting->key => self::castValue($setting->value, $setting->type)];
+                    $value = self::castValue($setting->value, $setting->type);
+                    if (self::isAssetKey($setting->key) && is_string($value)) {
+                        $value = PublicAssetUrl::normalize($value);
+                    }
+
+                    return [$setting->key => $value];
                 })
                 ->toArray();
         });
+    }
+
+    public static function isAssetKey(string $key): bool
+    {
+        return in_array($key, [
+            'site_logo',
+            'site_logo_white',
+            'site_favicon',
+            'seo_og_image',
+        ], true);
     }
 
     /**

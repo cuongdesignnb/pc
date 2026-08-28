@@ -59,8 +59,10 @@ class CategoryController extends Controller
             'component_type_id' => 'nullable|exists:component_types,id',
             'description' => 'nullable|string',
             'image' => 'nullable|string',
+            'icon' => 'nullable|string',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
+            'show_on_pc_website' => 'boolean',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
         ]);
@@ -100,8 +102,10 @@ class CategoryController extends Controller
             'component_type_id' => 'nullable|exists:component_types,id',
             'description' => 'nullable|string',
             'image' => 'nullable|string',
+            'icon' => 'nullable|string',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
+            'show_on_pc_website' => 'boolean',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
         ]);

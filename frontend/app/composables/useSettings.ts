@@ -9,9 +9,10 @@ export const useSettings = () => {
     if (loaded.value && !force) return
 
     try {
-      settings.value = await $fetch<Record<string, SettingValue>>(
-        `${config.public.apiBase}/settings`,
-      )
+      const endpoint = `${config.public.apiBase}/settings${force ? `?refresh=${Date.now()}` : ''}`
+      settings.value = await $fetch<Record<string, SettingValue>>(endpoint, {
+        headers: force ? { 'Cache-Control': 'no-cache' } : undefined,
+      })
       loaded.value = true
     } catch (error) {
       console.error('[useSettings] Failed to load settings:', error)

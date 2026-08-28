@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -42,6 +43,19 @@ class ProductImage extends Model
     public function getAltAttribute(): ?string
     {
         return $this->alt_text;
+    }
+
+    /**
+     * Provider URLs are download sources, not public storefront URLs. A KIOT
+     * image is only exposed after it has been mirrored to local storage.
+     */
+    public function getUrlAttribute($value): ?string
+    {
+        if ($this->provider === 'kiot' && blank($this->storage_path)) {
+            return null;
+        }
+
+        return PublicAssetUrl::normalize($value === null ? null : (string) $value);
     }
 
     public function product(): BelongsTo

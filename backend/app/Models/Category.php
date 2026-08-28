@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -47,36 +48,12 @@ class Category extends Model
      */
     public function getIconAttribute(?string $value): ?string
     {
-        return $this->normalizePublicAssetUrl($value);
+        return PublicAssetUrl::normalize($value);
     }
 
     public function getImageAttribute(?string $value): ?string
     {
-        return $this->normalizePublicAssetUrl($value);
-    }
-
-    private function normalizePublicAssetUrl(?string $value): ?string
-    {
-        if ($value === null || $value === '') {
-            return $value;
-        }
-
-        if (str_starts_with($value, '/storage/')) {
-            return url($value);
-        }
-
-        $parts = parse_url($value);
-        $host = strtolower((string) ($parts['host'] ?? ''));
-        $localHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
-
-        if (! in_array($host, $localHosts, true) || empty($parts['path'])) {
-            return $value;
-        }
-
-        $path = '/'.ltrim($parts['path'], '/');
-        $query = isset($parts['query']) ? '?'.$parts['query'] : '';
-
-        return url($path.$query);
+        return PublicAssetUrl::normalize($value);
     }
 
     public function scopeVisibleOnStorefront(Builder $query): Builder

@@ -9,7 +9,7 @@ const form = useForm({
     name: props.category.name, slug: props.category.slug, parent_id: props.category.parent_id || '',
     component_type_id: props.category.component_type_id || '', description: props.category.description || '',
     image: props.category.image || '', icon: props.category.icon || '', sort_order: props.category.sort_order || 0,
-    is_active: props.category.is_active ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '',
+    is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '',
 });
 function submit() { form.put(`/admin/categories/${props.category.id}`); }
 </script>
@@ -33,7 +33,10 @@ function submit() { form.put(`/admin/categories/${props.category.id}`); }
             </div>
             <div class="grid grid-cols-2 gap-4">
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Thứ tự</label><input v-model="form.sort_order" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
-                <div class="flex items-end"><label class="flex items-center gap-2 text-sm pb-2"><input v-model="form.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị</label></div>
+                <div class="flex items-end gap-4">
+                    <label class="flex items-center gap-2 text-sm pb-2"><input v-model="form.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Đang hoạt động</label>
+                    <label class="flex items-center gap-2 text-sm pb-2"><input v-model="form.show_on_pc_website" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị trên website</label>
+                </div>
             </div>
             <div class="flex justify-end gap-3 pt-2">
                 <Link href="/admin/categories" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>

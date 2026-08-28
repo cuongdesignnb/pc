@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Setting;
@@ -54,6 +55,41 @@ class StorefrontSettingsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('0.icon', 'https://admin.example.test/storage/icons/cpu.svg')
             ->assertJsonPath('0.image', 'https://admin.example.test/storage/media/category.webp');
+    }
+
+    public function test_public_asset_urls_are_normalized_for_settings_brands_and_products(): void
+    {
+        URL::forceRootUrl('https://admin.example.test');
+        URL::forceScheme('https');
+
+        $this->setting('site_logo', 'http://localhost:8000/storage/media/logo.webp');
+        $brand = Brand::create([
+            'name' => 'HPCOM',
+            'slug' => 'hpcom',
+            'logo' => '/storage/media/hpcom.webp',
+            'is_active' => true,
+        ]);
+        $product = $this->product([
+            'brand_id' => $brand->id,
+            'show_on_pc_website' => true,
+        ]);
+        $product->images()->create([
+            'url' => 'http://127.0.0.1:8080/storage/media/product.webp',
+            'is_primary' => true,
+            'sort_order' => 0,
+        ]);
+
+        $this->getJson('/api/v1/settings')
+            ->assertOk()
+            ->assertJsonPath('site_logo', 'https://admin.example.test/storage/media/logo.webp');
+
+        $this->getJson('/api/v1/brands')
+            ->assertOk()
+            ->assertJsonPath('0.logo', 'https://admin.example.test/storage/media/hpcom.webp');
+
+        $this->getJson('/api/v1/products')
+            ->assertOk()
+            ->assertJsonPath('data.0.images.0.url', 'https://admin.example.test/storage/media/product.webp');
     }
 
     public function test_order_totals_use_shipping_settings(): void
