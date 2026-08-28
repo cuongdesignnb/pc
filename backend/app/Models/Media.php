@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
@@ -34,7 +35,7 @@ class Media extends Model
 
     public function getUrlAttribute(): string
     {
-        return Storage::disk($this->disk)->url($this->path);
+        return (string) PublicAssetUrl::normalize(Storage::disk($this->disk)->url($this->path));
     }
 
     public function getThumbnailUrlAttribute(): string
@@ -42,7 +43,7 @@ class Media extends Model
         // If a thumbnail exists, use it; otherwise use original
         $thumbPath = 'thumbnails/'.$this->path;
         if (Storage::disk($this->disk)->exists($thumbPath)) {
-            return Storage::disk($this->disk)->url($thumbPath);
+            return (string) PublicAssetUrl::normalize(Storage::disk($this->disk)->url($thumbPath));
         }
 
         return $this->url;

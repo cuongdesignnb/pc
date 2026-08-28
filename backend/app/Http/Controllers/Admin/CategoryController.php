@@ -59,15 +59,17 @@ class CategoryController extends Controller
             'component_type_id' => 'nullable|exists:component_types,id',
             'description' => 'nullable|string',
             'image' => 'nullable|string',
+            'icon' => 'nullable|string',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
+            'show_on_pc_website' => 'boolean',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
         ]);
 
         // Check slug collision with products
         if (Product::where('slug', $validated['slug'])->exists()) {
-            return back()->withErrors(['slug' => 'Slug "' . $validated['slug'] . '" đã được sử dụng bởi một sản phẩm.'])->withInput();
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một sản phẩm.'])->withInput();
         }
 
         Category::create($validated);
@@ -100,15 +102,17 @@ class CategoryController extends Controller
             'component_type_id' => 'nullable|exists:component_types,id',
             'description' => 'nullable|string',
             'image' => 'nullable|string',
+            'icon' => 'nullable|string',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
+            'show_on_pc_website' => 'boolean',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
         ]);
 
         // Check slug collision with products
         if (Product::where('slug', $validated['slug'])->exists()) {
-            return back()->withErrors(['slug' => 'Slug "' . $validated['slug'] . '" đã được sử dụng bởi một sản phẩm.'])->withInput();
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một sản phẩm.'])->withInput();
         }
 
         $category->update($validated);

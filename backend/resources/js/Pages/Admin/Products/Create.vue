@@ -15,7 +15,7 @@ const props = defineProps({
 const form = useForm({
     name: '', slug: '', sku: '', category_id: '', brand_id: '', component_type_id: '',
     description: '', short_description: '', price: '', sale_price: '', stock_quantity: 0,
-    is_active: true, is_featured: false, warranty_months: 12,
+    is_active: true, is_featured: false, show_on_pc_website: true, warranty_months: 12,
     meta_title: '', meta_description: '',
     thumbnail: '',
     gallery: [],
@@ -109,6 +109,7 @@ function removeVariant(index) {
                         <div class="flex items-center gap-4 mt-2">
                             <label class="flex items-center gap-2 text-sm"><input v-model="form.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Đang bán</label>
                             <label class="flex items-center gap-2 text-sm"><input v-model="form.is_featured" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Nổi bật</label>
+                            <label class="flex items-center gap-2 text-sm"><input v-model="form.show_on_pc_website" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị trên website</label>
                         </div>
                     </div>
                 </div>

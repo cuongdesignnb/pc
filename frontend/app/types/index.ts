@@ -16,6 +16,7 @@ export interface Product {
   warranty_months: number | null
   is_active: boolean
   is_featured: boolean
+  show_on_pc_website?: boolean
   brand?: Brand
   category?: Category
   component_type?: ComponentType
@@ -68,6 +69,7 @@ export interface Category {
   image: string | null
   icon: string | null
   parent_id: number | null
+  show_on_pc_website?: boolean
   children?: Category[]
 }
 

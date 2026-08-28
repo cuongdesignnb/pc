@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
+use App\Support\PublicAssetUrl;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -41,6 +42,9 @@ class SettingController extends Controller
                 $value = $item['value'];
                 if (is_array($value)) {
                     $value = json_encode($value);
+                }
+                if (Setting::isAssetKey($setting->key) && is_string($value)) {
+                    $value = PublicAssetUrl::normalize($value);
                 }
                 $setting->update(['value' => $value]);
             }
