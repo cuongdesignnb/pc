@@ -31,7 +31,7 @@ class Setting extends Model
             return static::where('key', $key)->first();
         });
 
-        if (!$setting) {
+        if (! $setting) {
             return $default;
         }
 

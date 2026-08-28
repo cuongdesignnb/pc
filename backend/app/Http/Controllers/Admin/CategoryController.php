@@ -69,7 +69,7 @@ class CategoryController extends Controller
 
         // Check slug collision with products
         if (Product::where('slug', $validated['slug'])->exists()) {
-            return back()->withErrors(['slug' => 'Slug "' . $validated['slug'] . '" đã được sử dụng bởi một sản phẩm.'])->withInput();
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một sản phẩm.'])->withInput();
         }
 
         Category::create($validated);
@@ -112,7 +112,7 @@ class CategoryController extends Controller
 
         // Check slug collision with products
         if (Product::where('slug', $validated['slug'])->exists()) {
-            return back()->withErrors(['slug' => 'Slug "' . $validated['slug'] . '" đã được sử dụng bởi một sản phẩm.'])->withInput();
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một sản phẩm.'])->withInput();
         }
 
         $category->update($validated);
