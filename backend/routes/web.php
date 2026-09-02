@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\PageController;
 use App\Http\Controllers\Admin\PostCategoryController;
 use App\Http\Controllers\Admin\PostController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProductQuestionController;
 use App\Http\Controllers\Admin\ReviewController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingController;
@@ -119,6 +120,14 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::patch('reviews/{review}/reject', [ReviewController::class, 'reject'])->name('reviews.reject');
     Route::post('reviews/{review}/reply', [ReviewController::class, 'reply'])->name('reviews.reply');
     Route::delete('reviews/{review}', [ReviewController::class, 'destroy'])->name('reviews.destroy');
+
+    // Product questions & answers
+    Route::get('product-questions', [ProductQuestionController::class, 'index'])->name('product-questions.index');
+    Route::patch('product-questions/{question}/approve', [ProductQuestionController::class, 'approve'])->name('product-questions.approve');
+    Route::patch('product-questions/{question}/reject', [ProductQuestionController::class, 'reject'])->name('product-questions.reject');
+    Route::post('product-questions/{question}/answers', [ProductQuestionController::class, 'answer'])->name('product-questions.answers.store');
+    Route::patch('product-question-answers/{answer}', [ProductQuestionController::class, 'toggleAnswer'])->name('product-question-answers.toggle');
+    Route::delete('product-questions/{question}', [ProductQuestionController::class, 'destroy'])->name('product-questions.destroy');
 
     // Media Library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');

@@ -16,7 +16,13 @@ return new class extends Migration
             $table->dropForeign(['user_id']);
         });
 
-        DB::statement('ALTER TABLE reviews MODIFY user_id BIGINT UNSIGNED NULL');
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            Schema::table('reviews', function (Blueprint $table) {
+                $table->unsignedBigInteger('user_id')->nullable()->change();
+            });
+        } else {
+            DB::statement('ALTER TABLE reviews MODIFY user_id BIGINT UNSIGNED NULL');
+        }
 
         Schema::table('reviews', function (Blueprint $table) {
             $table->string('guest_name')->nullable()->after('user_id');
@@ -37,7 +43,13 @@ return new class extends Migration
             $table->dropColumn(['guest_name', 'guest_email']);
         });
 
-        DB::statement('ALTER TABLE reviews MODIFY user_id BIGINT UNSIGNED NOT NULL');
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            Schema::table('reviews', function (Blueprint $table) {
+                $table->unsignedBigInteger('user_id')->nullable(false)->change();
+            });
+        } else {
+            DB::statement('ALTER TABLE reviews MODIFY user_id BIGINT UNSIGNED NOT NULL');
+        }
 
         Schema::table('reviews', function (Blueprint $table) {
             $table->foreign('user_id')->references('id')->on('users')->cascadeOnDelete();

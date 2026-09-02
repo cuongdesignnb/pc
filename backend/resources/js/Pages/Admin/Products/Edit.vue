@@ -5,12 +5,14 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
+import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 
 const props = defineProps({
     product: Object,
     categories: Array,
     brands: Array,
     componentTypes: Array,
+    relationCandidates: Array,
 });
 
 // Get thumbnail and gallery from product images
@@ -51,6 +53,27 @@ const form = useForm({
         sale_price: variant.sale_price || '',
         stock_quantity: variant.stock_quantity ?? 0,
         is_active: variant.is_active ?? true,
+        attributes: variant.attributes || {},
+        attributes_json: JSON.stringify(variant.attributes || {}),
+    })),
+    highlights: (props.product.highlights || []).map(highlight => ({
+        id: highlight.id,
+        title: highlight.title,
+        icon: highlight.icon || '',
+        is_active: highlight.is_active ?? true,
+    })),
+    detail_blocks: (props.product.detail_blocks || []).map(block => ({
+        id: block.id,
+        type: block.type,
+        title: block.title || '',
+        payload: block.payload || {},
+        is_active: block.is_active ?? true,
+    })),
+    relations: (props.product.relations || []).map(relation => ({
+        id: relation.id,
+        related_product_id: relation.related_product_id,
+        relation_type: relation.relation_type,
+        sort_order: relation.sort_order,
     })),
     specifications_text: props.product.specifications_text || '',
     compatibility_specs: [],
@@ -90,7 +113,21 @@ if (form.component_type_id) {
     buildCompatibilitySpecs();
 }
 
-function submit() { form.put(`/admin/products/${props.product.id}`); }
+function normalizeVariantAttributes() {
+    form.variants.forEach((variant) => {
+        try {
+            const attributes = JSON.parse(variant.attributes_json || '{}');
+            variant.attributes = attributes && !Array.isArray(attributes) ? attributes : {};
+        } catch {
+            variant.attributes = {};
+        }
+    });
+}
+
+function submit() {
+    if (!isKiot.value) normalizeVariantAttributes();
+    form.put(`/admin/products/${props.product.id}`);
+}
 
 function applyAi(data) {
     form.description = data.content || data.body || form.description;
@@ -108,6 +145,8 @@ function addVariant() {
         sale_price: '',
         stock_quantity: 0,
         is_active: true,
+        attributes: {},
+        attributes_json: '',
     });
 }
 
@@ -218,7 +257,7 @@ function removeVariant(index) {
             </div>
 
             <!-- Biến thể -->
-            <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
+            <div v-if="!isKiot" class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
                 <div class="flex items-start justify-between gap-4">
                     <div>
                         <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Biến thể sản phẩm</h4>
@@ -240,9 +279,13 @@ function removeVariant(index) {
                             <label><span class="block text-xs text-slate-400 mb-1">Giá khuyến mại</span><input v-model="variant.sale_price" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
                             <label><span class="block text-xs text-slate-400 mb-1">Tồn kho *</span><input v-model="variant.stock_quantity" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
                         </div>
+                        <label class="block mt-3"><span class="block text-xs text-slate-400 mb-1">Thuộc tính chọn biến thể (JSON)</span><textarea v-model="variant.attributes_json" rows="2" placeholder='{"RAM":"16GB","Ổ cứng":"512GB"}' class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm font-mono"></textarea><span class="mt-1 block text-xs text-slate-500">Tên thuộc tính sẽ tạo các nút chọn biến thể ngoài client.</span></label>
                         <label class="inline-flex items-center gap-2 mt-3 text-sm text-slate-300"><input v-model="variant.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị biến thể này</label>
                     </div>
                 </div>
+            </div>
+            <div v-else class="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-5 text-sm text-cyan-100">
+                Biến thể, SKU, giá và tồn kho của sản phẩm này do KIOT quản lý. Hãy đồng bộ KIOT thay vì tạo hoặc chỉnh sửa biến thể tại đây.
             </div>
 
             <!-- Thông số kỹ thuật -->
@@ -293,6 +336,8 @@ function removeVariant(index) {
                     </table>
                 </div>
             </div>
+
+            <ProductPdpContentFields :form="form" :relation-candidates="relationCandidates" />
 
             <!-- SEO -->
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">

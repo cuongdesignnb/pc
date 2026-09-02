@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::table('posts', function (Blueprint $table) {
             // Drop old columns
+            $table->dropIndex(['is_published', 'published_at']);
             $table->dropColumn(['category', 'is_published', 'views_count']);
             
             // Add new columns

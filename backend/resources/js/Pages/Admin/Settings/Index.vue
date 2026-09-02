@@ -17,6 +17,7 @@ const groupLabels = {
     homepage: 'Trang chủ',
     payment: 'Thanh toán',
     shipping: 'Vận chuyển',
+    storefront: 'Trang chi tiết sản phẩm',
     ai: 'AI (ChatGPT / Gemini)',
 };
 

@@ -1,7 +1,21 @@
 <script setup lang="ts">
-import type { ComponentType, Product } from "~/types";
+import type { ComponentType } from "~/types";
+import type { ProductDetailResponse } from '~/types/product-detail';
+
+interface BuilderProduct {
+  id: number;
+  name: string;
+  price: number | string;
+  sale_price: number | string | null;
+  brand?: { name: string } | null;
+  specifications?: Array<{
+    value: string;
+    specification_key?: { key: string };
+  }>;
+}
 
 const config = useRuntimeConfig();
+const route = useRoute();
 const cart = useCart();
 const toast = useToast();
 const {
@@ -19,7 +33,7 @@ const { data: componentTypes } = await useFetch<ComponentType[]>(
 );
 
 const build = ref<Record<number, number>>({});
-const selectedProducts = ref<Record<number, Product>>({});
+const selectedProducts = ref<Record<number, BuilderProduct>>({});
 const compatibilityIssues = ref<any[]>([]);
 const totalPrice = ref(0);
 const totalTdp = ref(0);
@@ -145,6 +159,45 @@ const checkCompatibility = async () => {
     isChecking.value = false;
   }
 };
+
+const preselectRequestedProduct = async () => {
+  const slug = typeof route.query.product === 'string' ? route.query.product : '';
+  if (!slug || !componentTypes.value?.length) return;
+  try {
+    const response = await $fetch<ProductDetailResponse>(`${config.public.apiBase}/products/${encodeURIComponent(slug)}`);
+    const detail = response.product;
+    if (!detail.component_type) {
+      toast.add({ title: 'Sản phẩm này không dùng cho PC Builder', color: 'warning' });
+      return;
+    }
+    const type = componentTypes.value.find((item) => item.id === detail.component_type?.id);
+    if (!type) {
+      toast.add({ title: 'Chưa có khe tương ứng trong PC Builder', color: 'warning' });
+      return;
+    }
+    const builderProduct = {
+      id: detail.id,
+      name: detail.name,
+      price: detail.pricing.price,
+      sale_price: detail.pricing.sale_price,
+      brand: detail.brand,
+      specifications: detail.specifications.map((specification) => ({
+        value: specification.value,
+        specification_key: specification.key ? { key: specification.key } : undefined,
+      })),
+    } satisfies BuilderProduct;
+    build.value[type.id] = detail.id;
+    selectedProducts.value[type.id] = builderProduct;
+    calculateTotals();
+    await checkCompatibility();
+    await nextTick();
+    document.getElementById(`builder-component-${type.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch {
+    toast.add({ title: 'Không thể tải sản phẩm cho PC Builder', color: 'error' });
+  }
+};
+
+onMounted(() => { preselectRequestedProduct(); });
 
 const isAddingToCart = ref(false);
 
@@ -414,7 +467,7 @@ useSeoMeta({
         <!-- LEFT: Component list -->
         <div class="flex-1 min-w-0 space-y-2">
           <template v-if="componentTypes">
-            <div v-for="type in componentTypes" :key="type.id">
+            <div v-for="type in componentTypes" :id="`builder-component-${type.id}`" :key="type.id">
               <div
                 :class="[
                   'bg-white rounded-lg border transition-all overflow-hidden',

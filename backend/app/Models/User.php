@@ -80,6 +80,16 @@ class User extends Authenticatable
         return $this->hasMany(Review::class);
     }
 
+    public function productQuestions(): HasMany
+    {
+        return $this->hasMany(ProductQuestion::class);
+    }
+
+    public function productAnswers(): HasMany
+    {
+        return $this->hasMany(ProductAnswer::class);
+    }
+
     public function posts(): HasMany
     {
         return $this->hasMany(Post::class);

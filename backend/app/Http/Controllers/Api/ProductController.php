@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ProductCardResource;
+use App\Http\Resources\ProductDetailResource;
 use App\Models\Category;
 use App\Models\CompatibilityRule;
 use App\Models\ComponentType;
 use App\Models\Product;
+use App\Models\ProductRelation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -68,13 +71,17 @@ class ProductController extends Controller
         }
 
         // Sorting
-        $sortField = $request->sort ?? 'created_at';
-        $sortDirection = $request->order ?? 'desc';
+        $sortField = in_array($request->sort, ['created_at', 'price', 'name'], true)
+            ? $request->sort
+            : 'created_at';
+        $sortDirection = in_array($request->order, ['asc', 'desc'], true)
+            ? $request->order
+            : 'desc';
         $query->orderBy($sortField, $sortDirection);
 
         $products = $query->paginate($request->per_page ?? 20);
 
-        return response()->json($products);
+        return ProductCardResource::collection($products)->response();
     }
 
     /**
@@ -88,7 +95,7 @@ class ProductController extends Controller
             ->limit(8)
             ->get();
 
-        return response()->json($products);
+        return response()->json(ProductCardResource::collection($products)->resolve());
     }
 
     /**
@@ -105,21 +112,137 @@ class ProductController extends Controller
                 ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->orderBy('id'),
-            'reviews' => fn ($query) => $query
-                ->where('is_approved', true)
-                ->latest()
-                ->with(['user:id,name']),
+            'approvedReviews:id,product_id,rating',
+            'specifications.specificationKey',
+            'highlights' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')->orderBy('id'),
+            'detailBlocks' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')->orderBy('id'),
         ])
             ->where('slug', $slug)
             ->visibleOnStorefront()
             ->firstOrFail();
 
-        // Append parsed specifications
-        $product->append('parsed_specifications');
+        return response()->json([
+            'product' => new ProductDetailResource($product),
+        ]);
+    }
+
+    /**
+     * Return PDP compatibility facts sourced solely from the compatibility schema.
+     */
+    public function compatibilitySummary(string $slug): JsonResponse
+    {
+        $product = Product::with(['componentType', 'specifications.specificationKey', 'powerRequirement'])
+            ->where('slug', $slug)
+            ->visibleOnStorefront()
+            ->firstOrFail();
+
+        $facts = $product->specifications
+            ->filter(fn ($spec) => filled($spec->value) && $spec->specificationKey?->label)
+            ->map(fn ($spec) => [
+                'label' => $spec->specificationKey->label,
+                'value' => trim($spec->value.' '.($spec->specificationKey->unit ?? '')),
+                'status' => 'ok',
+            ])->values();
+        $warnings = [];
+
+        if ($product->powerRequirement?->requires_pcie_power) {
+            $connectorCount = $product->powerRequirement->pcie_connectors_needed;
+            if ($connectorCount > 0) {
+                $warnings[] = "Cần kiểm tra nguồn có đủ {$connectorCount} đầu cấp nguồn PCIe phù hợp.";
+            }
+        }
 
         return response()->json([
-            'product' => $product,
+            'component_type' => $product->componentType ? [
+                'id' => $product->componentType->id,
+                'name' => $product->componentType->name,
+                'slug' => $product->componentType->slug,
+            ] : null,
+            'facts' => $facts,
+            'warnings' => $warnings,
         ]);
+    }
+
+    /**
+     * Return manual merchandising relations. The related/alternative fallback is
+     * intentionally limited to published products and never uses PC compatibility.
+     */
+    public function relations(Request $request, string $slug): JsonResponse
+    {
+        $validated = $request->validate([
+            'type' => ['nullable', 'in:related,accessory,frequently_bought,alternative'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:12'],
+        ]);
+        $type = $validated['type'] ?? 'related';
+        $limit = $validated['limit'] ?? 8;
+        $product = Product::with(['category', 'brand'])
+            ->where('slug', $slug)
+            ->visibleOnStorefront()
+            ->firstOrFail();
+
+        $manualIds = ProductRelation::where('product_id', $product->id)
+            ->where('relation_type', $type)
+            ->orderBy('sort_order')
+            ->pluck('related_product_id');
+        $products = Product::with(['category', 'brand', 'images'])
+            ->visibleOnStorefront()
+            ->where('id', '!=', $product->id)
+            ->whereIn('id', $manualIds)
+            ->get()
+            ->sortBy(fn (Product $item) => $manualIds->search($item->id))
+            ->take($limit)
+            ->values();
+
+        if ($products->isEmpty() && in_array($type, ['related', 'alternative'], true) && $product->category_id) {
+            $fallback = Product::with(['category', 'brand', 'images'])
+                ->visibleOnStorefront()
+                ->where('id', '!=', $product->id)
+                ->where('category_id', $product->category_id);
+
+            if ($type === 'related' && $product->brand_id) {
+                $fallback->orderByRaw('brand_id = ? desc', [$product->brand_id]);
+            }
+            if ($type === 'alternative') {
+                $price = max(1, $product->purchasableUnitPrice());
+                $fallback->whereBetween('price', [(int) floor($price * 0.7), (int) ceil($price * 1.3)]);
+            }
+            $products = $fallback->latest()->limit($limit)->get();
+        }
+
+        return response()->json([
+            'relation_type' => $type,
+            'products' => ProductCardResource::collection($products)->resolve(),
+        ]);
+    }
+
+    /** Lightweight lookup used by the local recently-viewed list. */
+    public function cards(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['nullable', 'array', 'max:12'],
+            'ids.*' => ['integer'],
+            'slugs' => ['nullable', 'array', 'max:12'],
+            'slugs.*' => ['string', 'max:255'],
+        ]);
+
+        $ids = collect($validated['ids'] ?? [])->filter()->values();
+        $slugs = collect($validated['slugs'] ?? [])->filter()->values();
+        if ($ids->isEmpty() && $slugs->isEmpty()) {
+            return response()->json(['products' => []]);
+        }
+
+        $products = Product::with(['category', 'brand', 'images'])
+            ->visibleOnStorefront()
+            ->where(function ($query) use ($ids, $slugs) {
+                if ($ids->isNotEmpty()) {
+                    $query->whereIn('id', $ids);
+                }
+                if ($slugs->isNotEmpty()) {
+                    $ids->isNotEmpty() ? $query->orWhereIn('slug', $slugs) : $query->whereIn('slug', $slugs);
+                }
+            })->get();
+
+        return response()->json(['products' => ProductCardResource::collection($products)->resolve()]);
     }
 
     /**
@@ -219,15 +342,7 @@ class ProductController extends Controller
                 }
 
                 if ($isCompatible) {
-                    $compatible[] = [
-                        'id' => $candidate->id,
-                        'name' => $candidate->name,
-                        'slug' => $candidate->slug,
-                        'price' => $candidate->price,
-                        'sale_price' => $candidate->sale_price,
-                        'brand' => $candidate->brand,
-                        'images' => $candidate->images,
-                    ];
+                    $compatible[] = ProductCardResource::make($candidate)->resolve();
                 }
             }
 
