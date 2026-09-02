@@ -41,7 +41,7 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->unique(['product_id', 'related_product_id', 'relation_type']);
+            $table->unique(['product_id', 'related_product_id', 'relation_type'], 'prd_rel_pid_rpid_type_uq');
             $table->index(['product_id', 'relation_type', 'sort_order']);
         });
     }
