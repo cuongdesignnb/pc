@@ -66,6 +66,11 @@ class ProductDetailResource extends JsonResource
                 'purchasable' => $this->is_purchasable,
                 'availability_label' => $this->availability_label,
             ],
+            // Keep the established public contract while new consumers use the
+            // grouped inventory payload above.
+            'quantity' => $this->quantity,
+            'is_purchasable' => (bool) $this->is_purchasable,
+            'availability_label' => $this->availability_label,
             'warranty_months' => $this->warranty_months,
             'rating' => [
                 'average' => $reviewAverage,
