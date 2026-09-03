@@ -26,14 +26,19 @@ return new class extends Migration
         });
 
         // Copy data
-        \DB::statement("UPDATE orders SET payment_status_new = payment_status");
+        \DB::statement('UPDATE orders SET payment_status_new = payment_status');
 
         Schema::table('orders', function (Blueprint $table) {
+            // SQLite rebuilds the table for dropColumn. Remove the composite
+            // index first so the temporary schema does not reference the old
+            // payment_status column.
+            $table->dropIndex(['payment_status', 'order_status']);
             $table->dropColumn('payment_status');
         });
 
         Schema::table('orders', function (Blueprint $table) {
             $table->renameColumn('payment_status_new', 'payment_status');
+            $table->index(['payment_status', 'order_status']);
         });
     }
 

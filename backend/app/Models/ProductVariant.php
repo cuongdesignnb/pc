@@ -10,6 +10,7 @@ class ProductVariant extends Model
     protected $fillable = [
         'product_id',
         'name',
+        'attributes',
         'sku',
         'price',
         'sale_price',
@@ -24,6 +25,7 @@ class ProductVariant extends Model
         'stock_quantity' => 'integer',
         'is_active' => 'boolean',
         'sort_order' => 'integer',
+        'attributes' => 'array',
     ];
 
     protected $appends = ['display_price', 'is_available'];

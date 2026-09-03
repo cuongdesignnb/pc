@@ -53,6 +53,7 @@ class OrderController extends Controller
             'shipping_ward' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:1000',
             'payment_method' => 'required|in:sepay,cod',
+            'checkout_mode' => 'nullable|in:cart,buy_now',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer|exists:products,id',
             'items.*.variant_id' => 'nullable|integer|exists:product_variants,id',
@@ -83,7 +84,9 @@ class OrderController extends Controller
             ], 422);
         }
 
-        if (! $result['duplicate'] && in_array($order->kiot_sync_status, ['synced', 'retrying', 'not_required'], true)) {
+        if (($validated['checkout_mode'] ?? 'cart') === 'cart'
+            && ! $result['duplicate']
+            && in_array($order->kiot_sync_status, ['synced', 'retrying', 'not_required'], true)) {
             $this->clearCart($request);
         }
 
@@ -191,6 +194,7 @@ class OrderController extends Controller
             'total' => $order->total,
             'payment_status' => $order->payment_status,
             'payment_method' => $order->payment_method,
+            'checkout_mode' => $order->checkout_mode,
             'order_status' => $order->order_status,
             'shipping_name' => $order->shipping_name,
             'shipping_phone' => $order->shipping_phone,

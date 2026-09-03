@@ -263,6 +263,21 @@ class Product extends Model
         return $this->hasMany(Review::class)->where('is_approved', true);
     }
 
+    public function highlights(): HasMany
+    {
+        return $this->hasMany(ProductHighlight::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function detailBlocks(): HasMany
+    {
+        return $this->hasMany(ProductDetailBlock::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function relations(): HasMany
+    {
+        return $this->hasMany(ProductRelation::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function getCurrentPriceAttribute(): float
     {
         return $this->sale_price ?? $this->price;

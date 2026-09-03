@@ -5,11 +5,13 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
+import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 
 const props = defineProps({
     categories: Array,
     brands: Array,
     componentTypes: Array,
+    relationCandidates: Array,
 });
 
 const form = useForm({
@@ -20,6 +22,9 @@ const form = useForm({
     thumbnail: '',
     gallery: [],
     variants: [],
+    highlights: [],
+    detail_blocks: [],
+    relations: [],
     specifications_text: '',
     compatibility_specs: [],
 });
@@ -56,7 +61,21 @@ watch(() => form.component_type_id, () => {
     });
 });
 
-function submit() { form.post('/admin/products'); }
+function normalizeVariantAttributes() {
+    form.variants.forEach((variant) => {
+        try {
+            const attributes = JSON.parse(variant.attributes_json || '{}');
+            variant.attributes = attributes && !Array.isArray(attributes) ? attributes : {};
+        } catch {
+            variant.attributes = {};
+        }
+    });
+}
+
+function submit() {
+    normalizeVariantAttributes();
+    form.post('/admin/products');
+}
 
 function applyAi(data) {
     form.description = data.content || data.body || form.description;
@@ -74,6 +93,8 @@ function addVariant() {
         sale_price: '',
         stock_quantity: 0,
         is_active: true,
+        attributes: {},
+        attributes_json: '',
     });
 }
 
@@ -196,6 +217,7 @@ function removeVariant(index) {
                             <label><span class="block text-xs text-slate-400 mb-1">Giá khuyến mại</span><input v-model="variant.sale_price" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
                             <label><span class="block text-xs text-slate-400 mb-1">Tồn kho *</span><input v-model="variant.stock_quantity" type="number" min="0" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></label>
                         </div>
+                        <label class="block mt-3"><span class="block text-xs text-slate-400 mb-1">Thuộc tính chọn biến thể (JSON)</span><textarea v-model="variant.attributes_json" rows="2" placeholder='{"RAM":"16GB","Ổ cứng":"512GB"}' class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm font-mono"></textarea><span class="mt-1 block text-xs text-slate-500">Chỉ dùng cho biến thể do website quản lý; tên thuộc tính sẽ tạo các nút chọn ngoài client.</span></label>
                         <label class="inline-flex items-center gap-2 mt-3 text-sm text-slate-300"><input v-model="variant.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị biến thể này</label>
                     </div>
                 </div>
@@ -249,6 +271,8 @@ function removeVariant(index) {
                     </table>
                 </div>
             </div>
+
+            <ProductPdpContentFields :form="form" :relation-candidates="relationCandidates" />
 
             <!-- SEO -->
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">

@@ -108,6 +108,7 @@ class KiotOrderService
                     'shipping_fee' => $shippingFee,
                     'total' => $subtotal + $shippingFee,
                     'payment_method' => $data['payment_method'],
+                    'checkout_mode' => $data['checkout_mode'] ?? 'cart',
                     'payment_status' => 'unpaid',
                     'order_status' => 'pending',
                     'shipping_name' => $data['customer_name'],

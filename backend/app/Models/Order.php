@@ -29,6 +29,7 @@ class Order extends Model
         'total',
         'payment_status',
         'payment_method',
+        'checkout_mode',
         'order_status',
         'shipping_name',
         'shipping_phone',

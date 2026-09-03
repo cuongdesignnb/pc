@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import type { BuyNowItem, ProductDetail, ProductDetailResponse } from '~/types/product-detail'
+
 const config = useRuntimeConfig();
 const router = useRouter();
+const route = useRoute();
 const { getHeaders: getCartHeaders } = useCartSession();
+const { read: readBuyNow, clear: clearBuyNow } = useBuyNow();
 const {
   siteName,
   paymentCodEnabled,
@@ -11,6 +15,30 @@ const {
 } = useSettings();
 const checkoutIdempotencyKey = ref("");
 const orderAccessToken = ref("");
+const checkoutMode = ref<'cart' | 'buy_now'>('cart');
+const buyNowItem = ref<BuyNowItem | null>(null);
+const buyNowProduct = ref<ProductDetail | null>(null);
+const buyNowLoading = ref(false);
+
+interface CartResponseItem {
+  id: number;
+  product_id: number;
+  variant_id: number | null;
+  quantity: number;
+  price: number | string;
+  variant?: { id: number; name: string } | null;
+  product: { name: string; images?: { url: string | null }[] };
+}
+
+interface CheckoutLine {
+  product_id: number;
+  variant_id: number | null;
+  quantity: number;
+  name: string;
+  image: string | null;
+  variant_name: string | null;
+  unit_price: number;
+}
 
 // Form data
 const form = reactive({
@@ -26,13 +54,38 @@ const form = reactive({
 });
 
 // Fetch cart
-const { data: cartData } = await useFetch<{ items: any[]; total: number }>(
+const { data: cartData } = await useFetch<{ items: CartResponseItem[]; total: number }>(
   `${config.public.apiBase}/cart`,
   { default: () => ({ items: [], total: 0 }), headers: getCartHeaders() },
 );
 
 const cartItems = computed(() => cartData.value?.items || []);
-const cartTotal = computed(() => cartData.value?.total || 0);
+const checkoutItems = computed<CheckoutLine[]>(() => {
+  if (checkoutMode.value === 'buy_now' && buyNowItem.value && buyNowProduct.value) {
+    const variant = buyNowItem.value.variant_id
+      ? buyNowProduct.value.variants.find(item => item.id === buyNowItem.value?.variant_id) || null
+      : null;
+    return [{
+      product_id: buyNowProduct.value.id,
+      variant_id: variant?.id || null,
+      quantity: buyNowItem.value.quantity,
+      name: buyNowProduct.value.name,
+      image: buyNowProduct.value.images[0]?.url || null,
+      variant_name: variant?.name || null,
+      unit_price: variant?.pricing.display_price || buyNowProduct.value.pricing.display_price,
+    }];
+  }
+  return cartItems.value.map(item => ({
+    product_id: item.product_id,
+    variant_id: item.variant_id || null,
+    quantity: item.quantity,
+    name: item.product.name,
+    image: item.product.images?.[0]?.url || null,
+    variant_name: item.variant?.name || null,
+    unit_price: Number(item.price),
+  }));
+});
+const cartTotal = computed(() => checkoutItems.value.reduce((total, item) => total + item.unit_price * item.quantity, 0));
 
 // Location data
 const selectedProvinceCode = ref("");
@@ -47,6 +100,28 @@ onMounted(async () => {
   const accessTokenStorageKey = "pc-checkout-order-access-token";
   orderAccessToken.value = sessionStorage.getItem(accessTokenStorageKey) || crypto.randomUUID();
   sessionStorage.setItem(accessTokenStorageKey, orderAccessToken.value);
+  if (route.query.mode === 'buy-now') {
+    const item = readBuyNow();
+    if (item) {
+      checkoutMode.value = 'buy_now';
+      buyNowItem.value = item;
+      buyNowLoading.value = true;
+      try {
+        const response = await $fetch<ProductDetailResponse>(`${config.public.apiBase}/products/${encodeURIComponent(item.product_slug)}`);
+        if (item.variant_id && !response.product.variants.some(variant => variant.id === item.variant_id)) {
+          throw new Error('Biến thể không còn khả dụng');
+        }
+        buyNowProduct.value = response.product;
+      } catch {
+        clearBuyNow();
+        buyNowItem.value = null;
+        checkoutMode.value = 'cart';
+        toast.add({ title: 'Không thể tải sản phẩm mua ngay', description: 'Vui lòng quay lại trang sản phẩm và thử lại.', color: 'error' });
+      } finally {
+        buyNowLoading.value = false;
+      }
+    }
+  }
   try {
     const data = await $fetch<any[]>(
       `${config.public.apiBase}/locations/provinces`,
@@ -94,11 +169,12 @@ const placeOrder = async () => {
       headers: getCartHeaders(),
       body: {
         ...form,
+        checkout_mode: checkoutMode.value,
         checkout_idempotency_key: checkoutIdempotencyKey.value,
         order_access_token: orderAccessToken.value,
-        items: cartItems.value.map((item: any) => ({
+        items: checkoutItems.value.map((item) => ({
           product_id: item.product_id,
-          variant_id: item.variant_id || null,
+          variant_id: item.variant_id,
           quantity: item.quantity,
         })),
       },
@@ -108,6 +184,7 @@ const placeOrder = async () => {
     sessionStorage.setItem(`pc-order-access-token:${response.order.id}`, orderAccessToken.value);
     sessionStorage.removeItem("pc-checkout-idempotency-key");
     sessionStorage.removeItem("pc-checkout-order-access-token");
+    if (checkoutMode.value === 'buy_now') clearBuyNow();
     toast.add({
       title: "Đặt hàng thành công!",
       description: `Mã đơn hàng: #${response.order.id}`,
@@ -223,7 +300,8 @@ useSeoMeta({
     <h1 class="text-3xl font-bold mb-8">Thanh toán</h1>
 
     <!-- Empty cart -->
-    <div v-if="cartItems.length === 0" class="text-center py-12">
+    <div v-if="buyNowLoading" class="text-center py-12"><p class="text-xl text-gray-500">Đang chuẩn bị đơn hàng…</p></div>
+    <div v-else-if="checkoutItems.length === 0" class="text-center py-12">
       <p class="text-xl text-gray-500 mb-6">Giỏ hàng trống</p>
       <UButton to="/" size="lg">Mua sắm ngay</UButton>
     </div>
@@ -486,23 +564,23 @@ useSeoMeta({
 
           <!-- Order Items -->
           <div class="space-y-3 mb-4 max-h-64 overflow-y-auto">
-            <div v-for="item in cartItems" :key="item.id" class="flex gap-3">
+            <div v-for="item in checkoutItems" :key="`${item.product_id}-${item.variant_id || 'base'}`" class="flex gap-3">
               <div class="w-16 h-16 bg-gray-100 rounded flex-shrink-0">
                 <img
-                  v-if="item.product.images?.[0]"
-                  :src="item.product.images[0].url"
-                  :alt="item.product.name"
+                  v-if="item.image"
+                  :src="item.image"
+                  :alt="item.name"
                   class="w-full h-full object-cover rounded"
                 />
               </div>
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium line-clamp-2">
-                  {{ item.product.name }}
+                  {{ item.name }}
                 </p>
-                <p class="text-sm text-gray-500">SL: {{ item.quantity }}</p>
+                <p class="text-sm text-gray-500">{{ item.variant_name ? `${item.variant_name} · ` : '' }}SL: {{ item.quantity }}</p>
               </div>
               <p class="text-sm font-semibold whitespace-nowrap">
-                {{ formatMoney((item.product.sale_price || item.product.price) * item.quantity) }}
+                {{ formatMoney(item.unit_price * item.quantity) }}
               </p>
             </div>
           </div>

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\MenuController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PcBuilderController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProductQuestionController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
@@ -34,7 +35,13 @@ Route::prefix('v1')->group(function () {
     Route::get('/products/featured', [ProductController::class, 'featured']);
     Route::get('/products/{slug}', [ProductController::class, 'show']);
     Route::get('/products/{slug}/suggestions', [ProductController::class, 'suggestions']);
+    Route::get('/products/{slug}/compatibility-summary', [ProductController::class, 'compatibilitySummary']);
+    Route::get('/products/{slug}/relations', [ProductController::class, 'relations']);
+    Route::get('/products/{slug}/reviews', [ReviewController::class, 'index']);
     Route::post('/products/{slug}/reviews', [ReviewController::class, 'store']);
+    Route::get('/products/{slug}/questions', [ProductQuestionController::class, 'index']);
+    Route::post('/products/{slug}/questions', [ProductQuestionController::class, 'store']);
+    Route::post('/products/cards', [ProductController::class, 'cards']);
     Route::get('/products/component/{slug}', [ProductController::class, 'byComponentType']);
 
     // Categories

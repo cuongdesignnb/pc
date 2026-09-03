@@ -7,6 +7,8 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\ComponentType;
 use App\Models\Product;
+use App\Models\ProductDetailBlock;
+use App\Models\ProductRelation;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
 use Illuminate\Http\Request;
@@ -62,6 +64,7 @@ class ProductController extends Controller
             'categories' => Category::where('is_active', true)->get(),
             'brands' => Brand::where('is_active', true)->get(),
             'componentTypes' => ComponentType::with(['specificationKeys' => fn ($q) => $q->orderBy('display_order')])->orderBy('display_order')->get(),
+            'relationCandidates' => Product::select('id', 'name', 'sku')->latest()->limit(500)->get(),
         ]);
     }
 
@@ -98,11 +101,29 @@ class ProductController extends Controller
             'variants' => 'nullable|array|max:100',
             'variants.*.id' => 'nullable|integer',
             'variants.*.name' => 'required|string|max:255',
+            'variants.*.attributes' => 'nullable|array',
+            'variants.*.attributes.*' => 'nullable|string|max:120',
             'variants.*.price' => 'required|numeric|min:0',
             'variants.*.sale_price' => 'nullable|numeric|min:0',
             'variants.*.stock_quantity' => 'required|integer|min:0',
             'variants.*.is_active' => 'boolean',
             'variants.*.sort_order' => 'nullable|integer|min:0',
+            // PDP content owned by Website PC
+            'highlights' => 'nullable|array|max:20',
+            'highlights.*.id' => 'nullable|integer',
+            'highlights.*.title' => 'required|string|max:255',
+            'highlights.*.icon' => 'nullable|string|max:120',
+            'highlights.*.is_active' => 'boolean',
+            'detail_blocks' => 'nullable|array|max:30',
+            'detail_blocks.*.id' => 'nullable|integer',
+            'detail_blocks.*.type' => ['required', Rule::in(ProductDetailBlock::TYPES)],
+            'detail_blocks.*.title' => 'nullable|string|max:255',
+            'detail_blocks.*.payload' => 'required|array',
+            'detail_blocks.*.is_active' => 'boolean',
+            'relations' => 'nullable|array|max:100',
+            'relations.*.related_product_id' => 'required|integer|exists:products,id',
+            'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
+            'relations.*.sort_order' => 'nullable|integer|min:0',
         ], $this->variantSkuRules($request, false)));
 
         // Check slug collision with categories
@@ -110,12 +131,13 @@ class ProductController extends Controller
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
-        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants'])->toArray();
+        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
         $product = Product::create($productData);
 
         if (array_key_exists('variants', $validated)) {
             $this->syncVariants($product, $validated['variants'] ?? []);
         }
+        $this->syncPdpContent($product, $validated);
 
         // Save images
         $sortOrder = 0;
@@ -163,7 +185,7 @@ class ProductController extends Controller
 
     public function edit(Product $product)
     {
-        $product->load(['category', 'brand', 'componentType', 'images', 'variants', 'specifications.specificationKey']);
+        $product->load(['category', 'brand', 'componentType', 'images', 'variants', 'specifications.specificationKey', 'highlights', 'detailBlocks', 'relations.relatedProduct:id,name,sku']);
         $product->makeVisible('stock_quantity');
 
         return Inertia::render('Admin/Products/Edit', [
@@ -171,6 +193,7 @@ class ProductController extends Controller
             'categories' => Category::where('is_active', true)->get(),
             'brands' => Brand::where('is_active', true)->get(),
             'componentTypes' => ComponentType::with(['specificationKeys' => fn ($q) => $q->orderBy('display_order')])->orderBy('display_order')->get(),
+            'relationCandidates' => Product::select('id', 'name', 'sku')->whereKeyNot($product->id)->latest()->limit(500)->get(),
         ]);
     }
 
@@ -207,11 +230,29 @@ class ProductController extends Controller
             'variants' => 'nullable|array|max:100',
             'variants.*.id' => 'nullable|integer',
             'variants.*.name' => 'required|string|max:255',
+            'variants.*.attributes' => 'nullable|array',
+            'variants.*.attributes.*' => 'nullable|string|max:120',
             'variants.*.price' => 'required|numeric|min:0',
             'variants.*.sale_price' => 'nullable|numeric|min:0',
             'variants.*.stock_quantity' => 'required|integer|min:0',
             'variants.*.is_active' => 'boolean',
             'variants.*.sort_order' => 'nullable|integer|min:0',
+            // PDP content owned by Website PC
+            'highlights' => 'nullable|array|max:20',
+            'highlights.*.id' => 'nullable|integer',
+            'highlights.*.title' => 'required|string|max:255',
+            'highlights.*.icon' => 'nullable|string|max:120',
+            'highlights.*.is_active' => 'boolean',
+            'detail_blocks' => 'nullable|array|max:30',
+            'detail_blocks.*.id' => 'nullable|integer',
+            'detail_blocks.*.type' => ['required', Rule::in(ProductDetailBlock::TYPES)],
+            'detail_blocks.*.title' => 'nullable|string|max:255',
+            'detail_blocks.*.payload' => 'required|array',
+            'detail_blocks.*.is_active' => 'boolean',
+            'relations' => 'nullable|array|max:100',
+            'relations.*.related_product_id' => 'required|integer|exists:products,id',
+            'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
+            'relations.*.sort_order' => 'nullable|integer|min:0',
         ], $this->variantSkuRules($request, true)));
 
         // Check slug collision with categories
@@ -219,15 +260,17 @@ class ProductController extends Controller
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
-        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants'])->toArray();
+        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
         if ($product->inventory_source === 'kiot') {
             unset($productData['sku'], $productData['price'], $productData['stock_quantity']);
+            unset($validated['variants']);
         }
         $product->update($productData);
 
         if (array_key_exists('variants', $validated)) {
             $this->syncVariants($product, $validated['variants'] ?? []);
         }
+        $this->syncPdpContent($product, $validated);
 
         // Rebuild images
         $product->images()->delete();
@@ -316,6 +359,7 @@ class ProductController extends Controller
 
                 $attributes = [
                     'name' => $variant['name'],
+                    'attributes' => filled($variant['attributes'] ?? null) ? $variant['attributes'] : null,
                     'sku' => filled($variant['sku'] ?? null) ? trim((string) $variant['sku']) : null,
                     'price' => $variant['price'],
                     'sale_price' => $variant['sale_price'] ?? null,
@@ -339,6 +383,68 @@ class ProductController extends Controller
                 fn ($query) => $query,
             )->delete();
         });
+    }
+
+    private function syncPdpContent(Product $product, array $validated): void
+    {
+        $this->syncHighlights($product, $validated['highlights'] ?? []);
+        $this->syncDetailBlocks($product, $validated['detail_blocks'] ?? []);
+        $this->syncRelations($product, $validated['relations'] ?? []);
+    }
+
+    private function syncHighlights(Product $product, array $highlights): void
+    {
+        $keptIds = [];
+        foreach (array_values($highlights) as $sortOrder => $highlight) {
+            $model = ! empty($highlight['id']) ? $product->highlights()->whereKey($highlight['id'])->first() : null;
+            $attributes = [
+                'title' => $highlight['title'],
+                'icon' => $highlight['icon'] ?? null,
+                'sort_order' => $sortOrder,
+                'is_active' => $highlight['is_active'] ?? true,
+            ];
+            $model ? $model->update($attributes) : $model = $product->highlights()->create($attributes);
+            $keptIds[] = $model->id;
+        }
+        $product->highlights()->when($keptIds !== [], fn ($query) => $query->whereNotIn('id', $keptIds), fn ($query) => $query)->delete();
+    }
+
+    private function syncDetailBlocks(Product $product, array $blocks): void
+    {
+        $keptIds = [];
+        foreach (array_values($blocks) as $sortOrder => $block) {
+            $model = ! empty($block['id']) ? $product->detailBlocks()->whereKey($block['id'])->first() : null;
+            $attributes = [
+                'type' => $block['type'],
+                'title' => $block['title'] ?? null,
+                'payload' => $block['payload'],
+                'sort_order' => $sortOrder,
+                'is_active' => $block['is_active'] ?? true,
+            ];
+            $model ? $model->update($attributes) : $model = $product->detailBlocks()->create($attributes);
+            $keptIds[] = $model->id;
+        }
+        $product->detailBlocks()->when($keptIds !== [], fn ($query) => $query->whereNotIn('id', $keptIds), fn ($query) => $query)->delete();
+    }
+
+    private function syncRelations(Product $product, array $relations): void
+    {
+        $product->relations()->delete();
+        $seen = [];
+        foreach (array_values($relations) as $sortOrder => $relation) {
+            $relatedId = (int) $relation['related_product_id'];
+            $type = $relation['relation_type'];
+            $key = $relatedId.':'.$type;
+            if ($relatedId === $product->id || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $product->relations()->create([
+                'related_product_id' => $relatedId,
+                'relation_type' => $type,
+                'sort_order' => $relation['sort_order'] ?? $sortOrder,
+            ]);
+        }
     }
 
     public function export(Request $request): StreamedResponse

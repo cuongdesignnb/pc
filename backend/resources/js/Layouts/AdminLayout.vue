@@ -68,6 +68,7 @@ const navGroups = [
         items: [
             { name: 'Danh sách KH', href: '/admin/customers', icon: 'user' },
             { name: 'Đánh giá', href: '/admin/reviews', icon: 'star' },
+            { name: 'Hỏi đáp sản phẩm', href: '/admin/product-questions', icon: 'post' },
         ],
     },
     {
