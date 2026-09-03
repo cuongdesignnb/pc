@@ -26,7 +26,7 @@ return new class extends Migration
         });
 
         // Copy data
-        \DB::statement("UPDATE orders SET payment_status_new = payment_status");
+        \DB::statement('UPDATE orders SET payment_status_new = payment_status');
 
         Schema::table('orders', function (Blueprint $table) {
             // SQLite rebuilds the table for dropColumn. Remove the composite
