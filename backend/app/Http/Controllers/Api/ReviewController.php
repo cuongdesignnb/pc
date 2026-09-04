@@ -21,7 +21,7 @@ class ReviewController extends Controller
             'sort' => ['nullable', 'in:newest,oldest,highest,lowest'],
         ]);
         $product = Product::where('slug', $slug)->visibleOnStorefront()->firstOrFail();
-        $query = Review::with(['user:id,name', 'order.items:id,order_id,product_id'])
+        $query = Review::with(['user:id,name', 'order.items:id,order_id,product_id', 'media:id,review_id,url,sort_order'])
             ->where('product_id', $product->id)
             ->where('is_approved', true);
         if (isset($validated['rating'])) {
