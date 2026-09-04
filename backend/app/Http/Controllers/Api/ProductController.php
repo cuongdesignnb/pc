@@ -21,6 +21,8 @@ class ProductController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Product::with(['category', 'brand', 'images'])
+            ->withAvg('approvedReviews', 'rating')
+            ->withCount('approvedReviews')
             ->visibleOnStorefront();
 
         // Search
@@ -90,6 +92,8 @@ class ProductController extends Controller
     public function featured(): JsonResponse
     {
         $products = Product::with(['category', 'brand', 'images'])
+            ->withAvg('approvedReviews', 'rating')
+            ->withCount('approvedReviews')
             ->visibleOnStorefront()
             ->where('is_featured', true)
             ->limit(8)
@@ -117,6 +121,9 @@ class ProductController extends Controller
             'highlights' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')->orderBy('id'),
             'detailBlocks' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order')->orderBy('id'),
         ])
+            ->withCount([
+                'questions as approved_questions_count' => fn ($query) => $query->where('is_approved', true),
+            ])
             ->where('slug', $slug)
             ->visibleOnStorefront()
             ->firstOrFail();
@@ -185,6 +192,8 @@ class ProductController extends Controller
             ->orderBy('sort_order')
             ->pluck('related_product_id');
         $products = Product::with(['category', 'brand', 'images'])
+            ->withAvg('approvedReviews', 'rating')
+            ->withCount('approvedReviews')
             ->visibleOnStorefront()
             ->where('id', '!=', $product->id)
             ->whereIn('id', $manualIds)
@@ -193,18 +202,16 @@ class ProductController extends Controller
             ->take($limit)
             ->values();
 
-        if ($products->isEmpty() && in_array($type, ['related', 'alternative'], true) && $product->category_id) {
+        if ($products->isEmpty() && $type === 'related' && $product->category_id) {
             $fallback = Product::with(['category', 'brand', 'images'])
+                ->withAvg('approvedReviews', 'rating')
+                ->withCount('approvedReviews')
                 ->visibleOnStorefront()
                 ->where('id', '!=', $product->id)
                 ->where('category_id', $product->category_id);
 
             if ($type === 'related' && $product->brand_id) {
                 $fallback->orderByRaw('brand_id = ? desc', [$product->brand_id]);
-            }
-            if ($type === 'alternative') {
-                $price = max(1, $product->purchasableUnitPrice());
-                $fallback->whereBetween('price', [(int) floor($price * 0.7), (int) ceil($price * 1.3)]);
             }
             $products = $fallback->latest()->limit($limit)->get();
         }
@@ -232,6 +239,8 @@ class ProductController extends Controller
         }
 
         $products = Product::with(['category', 'brand', 'images'])
+            ->withAvg('approvedReviews', 'rating')
+            ->withCount('approvedReviews')
             ->visibleOnStorefront()
             ->where(function ($query) use ($ids, $slugs) {
                 if ($ids->isNotEmpty()) {
@@ -304,6 +313,8 @@ class ProductController extends Controller
 
         // Get candidate products for each related type
         $candidateProducts = Product::with(['brand', 'images', 'specifications.specificationKey'])
+            ->withAvg('approvedReviews', 'rating')
+            ->withCount('approvedReviews')
             ->sellableOnline()
             ->whereIn('component_type_id', $relatedTypeIds)
             ->get()

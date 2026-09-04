@@ -53,6 +53,18 @@ class SpecificationKeySeeder extends Seeder
                 ['key' => 'tdp', 'label' => 'TDP', 'unit' => 'W', 'data_type' => 'integer', 'is_filterable' => true],
                 ['key' => 'length', 'label' => 'Chiều dài', 'unit' => 'mm', 'data_type' => 'integer', 'is_filterable' => false],
                 ['key' => 'power_connectors', 'label' => 'Nguồn phụ', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'cuda_cores', 'label' => 'CUDA Cores', 'unit' => null, 'data_type' => 'integer', 'is_filterable' => false],
+                ['key' => 'memory_bus', 'label' => 'Bus bộ nhớ', 'unit' => 'bit', 'data_type' => 'integer', 'is_filterable' => false],
+                ['key' => 'memory_bandwidth', 'label' => 'Băng thông bộ nhớ', 'unit' => 'GB/s', 'data_type' => 'integer', 'is_filterable' => false],
+                ['key' => 'ray_tracing_cores', 'label' => 'Ray Tracing Cores', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'tensor_cores', 'label' => 'Tensor Cores', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'dlss', 'label' => 'DLSS', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'outputs', 'label' => 'Cổng xuất hình', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'pcie_interface', 'label' => 'PCI Express', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'recommended_psu', 'label' => 'Nguồn đề nghị', 'unit' => 'W', 'data_type' => 'integer', 'is_filterable' => false],
+                ['key' => 'dimensions', 'label' => 'Kích thước', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'slot_width', 'label' => 'Độ dày khe', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
+                ['key' => 'sli_support', 'label' => 'Hỗ trợ SLI', 'unit' => null, 'data_type' => 'string', 'is_filterable' => false],
             ],
             // SSD specs
             'ssd' => [

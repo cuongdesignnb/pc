@@ -39,6 +39,12 @@ class ProductCardResource extends JsonResource
                 'purchasable' => $this->is_purchasable,
                 'availability_label' => $this->availability_label,
             ],
+            'rating' => [
+                'average' => $this->approved_reviews_avg_rating === null
+                    ? null
+                    : round((float) $this->approved_reviews_avg_rating, 1),
+                'count' => (int) ($this->approved_reviews_count ?? 0),
+            ],
             // Backward-compatible presentation values. No operational/sync metadata is exposed.
             'price' => (int) $this->price,
             'sale_price' => $this->sale_price === null ? null : (int) $this->sale_price,

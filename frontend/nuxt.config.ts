@@ -9,6 +9,11 @@ export default defineNuxtConfig({
     '@nuxt/image',
   ],
 
+  // Keep component names stable across the product-detail subdirectory.
+  components: {
+    dirs: [{ path: '~/components', pathPrefix: false }],
+  },
+
   // CSS
   css: ['~/assets/css/main.css'],
 
@@ -24,7 +29,7 @@ export default defineNuxtConfig({
   // Nitro server config
   nitro: {
     routeRules: {
-      '/api/**': { proxy: (process.env.NUXT_API_PROXY_TARGET || 'http://nginx') + '/api/**' },
+      '/api/**': { isr: false, proxy: (process.env.NUXT_API_PROXY_TARGET || 'http://nginx') + '/api/**' },
     },
   },
 
@@ -47,7 +52,7 @@ export default defineNuxtConfig({
   routeRules: {
     '/': { isr: 300 },
     '/products/**': { isr: 60 },
-    '/*/*': { isr: 60 },
+    '/**': { isr: 60 },
     '/categories/**': { isr: 300 },
     '/blog/**': { swr: 3600 },
     '/configurator/**': { ssr: false },

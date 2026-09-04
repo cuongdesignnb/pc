@@ -52,6 +52,7 @@ class ProductDetailResource extends JsonResource
                 'name' => $this->componentType->name,
                 'slug' => $this->componentType->slug,
             ] : null,
+            'is_featured' => (bool) $this->is_featured,
             'pricing' => [
                 'price' => (int) $this->price,
                 'sale_price' => $this->sale_price === null ? null : (int) $this->sale_price,
@@ -72,6 +73,7 @@ class ProductDetailResource extends JsonResource
             'is_purchasable' => (bool) $this->is_purchasable,
             'availability_label' => $this->availability_label,
             'warranty_months' => $this->warranty_months,
+            'sold_count' => (int) $this->sold_count,
             'rating' => [
                 'average' => $reviewAverage,
                 'count' => $reviewCount,
@@ -79,6 +81,7 @@ class ProductDetailResource extends JsonResource
                     (string) $rating => $approvedReviews->where('rating', $rating)->count(),
                 ])->all(),
             ],
+            'questions_count' => (int) ($this->approved_questions_count ?? 0),
             'images' => ProductImageResource::collection($this->images),
             'variants' => ProductVariantResource::collection($this->variants),
             'highlights' => $this->highlights->where('is_active', true)->values()->map(fn ($highlight) => [

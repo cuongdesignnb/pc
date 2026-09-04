@@ -21,7 +21,9 @@ export interface ProductCard {
   images: ProductImage[]
   pricing: { price: number; sale_price: number | null; display_price: number }
   inventory: { purchasable: boolean; availability_label: string }
+  rating?: { average: number | null; count: number }
   warranty_months: number | null
+  is_featured?: boolean
 }
 
 export interface ProductVariant {
@@ -68,6 +70,12 @@ export interface ProductReview {
   admin_reply: string | null
   verified_purchase: boolean
   created_at: string | null
+  media: ProductReviewMedia[]
+}
+
+export interface ProductReviewMedia {
+  id: number
+  url: string
 }
 
 export interface ProductQuestionAnswer {
@@ -94,6 +102,7 @@ export interface ProductDetail {
   brand: { id: number; name: string; slug: string; logo: string | null } | null
   category: { id: number; name: string; slug: string } | null
   component_type: { id: number; name: string; slug: string } | null
+  is_featured: boolean
   pricing: {
     price: number
     sale_price: number | null
@@ -103,7 +112,9 @@ export interface ProductDetail {
   }
   inventory: { quantity: number; purchasable: boolean; availability_label: string }
   warranty_months: number | null
+  sold_count: number
   rating: ProductReviewSummary
+  questions_count: number
   images: ProductImage[]
   variants: ProductVariant[]
   highlights: ProductHighlight[]

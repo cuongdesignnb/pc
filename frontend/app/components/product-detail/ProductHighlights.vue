@@ -4,10 +4,13 @@ defineProps<{ highlights: ProductHighlight[]; shortDescription: string | null }>
 </script>
 
 <template>
-  <section v-if="highlights.length || shortDescription" class="border-t border-slate-200 pt-5">
-    <ul v-if="highlights.length" class="space-y-2">
-      <li v-for="highlight in highlights" :key="highlight.id" class="flex gap-2 text-sm leading-5 text-slate-700"><span class="text-blue-600" aria-hidden="true">✓</span><span>{{ highlight.title }}</span></li>
+  <section v-if="highlights.length || shortDescription" class="pdp-highlights">
+    <ul v-if="highlights.length" class="space-y-1">
+      <li v-for="highlight in highlights" :key="highlight.id" class="flex gap-2 text-xs leading-5 text-slate-700">
+        <span class="shrink-0 font-bold text-blue-600" aria-hidden="true">✓</span>
+        <span>{{ highlight.title }}</span>
+      </li>
     </ul>
-    <p v-else class="text-sm leading-6 text-slate-700">{{ shortDescription }}</p>
+    <p v-else class="text-xs leading-5 text-slate-700">{{ shortDescription }}</p>
   </section>
 </template>

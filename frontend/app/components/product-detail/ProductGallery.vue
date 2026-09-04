@@ -6,6 +6,7 @@ const selectedIndex = ref(0)
 const open = ref(false)
 const zoomed = ref(false)
 const closeButton = ref<HTMLButtonElement | null>(null)
+const toast = useToast()
 
 const images = computed(() => props.product.images.filter(image => Boolean(image.url)))
 const selected = computed(() => images.value[selectedIndex.value])
@@ -23,6 +24,20 @@ const openModal = () => {
   open.value = true
   nextTick(() => closeButton.value?.focus())
 }
+const shareProduct = async () => {
+  if (!import.meta.client) return
+  const shareData = { title: props.product.name, url: window.location.href }
+  try {
+    if (navigator.share) {
+      await navigator.share(shareData)
+      return
+    }
+    await navigator.clipboard.writeText(window.location.href)
+    toast.add({ title: 'Đã sao chép liên kết', color: 'success' })
+  } catch {
+    // Closing the native share sheet is not an error worth surfacing.
+  }
+}
 const onKeydown = (event: KeyboardEvent) => {
   if (!open.value) return
   if (event.key === 'Escape') open.value = false
@@ -34,7 +49,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <section class="flex gap-3" aria-label="Thư viện ảnh sản phẩm">
+  <section class="pdp-gallery flex gap-3" aria-label="Thư viện ảnh sản phẩm">
     <div v-if="images.length > 1" class="order-2 flex max-h-[430px] shrink-0 gap-2 overflow-auto md:order-1 md:flex-col">
       <button
         v-for="(image, index) in images"
@@ -42,14 +57,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         type="button"
         :aria-label="`Xem ảnh ${index + 1}`"
         :aria-pressed="selectedIndex === index"
-        class="h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 bg-white p-1"
+        class="h-16 w-16 shrink-0 overflow-hidden rounded-[7px] border bg-white p-1"
         :class="selectedIndex === index ? 'border-blue-600' : 'border-slate-200 hover:border-blue-300'"
         @click="selectedIndex = index; zoomed = false"
       >
         <NuxtImg :src="image.url!" :alt="image.alt || `${product.name} ${index + 1}`" width="64" height="64" loading="lazy" class="h-full w-full object-contain" />
       </button>
     </div>
-    <button type="button" class="group relative order-1 aspect-square min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white" :aria-label="`Phóng to ảnh ${product.name}`" @click="openModal">
+    <div class="group relative order-1 min-h-[360px] min-w-0 flex-1 overflow-hidden border border-slate-100 bg-white md:min-h-[430px]">
+      <button type="button" class="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-blue-300 hover:text-blue-700" aria-label="Chia sẻ sản phẩm" @click="shareProduct">
+        <span aria-hidden="true">↗</span>
+      </button>
+      <button type="button" class="h-full w-full" :aria-label="`Phóng to ảnh ${product.name}`" @click="openModal">
       <NuxtImg
         v-if="selected?.url"
         :src="selected.url"
@@ -58,11 +77,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         :height="selected.height || 800"
         sizes="(max-width: 1024px) 100vw, 42vw"
         preload
-        class="h-full w-full object-contain p-4 transition duration-300 group-hover:scale-105"
+        class="h-full w-full object-contain p-5 transition duration-300 group-hover:scale-[1.02]"
       />
       <span v-else class="flex h-full items-center justify-center text-sm text-slate-400">Chưa có ảnh sản phẩm</span>
-      <span v-if="images.length > 1" class="absolute bottom-3 right-3 rounded-full bg-slate-900/70 px-2.5 py-1 text-xs font-medium text-white">{{ selectedIndex + 1 }}/{{ images.length }}</span>
-    </button>
+      <span v-if="images.length > 1" class="absolute bottom-3 right-3 rounded bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-white">{{ selectedIndex + 1 }}/{{ images.length }}</span>
+      </button>
+    </div>
   </section>
 
   <Teleport to="body">

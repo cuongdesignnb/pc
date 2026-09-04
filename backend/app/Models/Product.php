@@ -263,6 +263,11 @@ class Product extends Model
         return $this->hasMany(Review::class)->where('is_approved', true);
     }
 
+    public function questions(): HasMany
+    {
+        return $this->hasMany(ProductQuestion::class);
+    }
+
     public function highlights(): HasMany
     {
         return $this->hasMany(ProductHighlight::class)->orderBy('sort_order')->orderBy('id');

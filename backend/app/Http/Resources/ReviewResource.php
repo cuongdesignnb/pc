@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Review;
+use App\Support\PublicAssetUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -24,6 +25,10 @@ class ReviewResource extends JsonResource
             'admin_reply' => $this->admin_reply,
             'verified_purchase' => $isVerifiedPurchase,
             'created_at' => $this->created_at?->toISOString(),
+            'media' => $this->whenLoaded('media', fn () => $this->media->map(fn ($media) => [
+                'id' => $media->id,
+                'url' => PublicAssetUrl::normalize($media->url),
+            ])->values()),
         ];
     }
 }
