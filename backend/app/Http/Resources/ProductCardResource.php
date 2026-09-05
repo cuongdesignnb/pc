@@ -53,6 +53,7 @@ class ProductCardResource extends JsonResource
             'availability_label' => $this->availability_label,
             'warranty_months' => $this->warranty_months,
             'is_featured' => $this->is_featured,
+            'sold_count' => (int) $this->sold_count,
         ];
     }
 }

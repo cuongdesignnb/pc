@@ -22,7 +22,7 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api/v1',
       appName: 'PC Shop',
-      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://hpcomvietnam.vn',
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://laptopplus.vn',
     }
   },
 

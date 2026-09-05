@@ -7,8 +7,10 @@ use App\Http\Controllers\Api\BlogController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\HomepageController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MenuController;
+use App\Http\Controllers\Api\NewsletterController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PcBuilderController;
 use App\Http\Controllers\Api\ProductController;
@@ -30,6 +32,9 @@ Route::prefix('v1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
 
     // Public routes
+    // Aggregated storefront homepage payload
+    Route::get('/homepage', [HomepageController::class, 'index']);
+
     // Products
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/featured', [ProductController::class, 'featured']);
@@ -60,6 +65,9 @@ Route::prefix('v1')->group(function () {
 
     // Settings
     Route::get('/settings', [SettingController::class, 'index']);
+
+    // Newsletter
+    Route::post('/newsletter/subscribe', [NewsletterController::class, 'subscribe']);
 
     // Search
     Route::get('/search', [SearchController::class, 'index']);

@@ -1,160 +1,152 @@
-<script setup>
+<script setup lang="ts">
+interface SearchProduct {
+  id: number
+  name: string
+  slug: string
+  price: number
+  sale_price: number | null
+  image: string | null
+  url: string
+}
+
+interface SearchPost {
+  id: number
+  title: string
+  slug: string
+  url: string
+  category?: string | null
+}
+
+interface SearchResponse {
+  products: SearchProduct[]
+  posts: SearchPost[]
+}
+
 const config = useRuntimeConfig()
 const { formatMoney } = useSettings()
+const route = useRoute()
+const inputId = useId()
+let requestVersion = 0
+
 const query = ref('')
-const results = ref({ products: [], posts: [] })
+const results = ref<SearchResponse>({ products: [], posts: [] })
 const isOpen = ref(false)
 const loading = ref(false)
-const searchRef = ref(null)
-
-let timer = null
+let timer: ReturnType<typeof setTimeout> | null = null
 
 const hasResults = computed(() => results.value.products.length > 0 || results.value.posts.length > 0)
 
-watch(query, (val) => {
-  clearTimeout(timer)
-  if (val.length < 2) {
+function clearTimer() {
+  if (timer) clearTimeout(timer)
+  timer = null
+}
+
+watch(query, value => {
+  const version = ++requestVersion
+  clearTimer()
+  if (value.trim().length < 2) {
     results.value = { products: [], posts: [] }
     isOpen.value = false
+    loading.value = false
     return
   }
+
   loading.value = true
   timer = setTimeout(async () => {
     try {
-      const data = await $fetch(`${config.public.apiBase}/search`, {
-        params: { q: val },
+      const response = await $fetch<SearchResponse>(`${config.public.apiBase}/search`, {
+        params: { q: value.trim() },
       })
-      results.value = data
+      if (version !== requestVersion) return
+      results.value = response
       isOpen.value = true
     } catch {
+      if (version !== requestVersion) return
       results.value = { products: [], posts: [] }
+      isOpen.value = true
     } finally {
-      loading.value = false
+      if (version === requestVersion) loading.value = false
     }
   }, 300)
 })
 
-function formatPrice(p) {
-  return formatMoney(p)
+function close(event: FocusEvent) {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) isOpen.value = false
 }
 
-function close() {
-  setTimeout(() => { isOpen.value = false }, 200)
-}
-
-function goToResult(url) {
+function goToResult(url: string) {
   isOpen.value = false
   query.value = ''
-  navigateTo(url)
+  void navigateTo(url)
 }
 
-// Close on route change
-const route = useRoute()
+function submitSearch() {
+  const value = query.value.trim()
+  if (value.length >= 2) goToResult(`/products?search=${encodeURIComponent(value)}`)
+}
+
 watch(() => route.fullPath, () => {
   isOpen.value = false
   query.value = ''
 })
+
+onBeforeUnmount(clearTimer)
 </script>
 
 <template>
-  <div class="relative" ref="searchRef">
-    <!-- Input -->
-    <div class="relative">
+  <div class="search-box" @focusout="close" @keydown.esc="isOpen = false">
+    <form class="search-box-form" @submit.prevent="submitSearch">
+      <label class="sr-only" :for="inputId">Tìm kiếm sản phẩm</label>
       <input
+        :id="inputId"
         v-model="query"
-        type="text"
-        placeholder="Tìm sản phẩm, bài viết..."
-        class="w-full pl-10 pr-10 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-        @focus="query.length >= 2 && hasResults && (isOpen = true)"
-        @blur="close"
+        type="search"
+        autocomplete="off"
+        placeholder="Bạn cần tìm sản phẩm gì hôm nay?"
+        aria-label="Tìm kiếm sản phẩm"
+        :aria-expanded="isOpen"
+        @focus="query.trim().length >= 2 && (isOpen = true)"
       >
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-      <!-- Loading spinner -->
-      <svg v-if="loading" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
-        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-      </svg>
-      <!-- Clear button -->
-      <button v-else-if="query" @click="query = ''; isOpen = false" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      <button type="submit" aria-label="Tìm kiếm">
+        <svg v-if="!loading" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="11" cy="11" r="6.5" stroke-width="1.7" />
+          <path stroke-linecap="round" stroke-width="1.7" d="m16 16 4.5 4.5" />
+        </svg>
+        <svg v-else aria-hidden="true" class="search-box-spinner" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-opacity=".25" stroke-width="3" />
+          <path d="M20 12a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
         </svg>
       </button>
-    </div>
+    </form>
 
-    <!-- Dropdown Results -->
-    <Transition
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 -translate-y-1"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-1"
-    >
-      <div
-        v-if="isOpen && (hasResults || (query.length >= 2 && !loading))"
-        class="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-[60] max-h-[70vh] overflow-y-auto"
-      >
-        <!-- Products -->
+    <Transition name="search-dropdown">
+      <div v-if="isOpen && (hasResults || (query.trim().length >= 2 && !loading))" class="search-box-dropdown">
         <div v-if="results.products.length">
-          <div class="px-4 py-2 bg-gray-50 border-b border-gray-100">
-            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sản phẩm</span>
-          </div>
-          <div class="divide-y divide-gray-50">
-            <button
-              v-for="p in results.products"
-              :key="'p-' + p.id"
-              @mousedown.prevent="goToResult(p.url)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50/50 transition-colors text-left"
-            >
-              <div class="w-10 h-10 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
-                <img v-if="p.image" :src="p.image" :alt="p.name" class="w-full h-full object-cover">
-                <div v-else class="w-full h-full flex items-center justify-center text-gray-300">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                </div>
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-900 truncate">{{ p.name }}</p>
-                <div class="flex items-center gap-2">
-                  <span v-if="p.sale_price" class="text-xs font-semibold text-red-500">{{ formatPrice(p.sale_price) }}</span>
-                  <span :class="p.sale_price ? 'text-[11px] text-gray-400 line-through' : 'text-xs font-semibold text-indigo-600'">{{ formatPrice(p.price) }}</span>
-                </div>
-              </div>
-              <svg class="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-            </button>
-          </div>
+          <div class="search-box-section-title">Sản phẩm</div>
+          <button v-for="product in results.products" :key="`product-${product.id}`" type="button" class="search-result" @click="goToResult(product.url)">
+            <span class="search-result-image">
+              <img v-if="product.image" :src="product.image" :alt="product.name">
+              <svg v-else aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7m-9 4v10" /></svg>
+            </span>
+            <span class="search-result-copy">
+              <strong>{{ product.name }}</strong>
+              <span><b v-if="product.sale_price !== null">{{ formatMoney(product.sale_price) }}</b><em :class="{ 'is-old': product.sale_price !== null }">{{ formatMoney(product.price) }}</em></span>
+            </span>
+            <svg aria-hidden="true" class="search-result-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="m9 5 7 7-7 7" /></svg>
+          </button>
         </div>
 
-        <!-- Posts -->
-        <div v-if="results.posts.length">
-          <div class="px-4 py-2 bg-gray-50 border-b border-gray-100" :class="results.products.length ? 'border-t' : ''">
-            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Bài viết</span>
-          </div>
-          <div class="divide-y divide-gray-50">
-            <button
-              v-for="p in results.posts"
-              :key="'b-' + p.id"
-              @mousedown.prevent="goToResult(p.url)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50/50 transition-colors text-left"
-            >
-              <div class="w-8 h-8 bg-indigo-50 rounded-lg flex-shrink-0 flex items-center justify-center">
-                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-900 truncate">{{ p.title }}</p>
-                <span v-if="p.category" class="text-[11px] text-gray-400">{{ p.category }}</span>
-              </div>
-              <svg class="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-            </button>
-          </div>
+        <div v-if="results.posts.length" class="search-posts" :class="{ 'has-products': results.products.length }">
+          <div class="search-box-section-title">Bài viết</div>
+          <button v-for="post in results.posts" :key="`post-${post.id}`" type="button" class="search-result" @click="goToResult(post.url)">
+            <span class="search-result-post-icon">▤</span>
+            <span class="search-result-copy"><strong>{{ post.title }}</strong><small v-if="post.category">{{ post.category }}</small></span>
+            <svg aria-hidden="true" class="search-result-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="m9 5 7 7-7 7" /></svg>
+          </button>
         </div>
 
-        <!-- No results -->
-        <div v-if="!hasResults && query.length >= 2 && !loading" class="px-4 py-8 text-center">
-          <svg class="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-          <p class="text-sm text-gray-500">Không tìm thấy kết quả cho "{{ query }}"</p>
+        <div v-if="!hasResults && query.trim().length >= 2 && !loading" class="search-empty">
+          Không tìm thấy kết quả cho “{{ query }}”
         </div>
       </div>
     </Transition>

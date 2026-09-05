@@ -271,14 +271,14 @@ class MenuSeeder extends Seeder
 
         // 6. Build PC
         MenuItem::create([
-            'menu_id' => $header->id, 'title' => 'Build PC', 'url' => '/configurator',
+            'menu_id' => $header->id, 'title' => 'Build PC', 'url' => '/cau-hinh',
             'type' => 'custom', 'sort_order' => 5, 'is_active' => true,
             'badge_text' => 'New', 'badge_color' => 'blue',
         ]);
 
         // 7. Tin tức
         MenuItem::create([
-            'menu_id' => $header->id, 'title' => 'Tin tức', 'url' => '/blog',
+            'menu_id' => $header->id, 'title' => 'Tin tức', 'url' => '/tin-tuc',
             'type' => 'custom', 'sort_order' => 6, 'is_active' => true,
         ]);
 
@@ -292,11 +292,11 @@ class MenuSeeder extends Seeder
         ]);
 
         foreach ([
-            ['Giới thiệu', '/about'],
-            ['Liên hệ', '/contact'],
-            ['Bảo hành', '/warranty'],
-            ['Vận chuyển', '/shipping'],
-            ['Chính sách đổi trả', '/returns'],
+            ['Giới thiệu', '/gioi-thieu'],
+            ['Liên hệ', '/lien-he'],
+            ['Bảo hành', '/bao-hanh'],
+            ['Vận chuyển', '/van-chuyen'],
+            ['Tin tức', '/tin-tuc'],
         ] as $i => $item) {
             MenuItem::create([
                 'menu_id' => $footer->id, 'title' => $item[0], 'url' => $item[1],

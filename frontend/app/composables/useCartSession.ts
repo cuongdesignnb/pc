@@ -10,7 +10,7 @@ export const useCartSession = () => {
   })
 
   if (!sessionId.value) {
-    sessionId.value = crypto.randomUUID()
+    sessionId.value = createUuid()
   }
 
   const getHeaders = (): Record<string, string> => ({
@@ -22,3 +22,4 @@ export const useCartSession = () => {
     getHeaders,
   }
 }
+import { createUuid } from '~/utils/createUuid'

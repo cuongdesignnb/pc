@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BuyNowItem, ProductDetail, ProductDetailResponse } from '~/types/product-detail'
+import { createUuid } from '~/utils/createUuid'
 
 const config = useRuntimeConfig();
 const router = useRouter();
@@ -95,10 +96,10 @@ const wards = ref<any[]>([]);
 // Fetch provinces on mount (SSR disabled for checkout)
 onMounted(async () => {
   const storageKey = "pc-checkout-idempotency-key";
-  checkoutIdempotencyKey.value = sessionStorage.getItem(storageKey) || crypto.randomUUID();
+  checkoutIdempotencyKey.value = sessionStorage.getItem(storageKey) || createUuid();
   sessionStorage.setItem(storageKey, checkoutIdempotencyKey.value);
   const accessTokenStorageKey = "pc-checkout-order-access-token";
-  orderAccessToken.value = sessionStorage.getItem(accessTokenStorageKey) || crypto.randomUUID();
+  orderAccessToken.value = sessionStorage.getItem(accessTokenStorageKey) || createUuid();
   sessionStorage.setItem(accessTokenStorageKey, orderAccessToken.value);
   if (route.query.mode === 'buy-now') {
     const item = readBuyNow();
@@ -201,8 +202,8 @@ const placeOrder = async () => {
     }
   } catch (error: any) {
     if (error.data?.integration_status === "rejected") {
-      checkoutIdempotencyKey.value = crypto.randomUUID();
-      orderAccessToken.value = crypto.randomUUID();
+      checkoutIdempotencyKey.value = createUuid();
+      orderAccessToken.value = createUuid();
       sessionStorage.setItem("pc-checkout-idempotency-key", checkoutIdempotencyKey.value);
       sessionStorage.setItem("pc-checkout-order-access-token", orderAccessToken.value);
     }
