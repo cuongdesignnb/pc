@@ -82,27 +82,25 @@ class HomepageController extends Controller
         ];
 
         $categories = Category::query()
-            ->whereIn('slug', $preferredSlugs)
             ->visibleOnStorefront()
-            ->get()
-            ->keyBy('slug');
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
 
-        $slugs = collect($preferredSlugs);
+        // Keep the merchandising order where the slugs exist, then append the
+        // rest of the synced public catalogue. A single matching slug must not
+        // hide every other category returned by the integration.
+        $preferred = $categories
+            ->filter(fn (Category $category): bool => in_array($category->slug, $preferredSlugs, true))
+            ->sortBy(fn (Category $category): int => array_search($category->slug, $preferredSlugs, true))
+            ->values();
+        $remaining = $categories
+            ->reject(fn (Category $category): bool => in_array($category->slug, $preferredSlugs, true))
+            ->values();
 
-        if ($categories->isEmpty()) {
-            $categories = Category::query()
-                ->whereNull('parent_id')
-                ->visibleOnStorefront()
-                ->orderBy('sort_order')
-                ->limit(13)
-                ->get()
-                ->keyBy('slug');
-            $slugs = $categories->keys()->values();
-        }
-
-        return $slugs
-            ->map(fn (string $slug) => $categories->get($slug))
-            ->filter()
+        return $preferred
+            ->concat($remaining)
+            ->take(13)
             ->map(fn (Category $category) => [
                 'id' => $category->id,
                 'name' => $category->name,
@@ -142,38 +140,40 @@ class HomepageController extends Controller
         }
 
         $categories = Category::query()
-            ->whereIn('slug', $slugs->all())
             ->visibleOnStorefront()
-            ->get()
-            ->keyBy('slug');
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+        $configuredCategories = $categories
+            ->filter(fn (Category $category): bool => $slugs->contains($category->slug))
+            ->sortBy(fn (Category $category): int => $slugs->search($category->slug))
+            ->values();
+        $remainingCategories = $categories
+            ->reject(fn (Category $category): bool => $slugs->contains($category->slug))
+            ->values();
 
-        return $slugs->map(function (string $slug) use ($categories): ?array {
-            /** @var Category|null $category */
-            $category = $categories->get($slug);
-            if (! $category) {
-                return null;
-            }
+        return $configuredCategories
+            ->concat($remainingCategories)
+            ->take(9)
+            ->map(function (Category $category): array {
+                $image = PublicAssetUrl::normalize($category->image);
+                if (! $image) {
+                    $image = $this->productQuery()
+                        ->whereIn('category_id', $this->categoryIds($category))
+                        ->orderByDesc('is_featured')
+                        ->orderByDesc('sold_count')
+                        ->first()?->images?->first()?->url;
+                    $image = PublicAssetUrl::normalize($image);
+                }
 
-            $image = PublicAssetUrl::normalize($category->image);
-            if (! $image) {
-                $image = Product::query()
-                    ->with('images')
-                    ->sellableOnline()
-                    ->whereIn('category_id', $this->categoryIds($category))
-                    ->orderByDesc('is_featured')
-                    ->orderByDesc('sold_count')
-                    ->first()?->images?->first()?->url;
-                $image = PublicAssetUrl::normalize($image);
-            }
-
-            return [
-                'id' => $category->id,
-                'name' => $category->name,
-                'slug' => $category->slug,
-                'image' => $image,
-                'icon' => PublicAssetUrl::normalize($category->icon),
-            ];
-        })->filter()->values()->all();
+                return [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'slug' => $category->slug,
+                    'image' => $image,
+                    'icon' => PublicAssetUrl::normalize($category->icon),
+                ];
+            })->values()->all();
     }
 
     /** @return array<string, mixed> */
@@ -208,17 +208,27 @@ class HomepageController extends Controller
     private function productsForCategory(string $slug, int $limit): array
     {
         $category = Category::query()->where('slug', $slug)->visibleOnStorefront()->first();
-        if (! $category) {
-            return [];
-        }
+        $products = $category
+            ? $this->productQuery()
+                ->whereIn('category_id', $this->categoryIds($category))
+                ->orderByDesc('sold_count')
+                ->orderByDesc('is_featured')
+                ->orderByDesc('created_at')
+                ->limit($limit)
+                ->get()
+            : collect();
 
-        $products = $this->productQuery()
-            ->whereIn('category_id', $this->categoryIds($category))
-            ->orderByDesc('sold_count')
-            ->orderByDesc('is_featured')
-            ->orderByDesc('created_at')
-            ->limit($limit)
-            ->get();
+        // Kiot category names/slugs are configurable and may differ from the
+        // storefront's merchandising aliases. Keep the homepage populated from
+        // the public synced catalogue when an alias has no matching products.
+        if ($products->isEmpty()) {
+            $products = $this->productQuery()
+                ->orderByDesc('sold_count')
+                ->orderByDesc('is_featured')
+                ->orderByDesc('created_at')
+                ->limit($limit)
+                ->get();
+        }
 
         return ProductCardResource::collection($products)->resolve();
     }

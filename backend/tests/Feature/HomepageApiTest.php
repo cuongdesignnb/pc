@@ -144,6 +144,23 @@ class HomepageApiTest extends TestCase
         }
     }
 
+    public function test_homepage_appends_visible_synced_categories_and_fills_missing_category_aliases(): void
+    {
+        $accessories = $this->category('phu-kien', 'Phụ kiện');
+        $actualCategory = $this->category('thiet-bi-mang', 'Thiết bị mạng', null);
+        $product = $this->product($actualCategory, ['sold_count' => 77]);
+
+        $response = $this->getJson('/api/v1/homepage')->assertOk();
+
+        $sidebarSlugs = array_column($response->json('category_sidebar'), 'slug');
+        $featuredSlugs = array_column($response->json('featured_categories'), 'slug');
+
+        $this->assertContains($accessories->slug, $sidebarSlugs);
+        $this->assertContains($actualCategory->slug, $sidebarSlugs);
+        $this->assertContains($actualCategory->slug, $featuredSlugs);
+        $this->assertSame($product->id, $response->json('best_sellers.laptop.0.id'));
+    }
+
     public function test_only_current_active_banners_are_returned(): void
     {
         foreach ([
