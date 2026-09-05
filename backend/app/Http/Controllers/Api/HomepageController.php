@@ -154,7 +154,7 @@ class HomepageController extends Controller
 
         return $configuredCategories
             ->concat($remainingCategories)
-            ->take(9)
+            ->take(12)
             ->map(function (Category $category): array {
                 $image = PublicAssetUrl::normalize($category->image);
                 if (! $image) {

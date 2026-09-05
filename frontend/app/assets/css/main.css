@@ -253,7 +253,7 @@ button:disabled { cursor: not-allowed; opacity: .65; }
 .home-section-heading > a { flex: 0 0 auto; color: var(--pc-blue); font-size: 10px; font-weight: 650; }
 .home-section-heading > a:hover { color: var(--pc-orange); }
 .home-section-heading > a span { padding-left: 2px; font-size: 16px; vertical-align: -1px; }
-.home-featured-category-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; }
+.home-featured-category-row { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px; }
 .home-featured-category-card { display: flex; min-height: 126px; align-items: center; justify-content: flex-end; padding: 10px 7px 9px; flex-direction: column; background: #fff; border: 1px solid var(--pc-border); border-radius: 7px; box-shadow: 0 1px 3px rgba(15, 23, 42, .03); }
 .home-featured-category-card:hover { border-color: #b8d0f6; box-shadow: 0 4px 12px rgba(18, 100, 216, .11); }
 .home-featured-category-image { display: grid; width: 84px; height: 78px; flex-shrink: 0; overflow: hidden; margin-bottom: 8px; place-items: center; color: #8ca2bd; }
