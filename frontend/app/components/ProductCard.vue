@@ -1,45 +1,83 @@
 <script setup lang="ts">
-import type { ProductCard } from '~/types/product-detail'
+import type { ProductCard as ProductCardData } from '~/types/product-detail'
 
-const props = withDefaults(defineProps<{ product: ProductCard; compact?: boolean }>(), {
+const props = withDefaults(defineProps<{
+  product: ProductCardData
+  variant?: 'default' | 'homepage' | 'compact'
+  compact?: boolean
+}>(), {
+  variant: 'default',
   compact: false,
 })
+
 const { formatMoney } = useSettings()
+const wishlist = useWishlist()
+
+const cardVariant = computed(() => props.compact ? 'compact' : props.variant)
+const isCompact = computed(() => cardVariant.value === 'compact')
+const isHomepage = computed(() => cardVariant.value === 'homepage')
 const discountPercent = computed(() => {
-  if (props.product.pricing.sale_price === null || props.product.pricing.price <= 0) return 0
-  return Math.max(0, Math.round((1 - props.product.pricing.sale_price / props.product.pricing.price) * 100))
+  const price = Number(props.product.pricing.price)
+  const salePrice = props.product.pricing.sale_price
+  if (salePrice === null || price <= 0 || salePrice >= price) return 0
+  return Math.round((1 - salePrice / price) * 100)
 })
+const isWishlisted = computed(() => wishlist.ids.value.includes(props.product.id))
+const productUrl = computed(() => props.product.category?.slug
+  ? `/${props.product.category.slug}/${props.product.slug}`
+  : `/products/${props.product.slug}`)
+
+function toggleWishlist() {
+  wishlist.toggle(props.product.id)
+}
 </script>
 
 <template>
-  <NuxtLink
-    :to="`/${product.category?.slug || 'san-pham'}/${product.slug}`"
-    class="group flex min-w-0 flex-col border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-    :class="compact ? 'pdp-product-card--compact rounded-[8px] p-2' : 'rounded-xl p-3'"
-  >
-    <div class="relative aspect-square overflow-hidden bg-slate-50" :class="compact ? 'rounded-[6px]' : 'rounded-lg'">
-      <NuxtImg
-        v-if="product.images[0]?.url"
-        :src="product.images[0].url"
-        :alt="product.images[0].alt || product.name"
-        width="240"
-        height="240"
-        sizes="(max-width: 640px) 45vw, 220px"
-        loading="lazy"
-        class="h-full w-full object-contain transition duration-300 group-hover:scale-105"
-      />
-    </div>
-    <p v-if="product.brand?.name && !compact" class="mt-3 text-xs font-medium text-slate-500">{{ product.brand.name }}</p>
-    <h3 class="line-clamp-2 font-semibold leading-5 text-slate-800 group-hover:text-blue-700" :class="compact ? 'mt-2 min-h-9 text-[11px]' : 'mt-1 min-h-10 text-sm'">{{ product.name }}</h3>
-    <div class="flex flex-wrap items-end gap-x-2 gap-y-1" :class="compact ? 'mt-1' : 'mt-2'">
-      <span class="font-bold text-blue-700" :class="compact ? 'text-xs' : 'text-sm'">{{ formatMoney(product.pricing.display_price) }}</span>
-      <span v-if="product.pricing.sale_price !== null" class="text-xs text-slate-400 line-through">{{ formatMoney(product.pricing.price) }}</span>
-      <span v-if="discountPercent > 0 && !compact" class="rounded border border-red-200 px-1 py-0.5 text-[10px] font-semibold text-red-600">-{{ discountPercent }}%</span>
-    </div>
-    <div v-if="product.rating?.count" class="mt-1 flex items-center gap-1 text-[10px] text-amber-500">
-      <span aria-hidden="true">★</span>
-      <span class="text-slate-500">{{ product.rating.average }} ({{ product.rating.count }})</span>
-    </div>
-    <p v-if="!compact" class="mt-2 text-xs" :class="product.inventory.purchasable ? 'text-emerald-600' : 'text-slate-500'">{{ product.inventory.availability_label }}</p>
-  </NuxtLink>
+  <article class="product-card" :class="[`product-card--${cardVariant}`, { 'product-card--wishlisted': isWishlisted }]">
+    <NuxtLink :to="productUrl" class="product-card-link">
+      <div class="product-card-image">
+        <span v-if="discountPercent > 0" class="product-card-discount">-{{ discountPercent }}%</span>
+        <NuxtImg
+          v-if="product.images?.[0]?.url"
+          :src="product.images[0].url"
+          :alt="product.images[0].alt || product.name"
+          width="240"
+          height="240"
+          sizes="(max-width: 640px) 45vw, 220px"
+          :loading="isHomepage ? 'lazy' : 'lazy'"
+          class="product-card-image-asset"
+        />
+        <span v-else class="product-card-image-fallback" aria-hidden="true">PC</span>
+      </div>
+
+      <span v-if="product.brand?.name && !isCompact" class="product-card-brand">{{ product.brand.name }}</span>
+      <h3 class="product-card-name">{{ product.name }}</h3>
+
+      <div class="product-card-pricing">
+        <strong>{{ formatMoney(product.pricing.display_price) }}</strong>
+        <span v-if="product.pricing.sale_price !== null" class="product-card-old-price">{{ formatMoney(product.pricing.price) }}</span>
+      </div>
+
+      <div v-if="product.rating?.count || (product.sold_count ?? 0) > 0" class="product-card-meta">
+        <span v-if="product.rating?.count" class="product-card-rating"><span aria-hidden="true">★</span> {{ product.rating.average?.toFixed(1) }} ({{ product.rating.count }})</span>
+        <span v-if="(product.sold_count ?? 0) > 0">Đã bán {{ product.sold_count }}</span>
+      </div>
+      <p v-if="!isCompact && !isHomepage" class="product-card-availability" :class="product.inventory.purchasable ? 'is-available' : ''">
+        {{ product.inventory.availability_label }}
+      </p>
+    </NuxtLink>
+
+    <button
+      type="button"
+      class="product-card-wishlist"
+      :class="{ 'is-active': isWishlisted }"
+      :aria-label="isWishlisted ? `Bỏ ${product.name} khỏi yêu thích` : `Thêm ${product.name} vào yêu thích`"
+      :aria-pressed="isWishlisted"
+      @click="toggleWishlist"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20.8 8.7c0 5.1-8.8 10.2-8.8 10.2S3.2 13.8 3.2 8.7A4.7 4.7 0 0 1 12 6.1a4.7 4.7 0 0 1 8.8 2.6Z" />
+      </svg>
+    </button>
+  </article>
 </template>

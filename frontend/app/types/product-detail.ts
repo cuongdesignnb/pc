@@ -22,6 +22,7 @@ export interface ProductCard {
   pricing: { price: number; sale_price: number | null; display_price: number }
   inventory: { purchasable: boolean; availability_label: string }
   rating?: { average: number | null; count: number }
+  sold_count?: number
   warranty_months: number | null
   is_featured?: boolean
 }

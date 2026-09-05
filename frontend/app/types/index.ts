@@ -25,6 +25,7 @@ export interface Product {
   parsed_specifications?: { label: string; value: string }[]
   reviews?: Review[]
   variants?: ProductVariant[]
+  sold_count?: number
 }
 
 export interface ProductVariant {

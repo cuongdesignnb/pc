@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ProductCardResource;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
@@ -64,6 +65,8 @@ class CategoryController extends Controller
 
             // Get sample products (newest 8)
             $products = Product::with(['category', 'brand', 'images'])
+                ->withAvg('approvedReviews', 'rating')
+                ->withCount('approvedReviews')
                 ->whereIn('category_id', $catIds)
                 ->visibleOnStorefront()
                 ->orderByDesc('is_featured')
@@ -87,7 +90,7 @@ class CategoryController extends Controller
                     'icon' => $c->icon,
                 ]),
                 'product_count' => $productCount,
-                'products' => $products,
+                'products' => ProductCardResource::collection($products)->resolve(),
             ];
         }
 
