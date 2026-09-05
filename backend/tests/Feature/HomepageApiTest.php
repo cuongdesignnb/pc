@@ -48,6 +48,7 @@ class HomepageApiTest extends TestCase
                 'sidebar_banners',
                 'category_sidebar',
                 'featured_categories',
+                'category_sections',
                 'flash_sale' => ['enabled', 'ends_at', 'products'],
                 'best_sellers' => ['laptop', 'pc_gaming', 'components'],
                 'pc_builder_banner',
@@ -66,6 +67,33 @@ class HomepageApiTest extends TestCase
         $this->assertTrue($pcGaming->exists);
         $this->assertTrue($laptop->exists);
         $this->assertTrue($components->exists);
+    }
+
+    public function test_homepage_returns_selected_category_sections_with_visible_products(): void
+    {
+        $laptop = $this->category('laptop', 'Laptop');
+        $gaming = $this->category('pc-gaming', 'PC Gaming');
+        $laptopProduct = $this->product($laptop, ['sold_count' => 60, 'is_featured' => true]);
+        $gamingProduct = $this->product($gaming, ['sold_count' => 90, 'is_featured' => true]);
+        $gamingOtherProduct = $this->product($gaming, ['sold_count' => 40]);
+        $this->product($gaming, ['sold_count' => 100, 'show_on_pc_website' => false]);
+
+        Setting::set('homepage_featured_category_slugs', [$laptop->slug, $gaming->slug]);
+        Setting::set('homepage_products_per_section', 2);
+
+        $response = $this->getJson('/api/v1/homepage')->assertOk();
+        $sections = $response->json('category_sections');
+
+        $this->assertSame(
+            [$laptop->slug, $gaming->slug],
+            array_map(fn (array $section): string => $section['category']['slug'], $sections),
+        );
+        $this->assertSame($laptopProduct->id, $sections[0]['products'][0]['id']);
+        $this->assertSame($gamingProduct->id, $sections[1]['products'][0]['id']);
+        $this->assertSame(1, $sections[0]['product_count']);
+        $this->assertSame(2, $sections[1]['product_count']);
+        $this->assertCount(2, $sections[1]['products']);
+        $this->assertSame($gamingOtherProduct->id, $sections[1]['products'][1]['id']);
     }
 
     public function test_homepage_flash_sale_only_contains_visible_discounted_products(): void

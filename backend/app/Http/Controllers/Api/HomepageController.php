@@ -24,6 +24,7 @@ class HomepageController extends Controller
             'sidebar_banners' => $this->banners('sidebar'),
             'category_sidebar' => $this->categorySidebar(),
             'featured_categories' => $this->featuredCategories(),
+            'category_sections' => $this->featuredCategorySections(),
             'flash_sale' => $this->flashSale(),
             'best_sellers' => [
                 'laptop' => $this->productsForCategory('laptop', 5),
@@ -115,29 +116,7 @@ class HomepageController extends Controller
     /** @return list<array<string, mixed>> */
     private function featuredCategories(): array
     {
-        $configured = Setting::get('homepage_featured_category_slugs', []);
-        if (is_string($configured)) {
-            $configured = json_decode($configured, true) ?: [];
-        }
-
-        $slugs = collect(is_array($configured) ? $configured : [])
-            ->filter(fn ($slug) => is_string($slug) && trim($slug) !== '')
-            ->map(fn (string $slug) => trim($slug))
-            ->values();
-
-        if ($slugs->isEmpty()) {
-            $slugs = collect([
-                'pc-gaming',
-                'laptop-gaming',
-                'vga',
-                'cpu',
-                'mainboard',
-                'ram',
-                'ssd',
-                'man-hinh',
-                'ghe-gaming',
-            ]);
-        }
+        $slugs = $this->homepageFeaturedCategorySlugs();
 
         $categories = Category::query()
             ->visibleOnStorefront()
@@ -174,6 +153,102 @@ class HomepageController extends Controller
                     'icon' => PublicAssetUrl::normalize($category->icon),
                 ];
             })->values()->all();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function featuredCategorySections(): array
+    {
+        $slugs = $this->homepageFeaturedCategorySlugs();
+        $categories = Category::query()
+            ->visibleOnStorefront()
+            ->whereIn('slug', $slugs->all())
+            ->get()
+            ->keyBy('slug');
+
+        return $slugs
+            ->map(fn (string $slug): ?array => $this->categorySection($categories->get($slug)))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /** @return array<string, mixed>|null */
+    private function categorySection(?Category $category): ?array
+    {
+        if (! $category) {
+            return null;
+        }
+
+        $categoryIds = $this->categoryIds($category);
+        $products = $this->productQuery()
+            ->whereIn('category_id', $categoryIds)
+            ->orderByDesc('is_featured')
+            ->orderByDesc('sold_count')
+            ->orderByDesc('created_at')
+            ->limit($this->homepageProductLimit())
+            ->get();
+
+        if ($products->isEmpty()) {
+            return null;
+        }
+
+        $productCount = $this->productQuery()
+            ->whereIn('category_id', $categoryIds)
+            ->count();
+        $image = PublicAssetUrl::normalize($category->image);
+
+        if (! $image) {
+            $image = PublicAssetUrl::normalize($products->first()?->images?->first()?->url);
+        }
+
+        return [
+            'category' => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'slug' => $category->slug,
+                'description' => $category->description,
+                'image' => $image,
+                'icon' => PublicAssetUrl::normalize($category->icon),
+            ],
+            'product_count' => (int) $productCount,
+            'products' => ProductCardResource::collection($products)->resolve(),
+        ];
+    }
+
+    private function homepageProductLimit(): int
+    {
+        $configured = Setting::get('homepage_products_per_section');
+
+        return is_numeric($configured)
+            ? max(1, min(12, (int) $configured))
+            : 8;
+    }
+
+    /** @return Collection<int, string> */
+    private function homepageFeaturedCategorySlugs(): Collection
+    {
+        $configured = Setting::get('homepage_featured_category_slugs', []);
+        if (is_string($configured)) {
+            $configured = json_decode($configured, true) ?: [];
+        }
+
+        $slugs = collect(is_array($configured) ? $configured : [])
+            ->filter(fn ($slug) => is_string($slug) && trim($slug) !== '')
+            ->map(fn (string $slug) => trim($slug))
+            ->unique()
+            ->values();
+
+        return $slugs->isNotEmpty() ? $slugs : collect([
+            'pc-gaming',
+            'laptop-gaming',
+            'vga',
+            'cpu',
+            'mainboard',
+            'ram',
+            'ssd',
+            'man-hinh',
+            'ghe-gaming',
+        ]);
     }
 
     /** @return array<string, mixed> */
