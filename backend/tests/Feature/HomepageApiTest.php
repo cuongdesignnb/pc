@@ -159,6 +159,11 @@ class HomepageApiTest extends TestCase
         $this->assertContains($actualCategory->slug, $sidebarSlugs);
         $this->assertContains($actualCategory->slug, $featuredSlugs);
         $this->assertSame($product->id, $response->json('best_sellers.laptop.0.id'));
+
+        $this->getJson('/api/v1/menus/header')
+            ->assertOk()
+            ->assertJsonPath('items.0.category.slug', $accessories->slug)
+            ->assertJsonPath('items.1.category.slug', $actualCategory->slug);
     }
 
     public function test_only_current_active_banners_are_returned(): void
