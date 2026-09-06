@@ -111,6 +111,7 @@ MIGRATION_STATUS=NOT_RUN
 COMPONENT_TYPE_SEEDER_STATUS=NOT_RUN
 SPECIFICATION_KEY_SEEDER_STATUS=NOT_RUN
 COMPATIBILITY_RULE_SEEDER_STATUS=NOT_RUN
+BUILDER_CATALOG_SEEDER_STATUS=NOT_RUN
 SEEDER_STATUS=NOT_RUN
 
 rollback() {
@@ -148,6 +149,12 @@ if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=
     fail "Compatibility rule seeder failed; previous image tags were restored"
 fi
 COMPATIBILITY_RULE_SEEDER_STATUS=CompatibilityRuleSeeder
+
+if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=BuilderCatalogSeeder --force; then
+    rollback
+    fail "Builder catalog seeder failed; previous image tags were restored"
+fi
+BUILDER_CATALOG_SEEDER_STATUS=BuilderCatalogSeeder
 
 if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=BuildPresetSeeder --force; then
     rollback
@@ -221,6 +228,7 @@ echo "MIGRATION=$MIGRATION_STATUS"
 echo "COMPONENT_TYPE_SEEDER=$COMPONENT_TYPE_SEEDER_STATUS"
 echo "SPECIFICATION_KEY_SEEDER=$SPECIFICATION_KEY_SEEDER_STATUS"
 echo "COMPATIBILITY_RULE_SEEDER=$COMPATIBILITY_RULE_SEEDER_STATUS"
+echo "BUILDER_CATALOG_SEEDER=$BUILDER_CATALOG_SEEDER_STATUS"
 echo "SEEDER=$SEEDER_STATUS"
 echo "DATABASE_CHANGED=YES"
 echo "LAPTOPPLUS_DEPLOY_COMPLETE=YES"
