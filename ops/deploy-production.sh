@@ -21,7 +21,7 @@ FRONTEND_DOCKERFILE="${FRONTEND_DOCKERFILE:-/www/docker/laptopplus-frontend/Dock
 STACK_ENV="${STACK_ENV:-$STACK_DIR/deploy/production/stack.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-$STACK_DIR/docker-compose.production.yml}"
 
-for command in git docker curl sed cp mktemp flock; do
+for command in git docker curl sed cp mktemp flock grep; do
     require_command "$command"
 done
 
@@ -107,6 +107,8 @@ sed -i -E \
 
 COMPOSE=(docker compose --env-file "$STACK_ENV" -f "$COMPOSE_FILE")
 ENV_UPDATED=1
+MIGRATION_STATUS=NOT_RUN
+SEEDER_STATUS=NOT_RUN
 
 rollback() {
     if [ "$ENV_UPDATED" -eq 1 ]; then
@@ -116,6 +118,21 @@ rollback() {
         "${COMPOSE[@]}" up -d --force-recreate backend-php backend-nginx queue scheduler frontend || true
     fi
 }
+
+# Run only the idempotent application migration and builder preset seeder from
+# the new backend image. The full demo seeder is intentionally never executed
+# during production deployment.
+if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan migrate --force; then
+    rollback
+    fail "Database migration failed; previous image tags were restored"
+fi
+MIGRATION_STATUS=RUN
+
+if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=BuildPresetSeeder --force; then
+    rollback
+    fail "Builder preset seeder failed; previous image tags were restored"
+fi
+SEEDER_STATUS=BuildPresetSeeder
 
 if ! "${COMPOSE[@]}" up -d --force-recreate backend-php backend-nginx queue scheduler frontend; then
     rollback
@@ -161,7 +178,9 @@ check_http() {
 
 if ! check_http "http://127.0.0.1:8901/api/v1/categories/linh-kien" \
     || ! check_http "http://127.0.0.1:8901/api/v1/menus/header" \
-    || ! check_http "http://127.0.0.1:8902/linh-kien"; then
+    || ! check_http "http://127.0.0.1:8901/api/v1/builder/component-types" \
+    || ! check_http "http://127.0.0.1:8901/api/v1/builder/presets" \
+    || ! check_http "http://127.0.0.1:8902/cau-hinh"; then
     rollback
     fail "HTTP verification failed; previous image tags were restored"
 fi
@@ -177,7 +196,7 @@ echo "FRONTEND_SHA=$FRONTEND_SHA"
 echo "BACKEND_IMAGE=laptopplus-backend:$BACKEND_TAG"
 echo "BACKEND_NGINX_IMAGE=laptopplus-backend-nginx:$BACKEND_TAG"
 echo "FRONTEND_IMAGE=laptopplus-frontend:$FRONTEND_TAG"
-echo "MIGRATION=NOT_RUN"
-echo "SEEDER=NOT_RUN"
-echo "DATABASE_CHANGED=NO"
+echo "MIGRATION=$MIGRATION_STATUS"
+echo "SEEDER=$SEEDER_STATUS"
+echo "DATABASE_CHANGED=YES"
 echo "LAPTOPPLUS_DEPLOY_COMPLETE=YES"

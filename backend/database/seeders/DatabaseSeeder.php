@@ -31,6 +31,7 @@ class DatabaseSeeder extends Seeder
             HomepageMerchandisingSeeder::class,
             HomepageReferenceSeeder::class,
             ReferenceProductDetailSeeder::class,
+            BuildPresetSeeder::class,
         ]);
     }
 }
