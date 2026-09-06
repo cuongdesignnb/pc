@@ -93,7 +93,11 @@ Route::prefix('v1')->group(function () {
 
     // Cart (works with session or auth)
     Route::get('/cart', [CartController::class, 'index']);
+    Route::get('/cart/recommendations', [CartController::class, 'recommendations']);
     Route::post('/cart/items', [CartController::class, 'addItem']);
+    Route::patch('/cart/selection', [CartController::class, 'selectAll']);
+    Route::delete('/cart/items', [CartController::class, 'removeItems']);
+    Route::patch('/cart/items/{cartItem}/selection', [CartController::class, 'updateSelection']);
     Route::patch('/cart/items/{cartItem}', [CartController::class, 'updateItem']);
     Route::delete('/cart/items/{cartItem}', [CartController::class, 'removeItem']);
     Route::delete('/cart', [CartController::class, 'clear']);

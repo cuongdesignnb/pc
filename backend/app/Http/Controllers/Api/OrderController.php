@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\Setting;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
@@ -59,6 +60,8 @@ class OrderController extends Controller
             'items.*.variant_id' => 'nullable|integer|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
         ]);
+
+        $this->useSelectedCartItems($request, $validated);
 
         if ($validated['payment_method'] === 'cod' && ! $this->booleanSetting('payment_cod_enabled', true)) {
             throw ValidationException::withMessages([
@@ -245,10 +248,46 @@ class OrderController extends Controller
     private function clearCart(Request $request): void
     {
         $userId = $this->authenticatedUserId($request);
-        $query = $userId
+        $cart = $userId
             ? Cart::where('user_id', $userId)
             : Cart::where('session_id', $request->header('X-Cart-Session') ?? session()->getId());
-        $query->delete();
+        $cart = $cart->first();
+        if (! $cart) {
+            return;
+        }
+
+        $cart->items()->where('is_selected', true)->delete();
+        if (! $cart->items()->exists()) {
+            $cart->delete();
+        }
+    }
+
+    private function useSelectedCartItems(Request $request, array &$validated): void
+    {
+        if (($validated['checkout_mode'] ?? 'cart') !== 'cart') {
+            return;
+        }
+
+        $userId = $this->authenticatedUserId($request);
+        $cart = $userId
+            ? Cart::where('user_id', $userId)->with('items')->first()
+            : Cart::where('session_id', $request->header('X-Cart-Session') ?? session()->getId())->with('items')->first();
+        if (! $cart) {
+            return;
+        }
+
+        $selected = $cart->items->where('is_selected', true)->values();
+        if ($selected->isEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'Vui lòng chọn ít nhất một sản phẩm để thanh toán.',
+            ]);
+        }
+
+        $validated['items'] = $selected->map(fn (CartItem $item): array => [
+            'product_id' => (int) $item->product_id,
+            'variant_id' => $item->variant_id === null ? null : (int) $item->variant_id,
+            'quantity' => (int) $item->quantity,
+        ])->all();
     }
 
     private function generateSepayPaymentData(Order $order): array

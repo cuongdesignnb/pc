@@ -3,36 +3,41 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\CartResource;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Cart\CartService;
 use App\Services\Catalog\ProductPurchasabilityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CartController extends Controller
 {
+    public function __construct(private readonly CartService $cartService) {}
+
     /**
-     * Get cart items
+     * Return the current cart, its selected-item summary and real product
+     * relations for recommendations.
      */
     public function index(Request $request): JsonResponse
     {
-        $cart = $this->getOrCreateCart($request);
+        return $this->cartResponse($this->getOrCreateCart($request));
+    }
 
-        $cart->load(['items.product.images', 'items.product.brand', 'items.product.category', 'items.variant']);
+    public function recommendations(Request $request): JsonResponse
+    {
+        $cart = $this->getOrCreateCart($request);
+        $groups = $this->cartService->recommendationGroups($this->cartService->load($cart));
 
         return response()->json([
-            'cart' => $cart,
-            'items' => $cart->items,
-            'total' => $cart->items->sum(fn ($item) => $item->price * $item->quantity),
-            'count' => $cart->items->sum('quantity'),
+            'accessories' => \App\Http\Resources\ProductCardResource::collection($groups['accessories'])->resolve($request),
+            'recommendations' => \App\Http\Resources\ProductCardResource::collection($groups['recommendations'])->resolve($request),
         ]);
     }
 
-    /**
-     * Add item to cart
-     */
     public function addItem(Request $request, ProductPurchasabilityService $purchasability): JsonResponse
     {
         $validated = $request->validate([
@@ -42,118 +47,165 @@ class CartController extends Controller
         ]);
 
         $cart = $this->getOrCreateCart($request);
-        $product = Product::findOrFail($validated['product_id']);
-        $variant = null;
-        if (! empty($validated['variant_id'])) {
-            $variant = ProductVariant::whereKey($validated['variant_id'])
-                ->where('product_id', $product->id)
-                ->where('is_active', true)
-                ->first();
-            if (! $variant || $variant->stock_quantity < (int) $validated['quantity'] || ! $product->isVisibleOnStorefront()) {
-                return response()->json(['message' => 'Biến thể đã chọn không còn đủ số lượng khả dụng.'], 422);
+        DB::transaction(function () use ($validated, $cart, $purchasability): void {
+            $product = Product::with('category')->lockForUpdate()->findOrFail($validated['product_id']);
+            $variant = null;
+            if (! empty($validated['variant_id'])) {
+                $variant = ProductVariant::query()
+                    ->whereKey($validated['variant_id'])
+                    ->where('product_id', $product->id)
+                    ->where('is_active', true)
+                    ->lockForUpdate()
+                    ->first();
             }
-        }
 
-        if (! $variant && ! $purchasability->isPurchasable($product, (int) $validated['quantity'])) {
-            return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
-        }
+            if (! $product->isVisibleOnStorefront() || (($validated['variant_id'] ?? null) && ! $variant)) {
+                abort(422, 'Sản phẩm hoặc biến thể đã chọn không còn khả dụng.');
+            }
 
-        // Check if product already in cart
-        $cartItem = $cart->items()
-            ->where('product_id', $product->id)
-            ->when($variant, fn ($query) => $query->where('variant_id', $variant->id), fn ($query) => $query->whereNull('variant_id'))
-            ->first();
-        $unitPrice = $variant?->display_price ?? $purchasability->unitPrice($product);
+            $cartItem = $cart->items()
+                ->where('product_id', $product->id)
+                ->when(
+                    $variant,
+                    fn ($query) => $query->where('variant_id', $variant->id),
+                    fn ($query) => $query->whereNull('variant_id'),
+                )
+                ->lockForUpdate()
+                ->first();
+            $requestedQuantity = (int) $validated['quantity'] + (int) ($cartItem?->quantity ?? 0);
+            $isAvailable = $variant
+                ? $variant->stock_quantity >= $requestedQuantity
+                : $purchasability->isPurchasable($product, $requestedQuantity);
 
-        if ($cartItem) {
-            $cartItem->update([
-                'quantity' => $cartItem->quantity + $validated['quantity'],
-                'price' => $unitPrice,
-            ]);
-        } else {
-            $cart->items()->create([
-                'product_id' => $product->id,
-                'variant_id' => $variant?->id,
-                'quantity' => $validated['quantity'],
-                'price' => $unitPrice,
-            ]);
-        }
+            if (! $isAvailable) {
+                abort(422, 'Sản phẩm không còn đủ số lượng khả dụng.');
+            }
 
-        $cart->load(['items.product.images', 'items.variant']);
+            $attributes = [
+                'quantity' => $requestedQuantity,
+                'price' => $variant?->display_price ?? $purchasability->unitPrice($product),
+            ];
+            if ($cartItem) {
+                $cartItem->update($attributes);
+            } else {
+                $cart->items()->create($attributes + [
+                    'product_id' => $product->id,
+                    'variant_id' => $variant?->id,
+                    'is_selected' => true,
+                ]);
+            }
+        });
 
-        return response()->json([
-            'message' => 'Đã thêm vào giỏ hàng',
-            'cart' => $cart,
-            'items' => $cart->items,
-            'count' => $cart->items->sum('quantity'),
-        ]);
+        return $this->cartResponse($cart->fresh(), 'Đã thêm vào giỏ hàng');
     }
 
-    /**
-     * Update cart item quantity
-     */
     public function updateItem(Request $request, CartItem $cartItem, ProductPurchasabilityService $purchasability): JsonResponse
     {
-        $validated = $request->validate([
-            'quantity' => 'required|integer|min:1',
-        ]);
+        $validated = $request->validate(['quantity' => 'required|integer|min:1']);
+        [$cart, $item] = $this->ownedItem($request, $cartItem);
+        $item->load(['product.category', 'variant']);
 
-        $product = $cartItem->product;
-        $variant = $cartItem->variant;
-        $isAvailable = $variant
-            ? $variant->is_active && $variant->stock_quantity >= (int) $validated['quantity'] && $product->isVisibleOnStorefront()
-            : $purchasability->isPurchasable($product, (int) $validated['quantity']);
+        $product = $item->product;
+        $variant = $item->variant;
+        $isAvailable = $product
+            && $product->isVisibleOnStorefront()
+            && ($variant
+                ? $variant->is_active && $variant->stock_quantity >= (int) $validated['quantity']
+                : $purchasability->isPurchasable($product, (int) $validated['quantity']));
         if (! $isAvailable) {
             return response()->json(['message' => 'Sản phẩm không còn đủ số lượng khả dụng.'], 422);
         }
-        $cartItem->update(['quantity' => $validated['quantity']]);
 
-        $cart = $cartItem->cart->load(['items.product.images', 'items.variant']);
+        $item->update(['quantity' => $validated['quantity']]);
 
-        return response()->json([
-            'message' => 'Đã cập nhật giỏ hàng',
-            'cart' => $cart,
-            'total' => $cart->items->sum(fn ($item) => $item->price * $item->quantity),
-        ]);
+        return $this->cartResponse($cart->fresh(), 'Đã cập nhật giỏ hàng');
     }
 
-    /**
-     * Remove item from cart
-     */
-    public function removeItem(CartItem $cartItem): JsonResponse
+    public function updateSelection(Request $request, CartItem $cartItem): JsonResponse
     {
-        $cart = $cartItem->cart;
-        $cartItem->delete();
+        $validated = $request->validate(['selected' => 'required|boolean']);
+        [$cart, $item] = $this->ownedItem($request, $cartItem);
+        $item->update(['is_selected' => (bool) $validated['selected']]);
 
-        $cart->load(['items.product.images', 'items.variant']);
-
-        return response()->json([
-            'message' => 'Đã xóa khỏi giỏ hàng',
-            'cart' => $cart,
-            'count' => $cart->items->sum('quantity'),
-        ]);
+        return $this->cartResponse($cart->fresh(), 'Đã cập nhật sản phẩm được chọn');
     }
 
-    /**
-     * Clear cart
-     */
+    public function selectAll(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['selected' => 'required|boolean']);
+        $cart = $this->getOrCreateCart($request);
+        $cart->items()->update(['is_selected' => (bool) $validated['selected']]);
+
+        return $this->cartResponse($cart->fresh(), 'Đã cập nhật lựa chọn giỏ hàng');
+    }
+
+    public function removeItem(Request $request, CartItem $cartItem): JsonResponse
+    {
+        [$cart, $item] = $this->ownedItem($request, $cartItem);
+        $item->delete();
+
+        return $this->cartResponse($cart->fresh(), 'Đã xóa khỏi giỏ hàng');
+    }
+
+    public function removeItems(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'item_ids' => 'required|array|min:1|max:100',
+            'item_ids.*' => 'required|integer',
+        ]);
+        $cart = $this->getOrCreateCart($request);
+        $itemIds = collect($validated['item_ids'])->map(fn ($id): int => (int) $id)->unique()->values();
+        $items = $cart->items()->whereIn('id', $itemIds->all())->get();
+        if ($items->count() !== $itemIds->count()) {
+            abort(404, 'Một hoặc nhiều sản phẩm không thuộc giỏ hàng hiện tại.');
+        }
+        $cart->items()->whereIn('id', $itemIds->all())->delete();
+
+        return $this->cartResponse($cart->fresh(), 'Đã xóa các sản phẩm được chọn');
+    }
+
     public function clear(Request $request): JsonResponse
     {
         $cart = $this->getOrCreateCart($request);
         $cart->items()->delete();
 
-        return response()->json([
-            'message' => 'Đã xóa giỏ hàng',
-        ]);
+        return $this->cartResponse($cart->fresh(), 'Đã xóa giỏ hàng');
     }
 
-    /**
-     * Get or create cart for user/session
-     */
+    private function cartResponse(Cart $cart, ?string $message = null): JsonResponse
+    {
+        $this->cartService->load($cart);
+        $groups = $this->cartService->recommendationGroups($cart);
+        $payload = (new CartResource(
+            $cart,
+            $this->cartService->summary($cart),
+            $groups['recommendations'],
+            $groups['accessories'],
+            $this->cartService->benefits(),
+            $this->cartService->paymentMethods(),
+            $this->cartService->support(),
+        ))->resolve(request());
+        if ($message !== null) {
+            $payload['message'] = $message;
+        }
+
+        return response()->json($payload);
+    }
+
+    /** @return array{0: Cart, 1: CartItem} */
+    private function ownedItem(Request $request, CartItem $boundItem): array
+    {
+        $cart = $this->getOrCreateCart($request);
+        $item = $cart->items()->whereKey($boundItem->id)->firstOrFail();
+
+        return [$cart, $item];
+    }
+
     private function getOrCreateCart(Request $request): Cart
     {
-        if ($request->user()) {
-            return Cart::firstOrCreate(['user_id' => $request->user()->id]);
+        $user = $request->user('sanctum') ?? $request->user();
+        if ($user) {
+            return Cart::firstOrCreate(['user_id' => $user->id]);
         }
 
         $sessionId = $request->header('X-Cart-Session') ?? session()->getId();
