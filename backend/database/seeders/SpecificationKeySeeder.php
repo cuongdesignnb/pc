@@ -121,15 +121,19 @@ class SpecificationKeySeeder extends Seeder
             $componentType = ComponentType::where('slug', $typeSlug)->first();
             if ($componentType) {
                 foreach ($typeSpecs as $index => $spec) {
-                    SpecificationKey::create([
-                        'component_type_id' => $componentType->id,
-                        'key' => $spec['key'],
-                        'label' => $spec['label'],
-                        'unit' => $spec['unit'],
-                        'data_type' => $spec['data_type'],
-                        'is_filterable' => $spec['is_filterable'],
-                        'display_order' => $index + 1,
-                    ]);
+                    SpecificationKey::updateOrCreate(
+                        [
+                            'component_type_id' => $componentType->id,
+                            'key' => $spec['key'],
+                        ],
+                        [
+                            'label' => $spec['label'],
+                            'unit' => $spec['unit'],
+                            'data_type' => $spec['data_type'],
+                            'is_filterable' => $spec['is_filterable'],
+                            'display_order' => $index + 1,
+                        ],
+                    );
                 }
             }
         }
