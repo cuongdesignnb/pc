@@ -36,18 +36,18 @@ class BannerController extends Controller
             })
             ->values()
             ->map(function ($banner) {
-            return [
-                'id' => $banner->id,
-                'title' => $banner->title,
-                'description' => $banner->description,
-                'badge' => $banner->badge,
-                'image' => PublicAssetUrl::normalize($banner->image),
-                'link' => $banner->link,
-                'position' => $banner->position,
-                'sort_order' => $banner->sort_order,
-                'metadata' => $banner->metadata,
-            ];
-        });
+                return [
+                    'id' => $banner->id,
+                    'title' => $banner->title,
+                    'description' => $banner->description,
+                    'badge' => $banner->badge,
+                    'image' => PublicAssetUrl::normalize($banner->image),
+                    'link' => $banner->link,
+                    'position' => $banner->position,
+                    'sort_order' => $banner->sort_order,
+                    'metadata' => $banner->metadata,
+                ];
+            });
 
         return response()->json($banners);
     }
