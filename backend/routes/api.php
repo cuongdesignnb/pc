@@ -88,6 +88,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/builder/component-types', [PcBuilderController::class, 'componentTypes']);
     Route::post('/builder/compatible/{slug}', [PcBuilderController::class, 'compatibleProducts']);
     Route::post('/builder/check', [PcBuilderController::class, 'checkBuild']);
+    Route::get('/builder/presets', [PcBuilderController::class, 'presets']);
+    Route::get('/builder/presets/{slug}', [PcBuilderController::class, 'preset']);
 
     // Cart (works with session or auth)
     Route::get('/cart', [CartController::class, 'index']);

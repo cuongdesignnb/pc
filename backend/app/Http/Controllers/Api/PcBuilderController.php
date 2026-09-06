@@ -3,293 +3,176 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\CompatibilityRule;
+use App\Http\Resources\BuilderComponentTypeResource;
+use App\Http\Resources\BuilderProductResource;
+use App\Http\Resources\BuildPresetResource;
+use App\Http\Resources\SavedBuildResource;
+use App\Models\BuildPreset;
 use App\Models\ComponentType;
-use App\Models\Product;
 use App\Models\SavedBuild;
+use App\Services\PcBuilder\PcBuilderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PcBuilderController extends Controller
 {
-    /**
-     * Get all component types for PC Builder
-     */
+    public function __construct(private readonly PcBuilderService $builder) {}
+
     public function componentTypes(): JsonResponse
     {
-        $types = ComponentType::with('specificationKeys')
+        $types = ComponentType::query()
+            ->with(['specificationKeys' => fn ($query) => $query->orderBy('display_order')])
             ->orderBy('display_order')
             ->get();
 
-        return response()->json($types);
+        return response()->json([
+            'component_types' => BuilderComponentTypeResource::collection($types)->resolve(),
+        ]);
     }
 
-    /**
-     * Get compatible products for a component type based on current build
-     */
     public function compatibleProducts(Request $request, string $componentTypeSlug): JsonResponse
     {
-        $componentType = ComponentType::where('slug', $componentTypeSlug)->firstOrFail();
+        $validated = $request->validate([
+            'build' => ['nullable', 'array'],
+            'build.*' => ['integer', 'min:1'],
+            'filters' => ['nullable', 'array'],
+            'filters.query' => ['nullable', 'string', 'max:120'],
+            'filters.brand_ids' => ['nullable', 'array', 'max:50'],
+            'filters.brand_ids.*' => ['integer', 'min:1'],
+            'filters.brands' => ['nullable', 'array', 'max:50'],
+            'filters.brands.*' => ['integer', 'min:1'],
+            'filters.price_min' => ['nullable', 'integer', 'min:0'],
+            'filters.price_max' => ['nullable', 'integer', 'min:0'],
+            'filters.specs' => ['nullable', 'array'],
+            'filters.only_compatible' => ['nullable', 'boolean'],
+            'filters.on_sale' => ['nullable', 'boolean'],
+            'filters.sort' => ['nullable', 'in:compatibility,popular,price_asc,price_desc,rating'],
+            'filters.page' => ['nullable', 'integer', 'min:1'],
+            'filters.per_page' => ['nullable', 'integer', 'min:1', 'max:48'],
+        ]);
 
-        // Get current build selections
-        $currentBuild = $request->input('build', []);
+        $componentType = ComponentType::query()
+            ->with(['specificationKeys' => fn ($query) => $query->orderBy('display_order')])
+            ->where('slug', $componentTypeSlug)
+            ->firstOrFail();
+        $result = $this->builder->compatibleProducts(
+            $componentType,
+            $validated['build'] ?? [],
+            $validated['filters'] ?? [],
+        );
 
-        // Get all products of this component type
-        $products = Product::with(['brand', 'images', 'specifications.specificationKey'])
-            ->where('component_type_id', $componentType->id)
-            ->sellableOnline()
-            ->get();
-
-        // Check compatibility for each product
-        $compatibleProducts = $products->map(function ($product) use ($currentBuild, $componentType) {
-            $compatibility = $this->checkProductCompatibility($product, $currentBuild, $componentType);
-
-            return [
-                'product' => $product,
-                'is_compatible' => $compatibility['compatible'],
-                'issues' => $compatibility['issues'],
-            ];
-        });
+        $products = collect($result['products'])->map(fn (array $item) => [
+            'product' => BuilderProductResource::make($item['product'])->resolve(),
+            'is_compatible' => $item['is_compatible'],
+            'issues' => $item['issues'],
+        ])->values();
 
         return response()->json([
-            'component_type' => $componentType,
-            'products' => $compatibleProducts,
+            'component_type' => BuilderComponentTypeResource::make($componentType)->resolve(),
+            'products' => $products,
+            'meta' => $result['meta'],
+            'filters' => $result['filters'],
         ]);
     }
 
-    /**
-     * Check compatibility of entire build
-     */
     public function checkBuild(Request $request): JsonResponse
     {
-        $build = $request->input('build', []);
-        $issues = [];
-        $totalPrice = 0;
-        $totalTdp = 0;
-
-        // Get all products in build
-        $products = Product::with(['componentType', 'specifications.specificationKey'])
-            ->sellableOnline()
-            ->whereIn('id', array_values($build))
-            ->get()
-            ->keyBy('component_type_id');
-
-        // Calculate totals
-        foreach ($products as $product) {
-            $totalPrice += $product->sale_price ?? $product->price;
-
-            // Get TDP from specifications
-            $tdpSpec = $product->specifications->first(fn ($s) => $s->specificationKey?->key === 'tdp');
-            if ($tdpSpec) {
-                $totalTdp += (int) $tdpSpec->value;
-            }
-        }
-
-        // Check compatibility rules
-        $rules = CompatibilityRule::with(['sourceType', 'targetType'])
-            ->where('is_active', true)
-            ->get();
-
-        foreach ($rules as $rule) {
-            $sourceProduct = $products->get($rule->source_type_id);
-            $targetProduct = $products->get($rule->target_type_id);
-
-            if (! $sourceProduct || ! $targetProduct) {
-                continue;
-            }
-
-            $issue = $this->evaluateRule($rule, $sourceProduct, $targetProduct);
-            if ($issue) {
-                $issues[] = $issue;
-            }
-        }
-
-        // Check PSU wattage
-        $psu = $products->first(fn ($p) => $p->componentType?->slug === 'psu');
-        if ($psu && $totalTdp > 0) {
-            $psuWattage = $psu->specifications->first(fn ($s) => $s->specificationKey?->key === 'wattage');
-            if ($psuWattage) {
-                $recommendedWattage = $totalTdp + 150; // 150W headroom
-                if ((int) $psuWattage->value < $recommendedWattage) {
-                    $issues[] = [
-                        'type' => 'warning',
-                        'message' => "Nguồn {$psuWattage->value}W có thể không đủ. Khuyến nghị: {$recommendedWattage}W",
-                    ];
-                }
-            }
-        }
+        $validated = $request->validate([
+            'build' => ['nullable', 'array'],
+            'build.*' => ['integer', 'min:1'],
+        ]);
+        $result = $this->builder->checkBuild($validated['build'] ?? []);
+        $products = BuilderProductResource::collection($result['products'])->resolve();
 
         return response()->json([
-            'compatible' => count(array_filter($issues, fn ($i) => $i['type'] === 'error')) === 0,
-            'issues' => $issues,
-            'total_price' => $totalPrice,
-            'total_tdp' => $totalTdp,
-            'products' => $products->values(),
+            'compatible' => ! collect($result['issues'])->contains(fn (array $issue) => $issue['type'] === 'error'),
+            'completion' => $result['completion'],
+            'issues' => $result['issues'],
+            'totals' => $result['totals'],
+            'products' => $products,
+            // Kept for older clients while they migrate to the grouped totals DTO.
+            'total_price' => $result['totals']['price'],
+            'total_tdp' => $result['totals']['tdp'],
         ]);
     }
 
-    /**
-     * Save a build configuration
-     */
+    public function presets(): JsonResponse
+    {
+        $presets = BuildPreset::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json([
+            'presets' => BuildPresetResource::collection($presets)->resolve(),
+        ]);
+    }
+
+    public function preset(string $slug): JsonResponse
+    {
+        $preset = BuildPreset::query()
+            ->where('is_active', true)
+            ->where('slug', $slug)
+            ->firstOrFail();
+
+        return response()->json(['preset' => BuildPresetResource::make($preset)->resolve()]);
+    }
+
     public function saveBuild(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'build' => 'required|array',
+            'name' => ['required', 'string', 'max:255'],
+            'build' => ['required', 'array'],
+            'build.*' => ['integer', 'min:1'],
         ]);
+        $result = $this->builder->checkBuild($validated['build']);
+        $errors = collect($result['issues'])->where('type', 'error')->values();
 
-        // Calculate totals
-        $products = Product::with('specifications.specificationKey')
-            ->sellableOnline()
-            ->whereIn('id', array_values($validated['build']))
-            ->get();
+        if (! $result['completion']['complete']) {
+            $errors->push([
+                'type' => 'error',
+                'code' => 'incomplete_build',
+                'message' => 'Cấu hình chưa đủ các linh kiện bắt buộc.',
+                'source_type_id' => null,
+                'target_type_id' => null,
+            ]);
+        }
 
-        $totalPrice = $products->sum(fn ($p) => $p->sale_price ?? $p->price);
-        $totalTdp = $products->sum(function ($p) {
-            $tdp = $p->specifications->first(fn ($s) => $s->specificationKey?->key === 'tdp');
-
-            return $tdp ? (int) $tdp->value : 0;
-        });
+        if ($errors->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Không thể lưu cấu hình chưa hợp lệ.',
+                'issues' => $errors->values(),
+            ], 422);
+        }
 
         $savedBuild = SavedBuild::create([
             'user_id' => $request->user()->id,
             'name' => $validated['name'],
-            'products' => $validated['build'],
-            'total_price' => $totalPrice,
-            'total_tdp' => $totalTdp,
+            // Keep component type IDs as object keys in JSON. A sequential PHP
+            // array would be encoded as a list and lose the type-to-product map.
+            'products' => collect($result['build'])->mapWithKeys(
+                fn ($productId, $componentTypeId) => [(int) $componentTypeId => (int) $productId]
+            ),
+            'total_price' => $result['totals']['price'],
+            'total_tdp' => $result['totals']['tdp'],
         ]);
 
         return response()->json([
-            'message' => 'Đã lưu cấu hình',
-            'build' => $savedBuild,
+            'message' => 'Đã lưu cấu hình.',
+            'build' => SavedBuildResource::make($savedBuild)->resolve(),
         ], 201);
     }
 
-    /**
-     * Get user's saved builds
-     */
     public function savedBuilds(Request $request): JsonResponse
     {
-        $builds = SavedBuild::where('user_id', $request->user()->id)
+        $builds = SavedBuild::query()
+            ->where('user_id', $request->user()->id)
             ->latest()
             ->get();
 
-        return response()->json($builds);
-    }
-
-    /**
-     * Check product compatibility against current build
-     */
-    private function checkProductCompatibility(Product $product, array $currentBuild, ComponentType $componentType): array
-    {
-        $issues = [];
-
-        // Get rules where this component type is source or target
-        $rules = CompatibilityRule::where('is_active', true)
-            ->where(function ($q) use ($componentType) {
-                $q->where('source_type_id', $componentType->id)
-                    ->orWhere('target_type_id', $componentType->id);
-            })
-            ->get();
-
-        foreach ($rules as $rule) {
-            // Get the other product in the build
-            $otherTypeId = $rule->source_type_id === $componentType->id
-                ? $rule->target_type_id
-                : $rule->source_type_id;
-
-            $otherProductId = $currentBuild[$otherTypeId] ?? null;
-
-            if (! $otherProductId) {
-                continue;
-            }
-
-            $otherProduct = Product::with('specifications.specificationKey')
-                ->sellableOnline()
-                ->find($otherProductId);
-
-            if (! $otherProduct) {
-                continue;
-            }
-
-            // Determine source and target
-            $sourceProduct = $rule->source_type_id === $componentType->id ? $product : $otherProduct;
-            $targetProduct = $rule->target_type_id === $componentType->id ? $product : $otherProduct;
-
-            $issue = $this->evaluateRule($rule, $sourceProduct, $targetProduct);
-
-            if ($issue) {
-                $issues[] = $issue;
-            }
-        }
-
-        return [
-            'compatible' => count(array_filter($issues, fn ($i) => $i['type'] === 'error')) === 0,
-            'issues' => $issues,
-        ];
-    }
-
-    /**
-     * Evaluate a compatibility rule
-     */
-    private function evaluateRule(CompatibilityRule $rule, Product $sourceProduct, Product $targetProduct): ?array
-    {
-        $sourceSpec = $sourceProduct->specifications
-            ->first(fn ($s) => $s->specificationKey?->key === $rule->source_spec_key);
-
-        $targetSpec = $targetProduct->specifications
-            ->first(fn ($s) => $s->specificationKey?->key === $rule->target_spec_key);
-
-        if (! $sourceSpec || ! $targetSpec) {
-            return null;
-        }
-
-        $sourceValue = $sourceSpec->value;
-        $targetValue = $targetSpec->value;
-
-        switch ($rule->rule_type) {
-            case 'must_match':
-                if ($sourceValue !== $targetValue) {
-                    return [
-                        'type' => 'error',
-                        'message' => $rule->message,
-                    ];
-                }
-                break;
-
-            case 'must_fit':
-                $allowedValues = $rule->allowed_values[$sourceValue] ?? [];
-                if (! in_array($targetValue, $allowedValues)) {
-                    return [
-                        'type' => 'error',
-                        'message' => $rule->message,
-                    ];
-                }
-                break;
-
-            case 'must_fit_dimension':
-                if ((int) $sourceValue > (int) $targetValue) {
-                    return [
-                        'type' => 'error',
-                        'message' => $rule->message,
-                    ];
-                }
-                break;
-
-            case 'must_contain':
-                if (stripos($sourceValue, $targetValue) === false) {
-                    return [
-                        'type' => 'error',
-                        'message' => $rule->message,
-                    ];
-                }
-                break;
-
-            case 'power_check':
-                // This is handled separately in checkBuild
-                break;
-        }
-
-        return null;
+        return response()->json([
+            'builds' => SavedBuildResource::collection($builds)->resolve(),
+        ]);
     }
 }
