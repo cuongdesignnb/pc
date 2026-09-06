@@ -73,7 +73,10 @@ class ComponentTypeSeeder extends Seeder
         ];
 
         foreach ($types as $type) {
-            ComponentType::create($type);
+            ComponentType::updateOrCreate(
+                ['slug' => $type['slug']],
+                $type,
+            );
         }
     }
 }

@@ -101,7 +101,21 @@ class CompatibilityRuleSeeder extends Seeder
         ];
 
         foreach ($rules as $rule) {
-            CompatibilityRule::create($rule);
+            CompatibilityRule::updateOrCreate(
+                [
+                    'source_type_id' => $rule['source_type_id'],
+                    'target_type_id' => $rule['target_type_id'],
+                    'source_spec_key' => $rule['source_spec_key'],
+                    'target_spec_key' => $rule['target_spec_key'],
+                    'rule_type' => $rule['rule_type'],
+                ],
+                [
+                    'allowed_values' => $rule['allowed_values'] ?? null,
+                    'power_headroom' => $rule['power_headroom'] ?? null,
+                    'message' => $rule['message'],
+                    'is_active' => true,
+                ],
+            );
         }
     }
 }

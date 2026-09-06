@@ -108,6 +108,9 @@ sed -i -E \
 COMPOSE=(docker compose --env-file "$STACK_ENV" -f "$COMPOSE_FILE")
 ENV_UPDATED=1
 MIGRATION_STATUS=NOT_RUN
+COMPONENT_TYPE_SEEDER_STATUS=NOT_RUN
+SPECIFICATION_KEY_SEEDER_STATUS=NOT_RUN
+COMPATIBILITY_RULE_SEEDER_STATUS=NOT_RUN
 SEEDER_STATUS=NOT_RUN
 
 rollback() {
@@ -127,6 +130,24 @@ if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan migrate --force;
     fail "Database migration failed; previous image tags were restored"
 fi
 MIGRATION_STATUS=RUN
+
+if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=ComponentTypeSeeder --force; then
+    rollback
+    fail "Component type seeder failed; previous image tags were restored"
+fi
+COMPONENT_TYPE_SEEDER_STATUS=ComponentTypeSeeder
+
+if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=SpecificationKeySeeder --force; then
+    rollback
+    fail "Specification key seeder failed; previous image tags were restored"
+fi
+SPECIFICATION_KEY_SEEDER_STATUS=SpecificationKeySeeder
+
+if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=CompatibilityRuleSeeder --force; then
+    rollback
+    fail "Compatibility rule seeder failed; previous image tags were restored"
+fi
+COMPATIBILITY_RULE_SEEDER_STATUS=CompatibilityRuleSeeder
 
 if ! "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed --class=BuildPresetSeeder --force; then
     rollback
@@ -197,6 +218,9 @@ echo "BACKEND_IMAGE=laptopplus-backend:$BACKEND_TAG"
 echo "BACKEND_NGINX_IMAGE=laptopplus-backend-nginx:$BACKEND_TAG"
 echo "FRONTEND_IMAGE=laptopplus-frontend:$FRONTEND_TAG"
 echo "MIGRATION=$MIGRATION_STATUS"
+echo "COMPONENT_TYPE_SEEDER=$COMPONENT_TYPE_SEEDER_STATUS"
+echo "SPECIFICATION_KEY_SEEDER=$SPECIFICATION_KEY_SEEDER_STATUS"
+echo "COMPATIBILITY_RULE_SEEDER=$COMPATIBILITY_RULE_SEEDER_STATUS"
 echo "SEEDER=$SEEDER_STATUS"
 echo "DATABASE_CHANGED=YES"
 echo "LAPTOPPLUS_DEPLOY_COMPLETE=YES"
