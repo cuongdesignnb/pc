@@ -44,6 +44,7 @@ class BannerController extends Controller
             'metadata.cta_link' => 'nullable|string',
             'metadata.cta2_label' => 'nullable|string',
             'metadata.cta2_link' => 'nullable|string',
+            'metadata.category_slug' => 'nullable|string|max:255',
             'metadata.glow_a' => 'nullable|string',
             'metadata.glow_b' => 'nullable|string',
         ]);
@@ -80,6 +81,7 @@ class BannerController extends Controller
             'metadata.cta_link' => 'nullable|string',
             'metadata.cta2_label' => 'nullable|string',
             'metadata.cta2_link' => 'nullable|string',
+            'metadata.category_slug' => 'nullable|string|max:255',
             'metadata.glow_a' => 'nullable|string',
             'metadata.glow_b' => 'nullable|string',
         ]);

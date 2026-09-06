@@ -4,18 +4,23 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductCardResource;
+use App\Models\Banner;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\FilterValue;
 use App\Models\Product;
 use App\Models\Setting;
 use App\Models\SpecificationKey;
+use App\Support\PublicAssetUrl;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class CategoryController extends Controller
 {
     /**
-     * Get all categories (tree structure)
+     * Get all categories (tree structure).
      */
     public function index(): JsonResponse
     {
@@ -29,7 +34,7 @@ class CategoryController extends Controller
     }
 
     /**
-     * Homepage sections: parent categories with product_count + sample products
+     * Homepage sections: parent categories with product_count + sample products.
      */
     public function homepageSections(): JsonResponse
     {
@@ -49,46 +54,24 @@ class CategoryController extends Controller
         $sections = [];
 
         foreach ($parents as $parent) {
-            // Collect all category IDs (parent + children)
-            $catIds = collect([$parent->id])
+            $categoryIds = collect([$parent->id])
                 ->merge($parent->children->pluck('id'))
-                ->toArray();
+                ->all();
 
-            // Count products
-            $productCount = Product::whereIn('category_id', $catIds)
-                ->visibleOnStorefront()
-                ->count();
-
+            $productCount = $this->storefrontProductQuery($categoryIds)->count();
             if ($productCount === 0) {
                 continue;
             }
 
-            // Get sample products (newest 8)
-            $products = Product::with(['category', 'brand', 'images'])
-                ->withAvg('approvedReviews', 'rating')
-                ->withCount('approvedReviews')
-                ->whereIn('category_id', $catIds)
-                ->visibleOnStorefront()
+            $products = $this->productCardQuery($categoryIds)
                 ->orderByDesc('is_featured')
                 ->orderByDesc('created_at')
                 ->limit($productLimit)
                 ->get();
 
             $sections[] = [
-                'category' => [
-                    'id' => $parent->id,
-                    'name' => $parent->name,
-                    'slug' => $parent->slug,
-                    'description' => $parent->description,
-                    'image' => $parent->image,
-                    'icon' => $parent->icon,
-                ],
-                'children' => $parent->children->map(fn ($c) => [
-                    'id' => $c->id,
-                    'name' => $c->name,
-                    'slug' => $c->slug,
-                    'icon' => $c->icon,
-                ]),
+                'category' => $this->basicCategoryPayload($parent, $parent->description),
+                'children' => $parent->children->map(fn (Category $child) => $this->basicCategoryPayload($child))->values(),
                 'product_count' => $productCount,
                 'products' => ProductCardResource::collection($products)->resolve(),
             ];
@@ -98,309 +81,455 @@ class CategoryController extends Controller
     }
 
     /**
-     * Get single category with filters metadata + paginated products
+     * Get a category, its filter metadata, a paginated product listing and
+     * real recommendations for the current category.
      */
     public function show(string $slug, Request $request): JsonResponse
     {
-        $category = Category::with(['children' => function ($q) {
-            $q->visibleOnStorefront()->orderBy('sort_order');
-        }, 'parent'])
+        $category = Category::with([
+            'children' => function ($query) {
+                $query->visibleOnStorefront()->orderBy('sort_order');
+            },
+            'parent',
+        ])
             ->where('slug', $slug)
             ->visibleOnStorefront()
             ->firstOrFail();
 
-        // Collect all category IDs (self + children)
-        $catIds = collect([$category->id]);
-        if ($category->children->isNotEmpty()) {
-            $catIds = $catIds->merge($category->children->pluck('id'));
-        }
-        $catIdsArr = $catIds->toArray();
+        $categoryIds = collect([$category->id])
+            ->merge($category->children->pluck('id'))
+            ->values();
+        $categoryIdsArray = $categoryIds->all();
+        $childProductCounts = $this->childProductCounts($category->children);
 
-        // Load assigned filters for this category (also check parent's filters)
-        $filterCategoryId = $category->id;
         $assignedFilters = $category->filters()
             ->where('is_active', true)
             ->with(['activeValues'])
             ->get();
 
-        // If no filters assigned and has parent, try parent's filters
         if ($assignedFilters->isEmpty() && $category->parent_id) {
-            $parent = Category::find($category->parent_id);
-            if ($parent) {
-                $assignedFilters = $parent->filters()
-                    ->where('is_active', true)
-                    ->with(['activeValues'])
-                    ->get();
-            }
+            $assignedFilters = Category::find($category->parent_id)?->filters()
+                ->where('is_active', true)
+                ->with(['activeValues'])
+                ->get() ?? collect();
         }
 
-        // ---- Build product query with filters ----
-        $query = Product::with(['category', 'brand', 'images'])
-            ->whereIn('category_id', $catIdsArr)
-            ->visibleOnStorefront();
+        $query = $this->productCardQuery($categoryIdsArray);
 
-        // Sub-category filter
         if ($request->filled('sub_category')) {
-            $sub = Category::where('slug', $request->sub_category)
-                ->where('parent_id', $category->id)
-                ->first();
-            if ($sub) {
-                $query->where('category_id', $sub->id);
+            $subCategory = $category->children
+                ->firstWhere('slug', (string) $request->input('sub_category'));
+            if ($subCategory) {
+                $query->where('category_id', $subCategory->id);
             }
         }
 
-        // Brand filter (comma-separated slugs) — kept for backward compat
-        if ($request->filled('brands')) {
-            $brandSlugs = explode(',', $request->brands);
-            $query->whereHas('brand', fn ($q) => $q->whereIn('slug', $brandSlugs));
+        $brandSlugs = $this->csv($request->input('brands'));
+        if ($brandSlugs !== []) {
+            $query->whereHas('brand', fn (Builder $brandQuery) => $brandQuery->whereIn('slug', $brandSlugs));
         }
 
-        // In stock only
         if ($request->boolean('in_stock')) {
-            $query->where('stock_quantity', '>', 0);
+            $this->applyInStock($query);
         }
 
-        // Dynamic filter matching from assigned filters
         foreach ($assignedFilters as $filter) {
-            $paramKey = 'f_'.$filter->slug; // e.g. f_cpu=intel-core-i5,intel-core-i7
-            if (! $request->filled($paramKey)) {
+            $selectedSlugs = $this->csv($request->input('f_'.$filter->slug));
+            if ($selectedSlugs === []) {
                 continue;
             }
 
-            $selectedSlugs = explode(',', $request->input($paramKey));
-
-            // Get match values for selected slugs
-            $selectedValues = $filter->activeValues
-                ->whereIn('slug', $selectedSlugs);
-
+            $selectedValues = $filter->activeValues->whereIn('slug', $selectedSlugs);
             if ($selectedValues->isEmpty()) {
                 continue;
             }
 
-            switch ($filter->match_field) {
-                case 'specifications_text':
-                    $query->where(function ($q) use ($selectedValues) {
-                        foreach ($selectedValues as $val) {
-                            $q->orWhere('specifications_text', 'LIKE', "%{$val->match_value}%");
-                        }
+            $query->where(function (Builder $groupQuery) use ($filter, $selectedValues): void {
+                foreach ($selectedValues as $value) {
+                    $groupQuery->orWhere(function (Builder $valueQuery) use ($filter, $value): void {
+                        $this->applyFilterValue($valueQuery, $filter->match_field, $value);
                     });
-                    break;
-
-                case 'product_name':
-                    $query->where(function ($q) use ($selectedValues) {
-                        foreach ($selectedValues as $val) {
-                            $q->orWhere('name', 'LIKE', "%{$val->match_value}%");
-                        }
-                    });
-                    break;
-
-                case 'brand':
-                    $brandSlugsFromFilter = $selectedValues->pluck('match_value')->toArray();
-                    $query->whereHas('brand', fn ($q) => $q->whereIn('slug', $brandSlugsFromFilter));
-                    break;
-
-                case 'price':
-                    $query->where(function ($q) use ($selectedValues) {
-                        foreach ($selectedValues as $val) {
-                            $q->orWhere(function ($q2) use ($val) {
-                                if ($val->price_min !== null) {
-                                    $q2->where(function ($q3) use ($val) {
-                                        $q3->where('sale_price', '>=', $val->price_min)
-                                            ->orWhere(function ($q4) use ($val) {
-                                                $q4->whereNull('sale_price')
-                                                    ->where('price', '>=', $val->price_min);
-                                            });
-                                    });
-                                }
-                                if ($val->price_max !== null) {
-                                    $q2->where(function ($q3) use ($val) {
-                                        $q3->where(function ($q4) use ($val) {
-                                            $q4->whereNotNull('sale_price')
-                                                ->where('sale_price', '<=', $val->price_max);
-                                        })->orWhere(function ($q4) use ($val) {
-                                            $q4->whereNull('sale_price')
-                                                ->where('price', '<=', $val->price_max);
-                                        });
-                                    });
-                                }
-                            });
-                        }
-                    });
-                    break;
-            }
+                }
+            });
         }
 
-        // Legacy spec filters (spec_<key_id>=value) — backward compat
+        // Legacy specification filters remain supported for old links.
         foreach ($request->all() as $key => $value) {
-            if (str_starts_with($key, 'spec_') && $value !== null && $value !== '') {
-                $specKeyId = (int) str_replace('spec_', '', $key);
-                $values = explode(',', $value);
-                $query->whereHas('specifications', function ($q) use ($specKeyId, $values) {
-                    $q->where('specification_key_id', $specKeyId)
-                        ->whereIn('value_string', $values);
-                });
+            if (! str_starts_with((string) $key, 'spec_')) {
+                continue;
             }
-        }
 
-        // Legacy price range — backward compat
-        if ($request->filled('min_price')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('sale_price', '>=', $request->min_price)
-                    ->orWhere(function ($q2) use ($request) {
-                        $q2->whereNull('sale_price')
-                            ->where('price', '>=', $request->min_price);
-                    });
-            });
-        }
-        if ($request->filled('max_price')) {
-            $query->where(function ($q) use ($request) {
-                $q->where(function ($q2) use ($request) {
-                    $q2->whereNotNull('sale_price')
-                        ->where('sale_price', '<=', $request->max_price);
-                })->orWhere(function ($q2) use ($request) {
-                    $q2->whereNull('sale_price')
-                        ->where('price', '<=', $request->max_price);
-                });
+            $values = $this->csv($value);
+            if ($values === []) {
+                continue;
+            }
+
+            $specificationKeyId = (int) str_replace('spec_', '', (string) $key);
+            $query->whereHas('specifications', function (Builder $specificationQuery) use ($specificationKeyId, $values): void {
+                $specificationQuery
+                    ->where('specification_key_id', $specificationKeyId)
+                    ->whereIn('value_string', $values);
             });
         }
 
-        // Sorting
-        $sort = $request->input('sort', 'newest');
+        $minPrice = $this->numeric($request->input('min_price'));
+        $maxPrice = $this->numeric($request->input('max_price'));
+        if ($minPrice !== null) {
+            $query->whereRaw('COALESCE(NULLIF(sale_price, 0), price) >= ?', [$minPrice]);
+        }
+        if ($maxPrice !== null) {
+            $query->whereRaw('COALESCE(NULLIF(sale_price, 0), price) <= ?', [$maxPrice]);
+        }
+
+        $sort = (string) $request->input('sort', 'popular');
+        if (! in_array($sort, ['popular', 'rating', 'newest', 'price_asc', 'price_desc', 'name_asc', 'name_desc'], true)) {
+            $sort = 'popular';
+        }
+
         match ($sort) {
-            'price_asc' => $query->orderByRaw('COALESCE(sale_price, price) ASC'),
-            'price_desc' => $query->orderByRaw('COALESCE(sale_price, price) DESC'),
-            'name_asc' => $query->orderBy('name', 'asc'),
-            'name_desc' => $query->orderBy('name', 'desc'),
-            'popular' => $query->orderByDesc('sold_count'),
-            'rating' => $query->orderByDesc('views_count'),
-            default => $query->orderByDesc('created_at'),
+            'price_asc' => $query
+                ->orderByRaw('COALESCE(NULLIF(sale_price, 0), price) ASC')
+                ->orderBy('id'),
+            'price_desc' => $query
+                ->orderByRaw('COALESCE(NULLIF(sale_price, 0), price) DESC')
+                ->orderBy('id'),
+            'name_asc' => $query->orderBy('name')->orderBy('id'),
+            'name_desc' => $query->orderByDesc('name')->orderBy('id'),
+            'rating' => $query
+                ->orderByRaw('approved_reviews_avg_rating IS NULL ASC')
+                ->orderByDesc('approved_reviews_avg_rating')
+                ->orderByDesc('approved_reviews_count')
+                ->orderBy('id'),
+            'newest' => $query->orderByDesc('created_at')->orderByDesc('id'),
+            default => $query->orderByDesc('sold_count')->orderByDesc('created_at')->orderByDesc('id'),
         };
 
-        $products = $query->paginate($request->input('per_page', 20));
+        $perPage = max(1, min(48, (int) $request->input('per_page', 24)));
+        $products = $query->paginate($perPage);
+        $productIds = $products->getCollection()->pluck('id')->all();
 
-        // ---- Build filter metadata ----
+        $recommendations = $this->productCardQuery($categoryIdsArray)
+            ->when($productIds !== [], fn (Builder $recommendationQuery) => $recommendationQuery->whereNotIn('id', $productIds))
+            ->orderByDesc('is_featured')
+            ->orderByDesc('sold_count')
+            ->orderByRaw('approved_reviews_avg_rating IS NULL ASC')
+            ->orderByDesc('approved_reviews_avg_rating')
+            ->orderByDesc('created_at')
+            ->limit(6)
+            ->get();
 
-        // Brands available in this category
-        $brandIds = Product::whereIn('category_id', $catIdsArr)
-            ->sellableOnline()
+        $brandIds = $this->storefrontProductQuery($categoryIdsArray)
             ->whereNotNull('brand_id')
             ->distinct()
             ->pluck('brand_id');
-        $brands = Brand::whereIn('id', $brandIds)
+        $brands = Brand::query()
+            ->whereIn('id', $brandIds)
             ->where('is_active', true)
+            ->withCount([
+                'products as products_count' => fn (Builder $brandProducts) => $brandProducts
+                    ->whereIn('category_id', $categoryIdsArray)
+                    ->visibleOnStorefront(),
+            ])
             ->orderBy('name')
             ->get(['id', 'name', 'slug', 'logo']);
 
-        // Price range for this category
-        $priceStats = Product::whereIn('category_id', $catIdsArr)
-            ->sellableOnline()
-            ->selectRaw('MIN(COALESCE(sale_price, price)) as min_price, MAX(COALESCE(sale_price, price)) as max_price')
+        $priceStats = $this->storefrontProductQuery($categoryIdsArray)
+            ->selectRaw('MIN(COALESCE(NULLIF(sale_price, 0), price)) as min_price, MAX(COALESCE(NULLIF(sale_price, 0), price)) as max_price')
             ->first();
 
-        // Build filter groups with product counts
-        $filterGroups = [];
-        foreach ($assignedFilters as $filter) {
-            $group = [
-                'id' => $filter->id,
-                'name' => $filter->name,
-                'slug' => $filter->slug,
-                'type' => $filter->type,
-                'match_field' => $filter->match_field,
-                'values' => [],
-            ];
-
-            foreach ($filter->activeValues as $val) {
-                // Count products matching this filter value
-                $countQuery = Product::whereIn('category_id', $catIdsArr)
-                    ->sellableOnline();
-
-                switch ($filter->match_field) {
-                    case 'specifications_text':
-                        $countQuery->where('specifications_text', 'LIKE', "%{$val->match_value}%");
-                        break;
-                    case 'product_name':
-                        $countQuery->where('name', 'LIKE', "%{$val->match_value}%");
-                        break;
-                    case 'brand':
-                        $countQuery->whereHas('brand', fn ($q) => $q->where('slug', $val->match_value));
-                        break;
-                    case 'price':
-                        if ($val->price_min !== null) {
-                            $countQuery->where(function ($q) use ($val) {
-                                $q->where('sale_price', '>=', $val->price_min)
-                                    ->orWhere(function ($q2) use ($val) {
-                                        $q2->whereNull('sale_price')->where('price', '>=', $val->price_min);
-                                    });
-                            });
-                        }
-                        if ($val->price_max !== null) {
-                            $countQuery->where(function ($q) use ($val) {
-                                $q->where(function ($q2) use ($val) {
-                                    $q2->whereNotNull('sale_price')->where('sale_price', '<=', $val->price_max);
-                                })->orWhere(function ($q2) use ($val) {
-                                    $q2->whereNull('sale_price')->where('price', '<=', $val->price_max);
-                                });
-                            });
-                        }
-                        break;
-                }
-
-                $group['values'][] = [
-                    'label' => $val->label,
-                    'slug' => $val->slug,
-                    'count' => $countQuery->count(),
-                ];
-            }
-
-            $filterGroups[] = $group;
-        }
-
-        // Legacy spec filters (if no assigned filters, fallback)
-        $specFilters = [];
-        if ($assignedFilters->isEmpty()) {
-            $componentTypeId = $category->component_type_id;
-            if ($componentTypeId) {
-                $specKeys = SpecificationKey::where('component_type_id', $componentTypeId)
-                    ->where('is_filterable', true)
-                    ->orderBy('display_order')
-                    ->get();
-
-                foreach ($specKeys as $specKey) {
-                    $values = \DB::table('product_specifications')
-                        ->join('products', 'products.id', '=', 'product_specifications.product_id')
-                        ->whereIn('products.category_id', $catIdsArr)
-                        ->where('products.is_active', true)
-                        ->where('product_specifications.specification_key_id', $specKey->id)
-                        ->whereNotNull('product_specifications.value_string')
-                        ->distinct()
-                        ->orderBy('product_specifications.value_string')
-                        ->pluck('product_specifications.value_string');
-
-                    if ($values->isNotEmpty()) {
-                        $specFilters[] = [
-                            'key_id' => $specKey->id,
-                            'label' => $specKey->label,
-                            'unit' => $specKey->unit,
-                            'type' => $specKey->data_type,
-                            'values' => $values,
-                        ];
-                    }
-                }
-            }
-        }
+        $filterGroups = $this->filterGroups($assignedFilters, $categoryIdsArray);
+        $specFilters = $this->legacySpecFilters($assignedFilters, $categoryIdsArray, $category->component_type_id);
 
         return response()->json([
-            'category' => $category,
-            'products' => $products,
+            'category' => $this->categoryPayload($category, $childProductCounts),
+            'promo_banner' => $this->categoryBanner($category->slug),
+            'products' => [
+                'data' => ProductCardResource::collection($products->getCollection())->resolve(),
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+            ],
+            'recommendations' => ProductCardResource::collection($recommendations)->resolve(),
             'filters' => [
                 'brands' => $brands,
                 'price_range' => [
                     'min' => (int) ($priceStats->min_price ?? 0),
                     'max' => (int) ($priceStats->max_price ?? 0),
                 ],
+                'price_presets' => $this->pricePresets($assignedFilters),
                 'groups' => $filterGroups,
-                'specs' => $specFilters, // Legacy fallback
+                'specs' => $specFilters,
             ],
         ]);
+    }
+
+    /** @param array<int, int> $categoryIds */
+    private function storefrontProductQuery(array $categoryIds): Builder
+    {
+        return Product::query()
+            ->whereIn('category_id', $categoryIds)
+            ->visibleOnStorefront();
+    }
+
+    /** @param array<int, int> $categoryIds */
+    private function productCardQuery(array $categoryIds): Builder
+    {
+        return Product::query()
+            ->with(['category', 'brand', 'images'])
+            ->withAvg('approvedReviews', 'rating')
+            ->withCount('approvedReviews')
+            ->withExists([
+                'variants as has_variants' => fn (Builder $variantQuery) => $variantQuery->where('is_active', true),
+            ])
+            ->whereIn('category_id', $categoryIds)
+            ->visibleOnStorefront();
+    }
+
+    private function applyInStock(Builder $query): Builder
+    {
+        return $query->where(function (Builder $stockQuery): void {
+            $stockQuery
+                ->where(function (Builder $localQuery): void {
+                    $localQuery->whereNull('provider')->where('stock_quantity', '>', 0);
+                })
+                ->orWhere(function (Builder $kiotQuery): void {
+                    $kiotQuery
+                        ->where('provider', 'kiot')
+                        ->where('kiot_sellable', true)
+                        ->where('kiot_sync_status', 'active')
+                        ->where('kiot_availability_status', 'available')
+                        ->where('kiot_available_quantity', '>', 0)
+                        ->where('price', '>', 0);
+                })
+                ->orWhereHas('variants', fn (Builder $variantQuery) => $variantQuery
+                    ->where('is_active', true)
+                    ->where('stock_quantity', '>', 0));
+        });
+    }
+
+    private function applyFilterValue(Builder $query, string $matchField, FilterValue $value): void
+    {
+        switch ($matchField) {
+            case 'specifications_text':
+                $query->where('specifications_text', 'LIKE', '%'.$value->match_value.'%');
+                break;
+            case 'product_name':
+                $query->where('name', 'LIKE', '%'.$value->match_value.'%');
+                break;
+            case 'brand':
+                $query->whereHas('brand', fn (Builder $brandQuery) => $brandQuery->where('slug', $value->match_value));
+                break;
+            case 'price':
+                $this->applyPriceValue($query, $value);
+                break;
+        }
+    }
+
+    private function applyPriceValue(Builder $query, FilterValue $value): void
+    {
+        if ($value->price_min !== null) {
+            $query->whereRaw('COALESCE(NULLIF(sale_price, 0), price) >= ?', [$value->price_min]);
+        }
+        if ($value->price_max !== null) {
+            $query->whereRaw('COALESCE(NULLIF(sale_price, 0), price) <= ?', [$value->price_max]);
+        }
+    }
+
+    /** @param Collection<int, mixed> $filters */
+    private function filterGroups(Collection $filters, array $categoryIds): array
+    {
+        return $filters
+            ->reject(fn ($filter): bool => $filter->type === 'price_range'
+                || in_array($filter->match_field, ['price', 'brand'], true))
+            ->map(function ($filter) use ($categoryIds): array {
+                $values = $filter->activeValues->map(function (FilterValue $value) use ($filter, $categoryIds): array {
+                    $countQuery = $this->storefrontProductQuery($categoryIds);
+                    $this->applyFilterValue($countQuery, $filter->match_field, $value);
+
+                    return [
+                        'label' => $value->label,
+                        'slug' => $value->slug,
+                        'count' => $countQuery->count(),
+                    ];
+                })->values()->all();
+
+                return [
+                    'id' => $filter->id,
+                    'name' => $filter->name,
+                    'slug' => $filter->slug,
+                    'type' => $filter->type,
+                    'match_field' => $filter->match_field,
+                    'values' => $values,
+                ];
+            })->values()->all();
+    }
+
+    /** @param Collection<int, mixed> $filters */
+    private function pricePresets(Collection $filters): array
+    {
+        $priceFilter = $filters->first(fn ($filter): bool => $filter->type === 'price_range' || $filter->match_field === 'price');
+        if (! $priceFilter) {
+            return [];
+        }
+
+        return $priceFilter->activeValues
+            ->map(fn (FilterValue $value): array => [
+                'key' => $value->slug,
+                'label' => $value->label,
+                'min' => $value->price_min === null ? null : (int) $value->price_min,
+                'max' => $value->price_max === null ? null : (int) $value->price_max,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** @param Collection<int, mixed> $assignedFilters */
+    private function legacySpecFilters(Collection $assignedFilters, array $categoryIds, ?int $componentTypeId): array
+    {
+        $hasDynamicSpecificationFilter = $assignedFilters->contains(
+            fn ($filter): bool => $filter->type !== 'price_range'
+                && ! in_array($filter->match_field, ['price', 'brand'], true),
+        );
+        if ($hasDynamicSpecificationFilter || ! $componentTypeId) {
+            return [];
+        }
+
+        $visibleProductIds = $this->storefrontProductQuery($categoryIds)->select('products.id');
+        $specFilters = [];
+        $specKeys = SpecificationKey::query()
+            ->where('component_type_id', $componentTypeId)
+            ->where('is_filterable', true)
+            ->orderBy('display_order')
+            ->get();
+
+        foreach ($specKeys as $specKey) {
+            $values = \DB::table('product_specifications')
+                ->join('products', 'products.id', '=', 'product_specifications.product_id')
+                ->whereIn('products.id', $visibleProductIds)
+                ->where('product_specifications.specification_key_id', $specKey->id)
+                ->whereNotNull('product_specifications.value_string')
+                ->distinct()
+                ->orderBy('product_specifications.value_string')
+                ->pluck('product_specifications.value_string');
+
+            if ($values->isEmpty()) {
+                continue;
+            }
+
+            $specFilters[] = [
+                'key_id' => $specKey->id,
+                'label' => $specKey->label,
+                'unit' => $specKey->unit,
+                'type' => $specKey->data_type,
+                'values' => $values->values()->all(),
+            ];
+        }
+
+        return $specFilters;
+    }
+
+    /** @param Collection<int, Category> $children */
+    private function childProductCounts(Collection $children): Collection
+    {
+        if ($children->isEmpty()) {
+            return collect();
+        }
+
+        return Product::query()
+            ->whereIn('category_id', $children->pluck('id'))
+            ->visibleOnStorefront()
+            ->selectRaw('category_id, COUNT(*) as aggregate')
+            ->groupBy('category_id')
+            ->pluck('aggregate', 'category_id');
+    }
+
+    private function categoryPayload(Category $category, Collection $childProductCounts): array
+    {
+        return array_merge(
+            $this->basicCategoryPayload($category, $category->description),
+            [
+                'parent' => $category->parent ? $this->basicCategoryPayload($category->parent, $category->parent->description) : null,
+                'children' => $category->children->map(function (Category $child) use ($childProductCounts): array {
+                    return array_merge(
+                        $this->basicCategoryPayload($child, $child->description),
+                        ['product_count' => (int) $childProductCounts->get($child->id, 0)],
+                    );
+                })->values()->all(),
+            ],
+        );
+    }
+
+    private function basicCategoryPayload(Category $category, ?string $description = null): array
+    {
+        return [
+            'id' => $category->id,
+            'parent_id' => $category->parent_id,
+            'name' => $category->name,
+            'slug' => $category->slug,
+            'description' => $description ?? $category->description,
+            'image' => $category->image,
+            'icon' => $category->icon,
+            'meta_title' => $category->meta_title,
+            'meta_description' => $category->meta_description,
+        ];
+    }
+
+    private function categoryBanner(string $categorySlug): ?array
+    {
+        $banner = Banner::query()
+            ->active()
+            ->where('position', 'category')
+            ->orderBy('sort_order')
+            ->get()
+            ->first(function (Banner $candidate) use ($categorySlug): bool {
+                $configuredSlug = data_get($candidate->metadata, 'category_slug');
+                if (is_array($configuredSlug)) {
+                    return in_array($categorySlug, $configuredSlug, true);
+                }
+
+                return is_string($configuredSlug) && trim($configuredSlug) === $categorySlug;
+            });
+
+        if (! $banner) {
+            return null;
+        }
+
+        return [
+            'id' => $banner->id,
+            'title' => $banner->title,
+            'description' => $banner->description,
+            'badge' => $banner->badge,
+            'image' => PublicAssetUrl::normalize($banner->image),
+            'link' => $banner->link,
+            'position' => $banner->position,
+            'sort_order' => $banner->sort_order,
+            'metadata' => $banner->metadata,
+        ];
+    }
+
+    /** @return array<int, string> */
+    private function csv(mixed $value): array
+    {
+        $values = is_array($value) ? $value : (is_string($value) ? explode(',', $value) : []);
+
+        return collect($values)
+            ->map(fn ($item) => trim((string) $item))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function numeric(mixed $value): ?int
+    {
+        if (is_array($value)) {
+            $value = $value[0] ?? null;
+        }
+        if ($value === null || $value === '' || ! is_numeric($value)) {
+            return null;
+        }
+
+        return max(0, (int) $value);
     }
 }
