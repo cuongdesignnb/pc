@@ -77,6 +77,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/locations/provinces/{code}/wards', [LocationController::class, 'wards']);
 
     // Blog
+    // Keep the landing endpoint before /blog/{slug} so "home" is not treated as a slug.
+    Route::get('/blog/home', [BlogController::class, 'home']);
     Route::get('/blog', [BlogController::class, 'index']);
     Route::get('/blog/categories', [BlogController::class, 'categories']);
     Route::get('/blog/featured', [BlogController::class, 'featured']);
