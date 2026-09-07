@@ -376,6 +376,14 @@ check_http() {
     [[ "$status" == 2?? ]]
 }
 
+check_locations_asset() {
+    local body
+    body="$(curl -fsS --max-time 20 http://127.0.0.1:8902/data/locations.json)" \
+        || return 1
+    printf '%s' "$body" | grep -Fq '"provinces"' \
+        && printf '%s' "$body" | grep -Fq '"wards"'
+}
+
 check_release() {
     local label="$1"
     local url="$2"
@@ -398,6 +406,8 @@ CURRENT_STEP=http_check
 step "Checking backend API and frontend"
 check_http http://127.0.0.1:8901/healthz \
     || fail "Backend health endpoint failed"
+check_http http://127.0.0.1:8901/api/v1/locations/provinces \
+    || fail "Locations API check failed"
 check_http http://127.0.0.1:8901/api/v1/menus/header \
     || fail "Header menu API check failed"
 check_http http://127.0.0.1:8901/api/v1/builder/component-types \
@@ -406,6 +416,8 @@ check_http http://127.0.0.1:8901/api/v1/builder/presets \
     || fail "Builder presets API check failed"
 check_http "http://127.0.0.1:8902$FRONTEND_HEALTH_PATH" \
     || fail "Frontend HTTP check failed"
+check_locations_asset \
+    || fail "Frontend locations dataset is missing or invalid"
 check_release local_frontend \
     "http://127.0.0.1:8902$PUBLIC_RELEASE_PATH" \
     || fail "Local frontend release does not match $FRONTEND_SHA"
