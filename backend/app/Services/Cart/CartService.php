@@ -6,12 +6,19 @@ use App\Models\Cart;
 use App\Models\Product;
 use App\Models\ProductRelation;
 use App\Models\Setting;
+use App\Services\Checkout\PaymentMethodAvailability;
+use App\Services\Checkout\ShippingCalculator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
 
 class CartService
 {
+    public function __construct(
+        private readonly ShippingCalculator $shippingCalculator,
+        private readonly PaymentMethodAvailability $paymentAvailability,
+    ) {}
+
     public function load(Cart $cart): Cart
     {
         return $cart->load([
@@ -44,11 +51,11 @@ class CartService
             $quantity += $itemQuantity;
         }
 
-        $freeThreshold = $this->integerSetting('shipping_free_threshold', 500000);
-        $defaultFee = $this->integerSetting('shipping_default_fee', 30000);
+        $freeThreshold = $this->shippingCalculator->freeThreshold();
+        $defaultFee = $this->shippingCalculator->defaultFee();
         $eligibleForFreeShipping = $quantity > 0 && $freeThreshold > 0 && $subtotal >= $freeThreshold;
         $amountRemaining = max(0, $freeThreshold - $subtotal);
-        $estimatedFee = $quantity === 0 ? 0 : ($eligibleForFreeShipping ? 0 : $defaultFee);
+        $estimatedFee = $this->shippingCalculator->quote($subtotal, $quantity)['fee'];
         $couponDiscount = 0;
         $payableBeforeShipping = max(0, $subtotal - $couponDiscount);
 
@@ -191,16 +198,7 @@ class CartService
 
     public function paymentMethods(): array
     {
-        $methods = [];
-        $bank = trim((string) Setting::get('payment_bank_name', ''));
-        if ($bank !== '') {
-            $methods[] = ['key' => 'sepay', 'label' => 'Chuyển khoản', 'provider' => $bank];
-        }
-        if ((bool) Setting::get('payment_cod_enabled', true)) {
-            $methods[] = ['key' => 'cod', 'label' => 'COD', 'provider' => 'Thanh toán khi nhận hàng'];
-        }
-
-        return $methods;
+        return $this->paymentAvailability->cartMethods();
     }
 
     public function support(): array
@@ -222,12 +220,5 @@ class CartService
             'description' => (string) Setting::get($textKey, ''),
             'icon' => $icon,
         ];
-    }
-
-    private function integerSetting(string $key, int $fallback): int
-    {
-        $value = Setting::get($key);
-
-        return is_numeric($value) ? max(0, (int) $value) : $fallback;
     }
 }

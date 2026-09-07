@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\BlogController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\CheckoutQuoteController;
 use App\Http\Controllers\Api\HomepageController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MenuController;
@@ -102,7 +103,8 @@ Route::prefix('v1')->group(function () {
     Route::delete('/cart/items/{cartItem}', [CartController::class, 'removeItem']);
     Route::delete('/cart', [CartController::class, 'clear']);
 
-    // Orders (public for guest checkout)
+    // Checkout quote and orders (public for guest checkout)
+    Route::post('/checkout/quote', [CheckoutQuoteController::class, 'store']);
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::get('/orders/{order}/check-payment', [OrderController::class, 'checkPayment']);
