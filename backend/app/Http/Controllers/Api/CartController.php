@@ -32,10 +32,10 @@ class CartController extends Controller
         $cart = $this->getOrCreateCart($request);
         $groups = $this->cartService->recommendationGroups($this->cartService->load($cart));
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'accessories' => \App\Http\Resources\ProductCardResource::collection($groups['accessories'])->resolve($request),
             'recommendations' => \App\Http\Resources\ProductCardResource::collection($groups['recommendations'])->resolve($request),
-        ]);
+        ]));
     }
 
     public function addItem(Request $request, ProductPurchasabilityService $purchasability): JsonResponse
@@ -189,7 +189,15 @@ class CartController extends Controller
             $payload['message'] = $message;
         }
 
-        return response()->json($payload);
+        return $this->noStore(response()->json($payload));
+    }
+
+    private function noStore(JsonResponse $response): JsonResponse
+    {
+        return $response
+            ->header('Cache-Control', 'private, no-store, max-age=0, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     /** @return array{0: Cart, 1: CartItem} */

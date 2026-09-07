@@ -54,6 +54,8 @@ class CartApiTest extends TestCase
         ])->assertOk();
 
         $response = $this->withHeader('X-Cart-Session', $session)->getJson('/api/v1/cart')->assertOk();
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->assertSame('no-cache', $response->headers->get('Pragma'));
         $response
             ->assertJsonPath('summary.line_count', 2)
             ->assertJsonPath('summary.item_count', 3)
