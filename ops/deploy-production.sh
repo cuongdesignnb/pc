@@ -95,7 +95,9 @@ on_exit() {
 trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-trap 'exit 129' HUP
+# aaPanel may send SIGHUP when its browser terminal reconnects.  A deploy
+# must continue; an explicit Ctrl+C still cancels it and triggers rollback.
+trap '' HUP
 
 CURRENT_STEP=preflight
 for command in git docker curl sed cp mktemp flock grep awk tar date; do
@@ -242,7 +244,7 @@ step "Ensuring database, Redis and Meilisearch are available"
 
 CURRENT_STEP=migrate
 step "Running Laravel migrations"
-"${COMPOSE[@]}" run --rm --no-deps backend-php php artisan migrate --force
+"${COMPOSE[@]}" run --rm -T --no-deps backend-php php artisan migrate --force
 MIGRATION_STATUS=RUN
 
 SEEDERS=(
@@ -256,7 +258,7 @@ SEEDERS=(
 for seeder in "${SEEDERS[@]}"; do
     CURRENT_STEP="seed_$seeder"
     step "Running $seeder"
-    "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed \
+    "${COMPOSE[@]}" run --rm -T --no-deps backend-php php artisan db:seed \
         --class="$seeder" --force
     case "$seeder" in
         ComponentTypeSeeder) COMPONENT_TYPE_SEEDER_STATUS="$seeder" ;;
