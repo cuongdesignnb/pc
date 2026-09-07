@@ -28,9 +28,15 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->group(function () {
-    // Auth
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login', [AuthController::class, 'login']);
+    // Auth. The auth namespace is the single public contract used by the
+    // storefront. Keep the old endpoints below for older clients while they
+    // migrate to /auth/*.
+    Route::prefix('auth')->group(function () {
+        Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    });
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
     // Public routes
     // Aggregated storefront homepage payload
@@ -115,10 +121,24 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
+        Route::prefix('auth')->group(function () {
+            Route::post('/logout', [AuthController::class, 'logout']);
+            Route::get('/me', [AuthController::class, 'me']);
+            Route::post('/commerce/merge', [AuthController::class, 'mergeCommerce']);
+        });
+
+        // Legacy aliases retained for existing clients.
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/user', [AuthController::class, 'user']);
         Route::put('/user/profile', [AuthController::class, 'updateProfile']);
         Route::put('/user/password', [AuthController::class, 'changePassword']);
+
+        // Wishlist is server-backed for authenticated users. Guest wishlist
+        // state remains in the storefront until a successful merge.
+        Route::get('/wishlist', [\App\Http\Controllers\Api\WishlistController::class, 'index']);
+        Route::post('/wishlist/items', [\App\Http\Controllers\Api\WishlistController::class, 'store']);
+        Route::delete('/wishlist/items/{product}', [\App\Http\Controllers\Api\WishlistController::class, 'destroy']);
+        Route::post('/wishlist/merge', [\App\Http\Controllers\Api\WishlistController::class, 'merge']);
 
         // Saved builds (requires auth)
         Route::post('/builder/save', [PcBuilderController::class, 'saveBuild']);

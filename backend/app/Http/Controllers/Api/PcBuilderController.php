@@ -171,8 +171,16 @@ class PcBuilderController extends Controller
             ->latest()
             ->get();
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'builds' => SavedBuildResource::collection($builds)->resolve(),
-        ]);
+        ]));
+    }
+
+    private function noStore(JsonResponse $response): JsonResponse
+    {
+        return $response
+            ->header('Cache-Control', 'private, no-store, max-age=0, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 }

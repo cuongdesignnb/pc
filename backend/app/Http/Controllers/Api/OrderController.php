@@ -30,10 +30,10 @@ class OrderController extends Controller
         $orders = Order::where('user_id', $request->user()->id)
             ->with(['items.product'])->latest()->paginate(10);
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'orders' => $orders->getCollection()->map(fn (Order $order) => $this->present($order)),
             'meta' => ['current_page' => $orders->currentPage(), 'last_page' => $orders->lastPage(), 'total' => $orders->total()],
-        ]);
+        ]));
     }
 
     public function show(Request $request, Order $order): JsonResponse
@@ -391,5 +391,13 @@ class OrderController extends Controller
             'ORDER_TOTAL_MISMATCH' => 'Tổng tiền đơn hàng chưa khớp với hệ thống kho.',
             default => 'Đơn hàng không thể được hệ thống kho xác nhận.',
         };
+    }
+
+    private function noStore(JsonResponse $response): JsonResponse
+    {
+        return $response
+            ->header('Cache-Control', 'private, no-store, max-age=0, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 }
