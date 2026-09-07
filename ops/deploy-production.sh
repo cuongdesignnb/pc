@@ -9,6 +9,29 @@ set -Eeuo pipefail
 
 requested_backend_sha="${1:-}"
 requested_frontend_sha="${2:-}"
+DEPLOY_SCRIPT_URL="${DEPLOY_SCRIPT_URL:-https://raw.githubusercontent.com/cuongdesignnb/pc/main/ops/deploy-production.sh}"
+
+# aaPanel's browser terminal can terminate an attached process when its
+# websocket reconnects.  The explicit DEPLOY_DETACH=1 mode keeps the same
+# one-command workflow while moving the real run into a new session.  The
+# parent returns a PID and log path; the child runs the normal workflow below.
+if [[ "${DEPLOY_DETACH:-0}" == "1" && "${DEPLOY_DAEMONIZED:-0}" != "1" ]]; then
+    deploy_log="${DEPLOY_LOG:-/tmp/laptopplus-production-deploy-$(date -u +%Y%m%d-%H%M%S).log}"
+    printf -v url_arg '%q' "$DEPLOY_SCRIPT_URL"
+    printf -v backend_sha_arg '%q' "$requested_backend_sha"
+    printf -v frontend_sha_arg '%q' "$requested_frontend_sha"
+    child_command="curl -fsSL ${url_arg} | DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 bash -s -- ${backend_sha_arg} ${frontend_sha_arg}"
+
+    if command -v setsid >/dev/null 2>&1; then
+        setsid nohup bash -lc "$child_command" >"$deploy_log" 2>&1 < /dev/null &
+    else
+        nohup bash -lc "$child_command" >"$deploy_log" 2>&1 < /dev/null &
+    fi
+
+    echo "DEPLOY_PID=$!"
+    echo "DEPLOY_LOG=$deploy_log"
+    exit 0
+fi
 
 STACK_DIR="${STACK_DIR:-/www/docker/laptopplus.vn}"
 FRONTEND_REPO="${FRONTEND_REPO:-/www/wwwroot/pcfrontend}"
