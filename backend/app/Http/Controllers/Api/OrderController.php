@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\CheckoutQuoteException;
 use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
@@ -9,8 +10,11 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\Setting;
+use App\Services\Checkout\CheckoutQuoteService;
+use App\Services\Checkout\PaymentMethodAvailability;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
+use App\Services\Locations\LocationDirectory;
 use App\Services\Payments\SepayPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,6 +23,8 @@ use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
+    public function __construct(private readonly PaymentMethodAvailability $paymentAvailability) {}
+
     public function index(Request $request): JsonResponse
     {
         $orders = Order::where('user_id', $request->user()->id)
@@ -36,12 +42,18 @@ class OrderController extends Controller
         $order->load('items');
 
         return response()->json(array_merge($this->present($order), [
-            'payment' => $order->canPay() ? $this->generateSepayPaymentData($order) : null,
+            'payment' => $order->canPay() && $this->paymentAvailability->sepayAvailable()
+                ? $this->generateSepayPaymentData($order)
+                : null,
         ]));
     }
 
-    public function store(Request $request, KiotOrderService $orders): JsonResponse
-    {
+    public function store(
+        Request $request,
+        KiotOrderService $orders,
+        LocationDirectory $locations,
+        CheckoutQuoteService $quotes,
+    ): JsonResponse {
         $validated = $request->validate([
             'checkout_idempotency_key' => 'required|uuid',
             'order_access_token' => 'required|uuid',
@@ -49,11 +61,15 @@ class OrderController extends Controller
             'customer_email' => 'required|email|max:255',
             'customer_phone' => 'required|string|max:20',
             'shipping_address' => 'required|string|max:500',
-            'shipping_city' => 'required|string|max:100',
+            'shipping_city' => 'nullable|string|max:100',
             'shipping_district' => 'nullable|string|max:100',
             'shipping_ward' => 'nullable|string|max:100',
+            'shipping_province_code' => 'nullable|string|max:20',
+            'shipping_ward_code' => 'nullable|string|max:20',
             'notes' => 'nullable|string|max:1000',
             'payment_method' => 'required|in:sepay,cod',
+            'shipping_method' => 'nullable|in:standard',
+            'quote_id' => 'nullable|uuid',
             'checkout_mode' => 'nullable|in:cart,buy_now',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|integer|exists:products,id',
@@ -61,12 +77,29 @@ class OrderController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
         ]);
 
-        $this->useSelectedCartItems($request, $validated);
+        $validated['checkout_mode'] = $validated['checkout_mode'] ?? 'cart';
+        $validated['shipping_method'] = $validated['shipping_method'] ?? 'standard';
+        $this->resolveShippingLocation($validated, $locations);
+        $hasExistingAttempt = Order::where('checkout_idempotency_key', $validated['checkout_idempotency_key'])->exists();
+        if (! $hasExistingAttempt) {
+            $this->useSelectedCartItems($request, $validated, ! empty($validated['quote_id']));
+        }
 
-        if ($validated['payment_method'] === 'cod' && ! $this->booleanSetting('payment_cod_enabled', true)) {
+        if (! $this->paymentAvailability->isAvailable($validated['payment_method'])) {
             throw ValidationException::withMessages([
-                'payment_method' => 'Phương thức thanh toán COD hiện đang tắt.',
+                'payment_method' => 'Phương thức thanh toán này hiện không khả dụng.',
             ]);
+        }
+
+        if (! $hasExistingAttempt && ! empty($validated['quote_id'])) {
+            try {
+                $quotes->assertMatches($request, (string) $validated['quote_id'], $validated);
+            } catch (CheckoutQuoteException $exception) {
+                return response()->json([
+                    'message' => $exception->getMessage(),
+                    'error_code' => $exception->errorCode,
+                ], $exception->httpStatus);
+            }
         }
 
         try {
@@ -93,7 +126,9 @@ class OrderController extends Controller
             $this->clearCart($request);
         }
 
-        $payment = $order->canPay() ? $this->generateSepayPaymentData($order) : null;
+        $payment = $order->canPay() && $this->paymentAvailability->sepayAvailable()
+            ? $this->generateSepayPaymentData($order)
+            : null;
         $message = $order->kiot_sync_status === 'retrying'
             ? 'Đơn hàng đã được ghi nhận và đang chờ hệ thống kho xác nhận.'
             : 'Đặt hàng thành công';
@@ -115,7 +150,9 @@ class OrderController extends Controller
             'kiot_sync_status' => $order->kiot_sync_status, 'kiot_order_code' => $order->kiot_order_code,
             'kiot_sync_error_code' => $order->kiot_sync_error_code,
             'can_pay' => $order->canPay(), 'can_cancel' => $order->canCancel(),
-            'payment' => $order->canPay() ? $this->generateSepayPaymentData($order) : null,
+            'payment' => $order->canPay() && $this->paymentAvailability->sepayAvailable()
+                ? $this->generateSepayPaymentData($order)
+                : null,
         ]);
     }
 
@@ -262,7 +299,7 @@ class OrderController extends Controller
         }
     }
 
-    private function useSelectedCartItems(Request $request, array &$validated): void
+    private function useSelectedCartItems(Request $request, array &$validated, bool $requireCart = false): void
     {
         if (($validated['checkout_mode'] ?? 'cart') !== 'cart') {
             return;
@@ -273,6 +310,12 @@ class OrderController extends Controller
             ? Cart::where('user_id', $userId)->with('items')->first()
             : Cart::where('session_id', $request->header('X-Cart-Session') ?? session()->getId())->with('items')->first();
         if (! $cart) {
+            if ($requireCart) {
+                throw ValidationException::withMessages([
+                    'items' => 'Giỏ hàng không còn sản phẩm được chọn. Vui lòng cập nhật lại giỏ hàng.',
+                ]);
+            }
+
             return;
         }
 
@@ -288,6 +331,34 @@ class OrderController extends Controller
             'variant_id' => $item->variant_id === null ? null : (int) $item->variant_id,
             'quantity' => (int) $item->quantity,
         ])->all();
+    }
+
+    private function resolveShippingLocation(array &$validated, LocationDirectory $locations): void
+    {
+        $provinceCode = trim((string) ($validated['shipping_province_code'] ?? ''));
+        $wardCode = trim((string) ($validated['shipping_ward_code'] ?? ''));
+        if (($provinceCode === '') !== ($wardCode === '')) {
+            throw ValidationException::withMessages([
+                'shipping_ward_code' => 'Vui lòng chọn đủ tỉnh/thành phố và xã/phường.',
+            ]);
+        }
+
+        if ($provinceCode !== '' && $wardCode !== '') {
+            $resolved = $locations->resolve($provinceCode, $wardCode);
+            if ($resolved === null) {
+                throw ValidationException::withMessages([
+                    'shipping_ward_code' => 'Xã/phường không thuộc tỉnh/thành phố đã chọn.',
+                ]);
+            }
+            $validated['shipping_city'] = $resolved['province']['fullname'];
+            $validated['shipping_ward'] = $resolved['ward']['fullname'];
+        }
+
+        if (trim((string) ($validated['shipping_city'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'shipping_province_code' => 'Vui lòng chọn tỉnh/thành phố.',
+            ]);
+        }
     }
 
     private function generateSepayPaymentData(Order $order): array
@@ -310,13 +381,6 @@ class OrderController extends Controller
         $value = Setting::get($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : $fallback;
-    }
-
-    private function booleanSetting(string $key, bool $fallback): bool
-    {
-        $value = Setting::get($key);
-
-        return $value === null ? $fallback : filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
     private function friendlyError(?string $code): string
