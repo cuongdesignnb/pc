@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Auth\CommerceIdentityMergeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -11,6 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly CommerceIdentityMergeService $commerce)
+    {
+    }
+
     /**
      * Register a new user
      */
@@ -21,23 +26,29 @@ class AuthController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
             'phone' => 'nullable|string|max:20',
+            'terms_accepted' => 'required|accepted',
         ]);
 
         $user = User::create([
             'name' => $validated['name'],
-            'email' => $validated['email'],
+            'email' => strtolower($validated['email']),
             'password' => Hash::make($validated['password']),
             'phone' => $validated['phone'] ?? null,
             'role' => 'customer',
         ]);
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $token = $this->issueToken($user, true);
+        $commerce = $this->commerce->mergeGuestCartIntoUser($user, $request->header('X-Cart-Session'));
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'message' => 'Đăng ký thành công',
-            'user' => $user,
+            'user' => $user->load('defaultAddress'),
             'token' => $token,
-        ], 201);
+            'commerce' => [
+                'cart_merged' => $commerce['merged'],
+                'cart_warnings' => $commerce['warnings'],
+            ],
+        ], 201));
     }
 
     /**
@@ -45,26 +56,32 @@ class AuthController extends Controller
      */
     public function login(Request $request): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'email' => 'required|email',
             'password' => 'required',
+            'remember' => 'sometimes|boolean',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $user = User::whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->first();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Email hoặc mật khẩu không chính xác.'],
             ]);
         }
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $token = $this->issueToken($user, (bool) ($validated['remember'] ?? false));
+        $commerce = $this->commerce->mergeGuestCartIntoUser($user, $request->header('X-Cart-Session'));
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'message' => 'Đăng nhập thành công',
-            'user' => $user,
+            'user' => $user->load('defaultAddress'),
             'token' => $token,
-        ]);
+            'commerce' => [
+                'cart_merged' => $commerce['merged'],
+                'cart_warnings' => $commerce['warnings'],
+            ],
+        ]));
     }
 
     /**
@@ -72,21 +89,48 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        $accessToken = $request->user()->currentAccessToken();
+        if ($accessToken && method_exists($accessToken, 'delete')) {
+            $accessToken->delete();
+        }
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'message' => 'Đăng xuất thành công',
-        ]);
+        ]));
     }
 
     /**
      * Get authenticated user
      */
+    public function me(Request $request): JsonResponse
+    {
+        return $this->noStore(response()->json([
+            'user' => $request->user()->load('defaultAddress'),
+        ]));
+    }
+
+    /**
+     * Backward-compatible alias for the original /user endpoint.
+     */
     public function user(Request $request): JsonResponse
     {
-        return response()->json([
-            'user' => $request->user()->load('defaultAddress'),
-        ]);
+        return $this->me($request);
+    }
+
+    /**
+     * Retry a commerce merge without issuing a second auth token.
+     */
+    public function mergeCommerce(Request $request): JsonResponse
+    {
+        $commerce = $this->commerce->mergeGuestCartIntoUser(
+            $request->user(),
+            $request->header('X-Cart-Session'),
+        );
+
+        return $this->noStore(response()->json([
+            'cart_merged' => $commerce['merged'],
+            'cart_warnings' => $commerce['warnings'],
+        ]));
     }
 
     /**
@@ -135,5 +179,22 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Đổi mật khẩu thành công',
         ]);
+    }
+
+    private function issueToken(User $user, bool $remember): string
+    {
+        return $user->createToken(
+            'auth_token',
+            ['*'],
+            now()->addDays($remember ? 30 : 1),
+        )->plainTextToken;
+    }
+
+    private function noStore(JsonResponse $response): JsonResponse
+    {
+        return $response
+            ->header('Cache-Control', 'private, no-store, max-age=0, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 }
