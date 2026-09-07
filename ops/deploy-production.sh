@@ -242,9 +242,30 @@ CURRENT_STEP=dependencies
 step "Ensuring database, Redis and Meilisearch are available"
 "${COMPOSE[@]}" up -d --no-build mysql redis meilisearch
 
+wait_for_backend_health() {
+    local attempt state
+    for attempt in {1..60}; do
+        state="$(docker inspect laptopplus-backend-php \
+            --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+            2>/dev/null || true)"
+        [ "$state" = "running|healthy" ] && return 0
+        printf 'BACKEND_HEALTH_WAIT attempt=%s/60 state=%s\n' "$attempt" "${state:-missing}"
+        sleep 2
+    done
+    return 1
+}
+
+CURRENT_STEP=backend_for_migration
+step "Starting the new backend before migrations"
+"${COMPOSE[@]}" up -d --no-build --force-recreate backend-php
+wait_for_backend_health || {
+    "${COMPOSE[@]}" ps
+    fail "Backend health check failed before migrations"
+}
+
 CURRENT_STEP=migrate
 step "Running Laravel migrations"
-"${COMPOSE[@]}" run --rm -T --no-deps backend-php php artisan migrate --force
+"${COMPOSE[@]}" exec -T backend-php php artisan migrate --force
 MIGRATION_STATUS=RUN
 
 SEEDERS=(
@@ -258,7 +279,7 @@ SEEDERS=(
 for seeder in "${SEEDERS[@]}"; do
     CURRENT_STEP="seed_$seeder"
     step "Running $seeder"
-    "${COMPOSE[@]}" run --rm -T --no-deps backend-php php artisan db:seed \
+    "${COMPOSE[@]}" exec -T backend-php php artisan db:seed \
         --class="$seeder" --force
     case "$seeder" in
         ComponentTypeSeeder) COMPONENT_TYPE_SEEDER_STATUS="$seeder" ;;
