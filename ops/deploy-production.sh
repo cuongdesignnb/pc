@@ -30,6 +30,9 @@ if [[ "${DEPLOY_DETACH:-0}" == "1" && "${DEPLOY_DAEMONIZED:-0}" != "1" ]]; then
 
     echo "DEPLOY_PID=$!"
     echo "DEPLOY_LOG=$deploy_log"
+    # Drain the remaining script input before exiting so the upstream curl
+    # does not receive EPIPE after the detached child has been started.
+    while IFS= read -r; do :; done
     exit 0
 fi
 
@@ -310,7 +313,7 @@ wait_for_backend_health || {
 
 CURRENT_STEP=migrate
 step "Running Laravel migrations"
-"${COMPOSE[@]}" exec -T backend-php php artisan migrate --force
+"${COMPOSE[@]}" run --rm --no-deps backend-php php artisan migrate --force
 MIGRATION_STATUS=RUN
 
 SEEDERS=(
@@ -324,7 +327,7 @@ SEEDERS=(
 for seeder in "${SEEDERS[@]}"; do
     CURRENT_STEP="seed_$seeder"
     step "Running $seeder"
-    "${COMPOSE[@]}" exec -T backend-php php artisan db:seed \
+    "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed \
         --class="$seeder" --force
     case "$seeder" in
         ComponentTypeSeeder) COMPONENT_TYPE_SEEDER_STATUS="$seeder" ;;
