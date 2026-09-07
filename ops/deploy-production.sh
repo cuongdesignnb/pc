@@ -18,6 +18,10 @@ STACK_ENV="${STACK_ENV:-$STACK_DIR/deploy/production/stack.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-$STACK_DIR/docker-compose.production.yml}"
 DEPLOY_LOCK="${DEPLOY_LOCK:-/tmp/laptopplus-production-deploy.lock}"
 FRONTEND_HEALTH_PATH="${FRONTEND_HEALTH_PATH:-/}"
+PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-https://laptopplus.vn}"
+PUBLIC_RELEASE_PATH="${PUBLIC_RELEASE_PATH:-/release.json}"
+PUBLIC_RELEASE_PATH="/${PUBLIC_RELEASE_PATH#/}"
+SKIP_PUBLIC_CHECK="${SKIP_PUBLIC_CHECK:-0}"
 
 CURRENT_STEP=initialization
 ERROR_REPORTED=0
@@ -145,6 +149,10 @@ git -C "$FRONTEND_REPO" archive --format=tar "$FRONTEND_SHA" \
     | tar -xf - -C "$FRONTEND_SOURCE_DIR"
 mkdir -p "$BACKEND_CONTEXT_DIR/deploy/production"
 cp -a "$PRODUCTION_DEPLOY_DIR"/. "$BACKEND_CONTEXT_DIR/deploy/production/"
+mkdir -p "$FRONTEND_SOURCE_DIR/public"
+printf '{\n  "frontend_sha": "%s",\n  "frontend_tag": "%s"\n}\n' \
+    "$FRONTEND_SHA" "$FRONTEND_TAG" \
+    > "$FRONTEND_SOURCE_DIR/public/release.json"
 
 BACKEND_CONTEXT_DOCKERFILE="$BACKEND_CONTEXT_DIR/deploy/production/backend.Dockerfile"
 test -f "$BACKEND_CONTEXT_DOCKERFILE" || fail "Backend Dockerfile missing from context"
@@ -297,6 +305,24 @@ check_http() {
     [[ "$status" == 2?? ]]
 }
 
+check_release() {
+    local label="$1"
+    local url="$2"
+    local separator='?'
+    local body
+
+    case "$url" in
+        *\?*) separator='&' ;;
+    esac
+
+    body="$(curl -fsS --max-time 20 \
+        "${url}${separator}deploy_sha=${FRONTEND_SHA}")" \
+        || return 1
+    printf '%s RELEASE=%s\n' "$label" "$body"
+    printf '%s' "$body" \
+        | grep -Fq "\"frontend_sha\": \"$FRONTEND_SHA\""
+}
+
 CURRENT_STEP=http_check
 step "Checking backend API and frontend"
 check_http http://127.0.0.1:8901/healthz \
@@ -309,6 +335,16 @@ check_http http://127.0.0.1:8901/api/v1/builder/presets \
     || fail "Builder presets API check failed"
 check_http "http://127.0.0.1:8902$FRONTEND_HEALTH_PATH" \
     || fail "Frontend HTTP check failed"
+check_release local_frontend \
+    "http://127.0.0.1:8902$PUBLIC_RELEASE_PATH" \
+    || fail "Local frontend release does not match $FRONTEND_SHA"
+if [ "$SKIP_PUBLIC_CHECK" = "1" ]; then
+    echo "PUBLIC_RELEASE_CHECK=SKIPPED"
+else
+    check_release public_frontend \
+        "${PUBLIC_ORIGIN}${PUBLIC_RELEASE_PATH}" \
+        || fail "Public frontend is not serving $FRONTEND_SHA"
+fi
 
 CURRENT_STEP=finalize
 "${COMPOSE[@]}" ps
@@ -323,6 +359,7 @@ echo "FRONTEND_SHA=$FRONTEND_SHA"
 echo "BACKEND_IMAGE=laptopplus-backend:$BACKEND_TAG"
 echo "BACKEND_NGINX_IMAGE=laptopplus-backend-nginx:$BACKEND_TAG"
 echo "FRONTEND_IMAGE=laptopplus-frontend:$FRONTEND_TAG"
+echo "PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
 echo "MIGRATION=$MIGRATION_STATUS"
 echo "COMPONENT_TYPE_SEEDER=$COMPONENT_TYPE_SEEDER_STATUS"
 echo "SPECIFICATION_KEY_SEEDER=$SPECIFICATION_KEY_SEEDER_STATUS"
