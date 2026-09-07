@@ -313,7 +313,7 @@ wait_for_backend_health || {
 
 CURRENT_STEP=migrate
 step "Running Laravel migrations"
-"${COMPOSE[@]}" run --rm --no-deps backend-php php artisan migrate --force
+"${COMPOSE[@]}" run --rm --no-deps backend-php php artisan migrate --force </dev/null
 MIGRATION_STATUS=RUN
 
 SEEDERS=(
@@ -328,7 +328,7 @@ for seeder in "${SEEDERS[@]}"; do
     CURRENT_STEP="seed_$seeder"
     step "Running $seeder"
     "${COMPOSE[@]}" run --rm --no-deps backend-php php artisan db:seed \
-        --class="$seeder" --force
+        --class="$seeder" --force </dev/null
     case "$seeder" in
         ComponentTypeSeeder) COMPONENT_TYPE_SEEDER_STATUS="$seeder" ;;
         SpecificationKeySeeder) SPECIFICATION_KEY_SEEDER_STATUS="$seeder" ;;
