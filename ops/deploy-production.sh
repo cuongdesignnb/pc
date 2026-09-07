@@ -75,6 +75,28 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
 }
 
+fetch_main_with_retry() {
+    local repository="$1"
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        if git -C "$repository" \
+            -c http.connectTimeout=20 \
+            -c http.lowSpeedLimit=1000 \
+            -c http.lowSpeedTime=30 \
+            fetch --no-tags --prune origin main; then
+            return 0
+        fi
+
+        if [ "$attempt" -lt 5 ]; then
+            echo "FETCH_RETRY=$attempt/5 repository=$repository" >&2
+            sleep 5
+        fi
+    done
+
+    return 1
+}
+
 step() {
     printf '\n[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
 }
@@ -123,7 +145,7 @@ trap 'exit 143' TERM
 trap '' HUP
 
 CURRENT_STEP=preflight
-for command in git docker curl sed cp mktemp flock grep awk tar date; do
+for command in git docker curl sed cp mktemp flock grep awk tar date sleep; do
     require_command "$command"
 done
 
@@ -144,10 +166,10 @@ flock -n 9 || fail "Another production deploy is already running"
 
 step "Fetching backend main"
 CURRENT_STEP=fetch_backend
-git -C "$STACK_DIR" fetch --no-tags --prune origin main
+fetch_main_with_retry "$STACK_DIR"
 step "Fetching frontend main"
 CURRENT_STEP=fetch_frontend
-git -C "$FRONTEND_REPO" fetch --no-tags --prune origin main
+fetch_main_with_retry "$FRONTEND_REPO"
 
 BACKEND_SHA="${requested_backend_sha:-$(git -C "$STACK_DIR" rev-parse origin/main)}"
 FRONTEND_SHA="${requested_frontend_sha:-$(git -C "$FRONTEND_REPO" rev-parse origin/main)}"
