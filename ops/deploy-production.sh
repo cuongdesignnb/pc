@@ -380,8 +380,8 @@ check_locations_asset() {
     local body
     body="$(curl -fsS --max-time 20 http://127.0.0.1:8902/data/locations.json)" \
         || return 1
-    printf '%s' "$body" | grep -Fq '"provinces"' \
-        && printf '%s' "$body" | grep -Fq '"wards"'
+    [[ "$body" == *'"provinces"'* ]] \
+        && [[ "$body" == *'"wards"'* ]]
 }
 
 check_release() {
