@@ -67,6 +67,8 @@ class StorefrontSmtpMailer
             'mail.mailers.smtp.username' => $this->nullable('smtp_username'),
             'mail.mailers.smtp.password' => $this->nullable('smtp_password'),
             'mail.mailers.smtp.scheme' => $this->transportScheme(),
+            'mail.mailers.smtp.auto_tls' => $this->smtpEncryption() !== 'none',
+            'mail.mailers.smtp.require_tls' => $this->smtpEncryption() === 'tls',
             'mail.from.address' => $fromAddress,
             'mail.from.name' => $fromName,
         ]);
@@ -87,7 +89,14 @@ class StorefrontSmtpMailer
 
     private function transportScheme(): ?string
     {
-        return $this->string('smtp_encryption', 'tls') === 'ssl' ? 'smtps' : null;
+        return $this->smtpEncryption() === 'ssl' ? 'smtps' : 'smtp';
+    }
+
+    private function smtpEncryption(): string
+    {
+        $encryption = strtolower($this->string('smtp_encryption', 'tls'));
+
+        return in_array($encryption, ['tls', 'ssl', 'none'], true) ? $encryption : 'tls';
     }
 
     private function string(string $key, string $fallback = ''): string
