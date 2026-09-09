@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PostCardResource;
+use App\Http\Resources\PostDetailResource;
 use App\Models\Banner;
 use App\Models\Post;
 use App\Models\PostCategory;
@@ -11,6 +12,7 @@ use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class BlogController extends Controller
 {
@@ -110,30 +112,77 @@ class BlogController extends Controller
     /**
      * Get single post
      */
-    public function show(string $slug): JsonResponse
+    public function show(Request $request, string $slug): JsonResponse
     {
-        $post = Post::with(['category', 'author'])
+        $post = Post::with([
+                'category:id,name,slug',
+                'author:id,name,avatar',
+            ])
             ->published()
             ->where('slug', $slug)
             ->firstOrFail();
 
-        // Increment view count
-        $post->increment('view_count');
-
-        // Related posts
-        $related = Post::with(['category'])
-            ->published()
-            ->where('id', '!=', $post->id)
-            ->where('post_category_id', $post->post_category_id)
+        $related = $this->relatedPosts($post);
+        $trending = $this->publishedPosts()
+            ->orderByDesc('view_count')
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
+            ->limit(5)
+            ->get();
+        $reviews = $this->publishedPosts()
+            ->whereKeyNot($post->id)
+            ->whereHas('category', fn (Builder $query) => $query->whereIn('slug', ['review-san-pham', 'review']))
+            ->orderByDesc('view_count')
             ->orderByDesc('published_at')
             ->orderByDesc('id')
             ->limit(4)
             ->get();
 
+        if ($reviews->isEmpty()) {
+            $reviews = $related->take(4);
+        }
+
         return response()->json([
-            'post' => $post,
+            'post' => PostDetailResource::make($post)->resolve($request),
             'related' => PostCardResource::collection($related)->resolve(),
+            'sidebar' => [
+                'trending' => PostCardResource::collection($trending)->resolve(),
+                'reviews' => PostCardResource::collection($reviews)->resolve(),
+                'pc_builder' => $this->pcBuilderPayload(),
+            ],
         ]);
+    }
+
+    /**
+     * Register a view separately from the read-only article endpoint.
+     * A privacy-preserving IP/user-agent hash prevents refreshes and bots
+     * from inflating the counter on every GET request.
+     */
+    public function view(Request $request, string $slug): JsonResponse
+    {
+        $post = Post::query()
+            ->published()
+            ->where('slug', $slug)
+            ->firstOrFail();
+        $sessionId = $request->hasSession() ? $request->session()->getId() : '';
+        $visitor = hash('sha256', implode('|', [
+            (string) ($request->user()?->getAuthIdentifier() ?? ''),
+            (string) $sessionId,
+            (string) $request->ip(),
+            (string) $request->userAgent(),
+            (string) $post->id,
+        ]));
+        $key = 'news-view:'.$post->id.':'.$visitor;
+        $tracked = Cache::add($key, true, now()->addMinutes(30));
+
+        if ($tracked) {
+            $post->increment('view_count');
+        }
+
+        return response()->json([
+            'tracked' => $tracked,
+            'view_count' => (int) $post->fresh()->view_count,
+        ])->header('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
     }
 
     /**
@@ -269,5 +318,35 @@ class BlogController extends Controller
             'link' => $banner->link,
             'metadata' => is_array($banner->metadata) ? $banner->metadata : null,
         ];
+    }
+
+    /** @return \Illuminate\Support\Collection<int, Post> */
+    private function relatedPosts(Post $post)
+    {
+        $related = collect();
+
+        if ($post->post_category_id) {
+            $related = $this->publishedPosts()
+                ->whereKeyNot($post->id)
+                ->where('post_category_id', $post->post_category_id)
+                ->orderByDesc('published_at')
+                ->orderByDesc('id')
+                ->limit(4)
+                ->get();
+        }
+
+        if ($related->count() < 4) {
+            $excludeIds = $related->pluck('id')->push($post->id)->all();
+            $related = $related->concat(
+                $this->publishedPosts()
+                    ->whereNotIn('id', $excludeIds)
+                    ->orderByDesc('published_at')
+                    ->orderByDesc('id')
+                    ->limit(4 - $related->count())
+                    ->get(),
+            )->values();
+        }
+
+        return $related;
     }
 }

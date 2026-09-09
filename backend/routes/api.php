@@ -91,6 +91,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/blog/categories', [BlogController::class, 'categories']);
     Route::get('/blog/featured', [BlogController::class, 'featured']);
     Route::get('/blog/{slug}', [BlogController::class, 'show']);
+    Route::post('/blog/{slug}/view', [BlogController::class, 'view'])->middleware('throttle:30,1');
 
     // PC Builder
     Route::get('/builder/component-types', [PcBuilderController::class, 'componentTypes']);

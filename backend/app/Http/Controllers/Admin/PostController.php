@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Post;
 use App\Models\PostCategory;
+use App\Services\News\ArticleContentSanitizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -45,7 +46,7 @@ class PostController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, ArticleContentSanitizer $sanitizer)
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -63,6 +64,7 @@ class PostController extends Controller
 
         $validated['user_id'] = Auth::id() ?? 1;
         $validated['view_count'] = 0;
+        $validated['body'] = $sanitizer->sanitize($validated['body']);
 
         Post::create($validated);
 
@@ -80,7 +82,7 @@ class PostController extends Controller
         ]);
     }
 
-    public function update(Request $request, Post $post)
+    public function update(Request $request, Post $post, ArticleContentSanitizer $sanitizer)
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -96,6 +98,7 @@ class PostController extends Controller
             'meta_description' => 'nullable|string',
         ]);
 
+        $validated['body'] = $sanitizer->sanitize($validated['body']);
         $post->update($validated);
 
         return redirect()->route('admin.posts.index')
@@ -152,7 +155,7 @@ class PostController extends Controller
         ]);
     }
 
-    public function import(Request $request)
+    public function import(Request $request, ArticleContentSanitizer $sanitizer)
     {
         $request->validate([
             'file' => 'required|file|mimes:csv,txt|max:10240',
@@ -199,7 +202,7 @@ class PostController extends Controller
                     'featured_image' => $row[9] ?? null,
                     'meta_title' => $row[10] ?? null,
                     'meta_description' => $row[11] ?? null,
-                    'body' => $row[12] ?? '',
+                    'body' => $sanitizer->sanitize($row[12] ?? ''),
                 ];
 
                 if ($id && Post::find($id)) {
