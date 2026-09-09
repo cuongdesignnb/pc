@@ -64,9 +64,10 @@ class CatalogProductProjectionService
             && (bool) $product->is_active
             && $product->kiot_sync_status === 'active'
             && $categoryVisible;
-        $underRepair = (bool) $product->kiot_is_under_repair
-            || $product->kiot_availability_status === 'repairing';
-        $inventory = $underRepair ? 0 : max(0, (int) ($product->kiot_available_quantity ?? 0));
+        // "Đang sửa chữa" from KIOT is operational metadata. It must not
+        // suppress the retail price, inventory, or sales eligibility.
+        $underRepair = false;
+        $inventory = max(0, (int) ($product->kiot_available_quantity ?? 0));
         $images = $product->images
             ->pluck('url')
             ->filter()
@@ -101,7 +102,7 @@ class CatalogProductProjectionService
             'category_visible' => $categoryVisible,
             'brand' => trim((string) ($product->brand?->name ?? '')),
             'condition' => 'new',
-            'availability' => $inventory > 0 && ! $underRepair ? 'in_stock' : 'out_of_stock',
+            'availability' => $inventory > 0 ? 'in_stock' : 'out_of_stock',
             'inventory' => $inventory,
             'price' => $priceData['retail_price'],
             'currency' => 'VND',

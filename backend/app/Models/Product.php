@@ -107,7 +107,7 @@ class Product extends Model
                         $query->where('provider', 'kiot')
                             ->where('kiot_sellable', true)
                             ->where('kiot_sync_status', 'active')
-                            ->where('kiot_availability_status', 'available')
+                            ->whereIn('kiot_availability_status', ['available', 'repairing'])
                             ->where('kiot_available_quantity', '>', 0)
                             ->where('price', '>', 0);
                     });
@@ -157,7 +157,7 @@ class Product extends Model
 
         return $this->kiot_sellable
             && $this->kiot_sync_status === 'active'
-            && $this->kiot_availability_status === 'available'
+            && in_array($this->kiot_availability_status, ['available', 'repairing'], true)
             && (int) $this->kiot_available_quantity > 0
             && (int) $this->price > 0;
     }
@@ -193,7 +193,9 @@ class Product extends Model
         }
 
         return match ($this->kiot_availability_status) {
-            'repairing' => 'Đang sửa chữa',
+            // KIOT's repair flag is an internal service state, not a retail
+            // availability state. Keep it purchasable whenever stock exists.
+            'repairing' => $this->isSellableOnline() ? 'Còn hàng' : 'Tạm thời không sẵn hàng',
             'reserved' => 'Tạm thời không sẵn hàng',
             'sold' => 'Hết hàng',
             'inactive', 'deleted' => 'Ngừng kinh doanh',

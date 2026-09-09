@@ -10,6 +10,7 @@ const props = defineProps({
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
 const currentUrl = computed(() => page.props.ziggy?.location || page.url);
+const pendingOrderCount = computed(() => Number(page.props.admin?.pending_orders_count || 0));
 
 // Permission check helper
 const can = (perm) => {
@@ -105,6 +106,10 @@ function isActive(item) {
     const url = page.url;
     if (item.exact) return url === item.href || url === item.href + '/';
     return url.startsWith(item.href);
+}
+
+function badgeFor(item) {
+    return item.href === '/admin/orders' ? pendingOrderCount.value : 0;
 }
 
 // Icon SVG paths
@@ -204,6 +209,7 @@ const icons = {
                                 >
                                     <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="icons[item.icon] || ''" /></svg>
                                     <span v-if="!sidebarCollapsed">{{ item.name }}</span>
+                                    <span v-if="!sidebarCollapsed && badgeFor(item)" class="ml-auto min-w-5 rounded-full bg-orange-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">{{ badgeFor(item) }}</span>
                                 </Link>
                                 </template>
                             </div>

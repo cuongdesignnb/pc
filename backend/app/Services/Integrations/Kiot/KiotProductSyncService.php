@@ -549,8 +549,19 @@ class KiotProductSyncService
                     'name' => $remote['pricing']['selected_price_book_name'] ?? null,
                 ];
             }
-            $availabilityStatus = (string) ($remote['inventory']['status'] ?? 'inactive');
+            $rawAvailabilityStatus = (string) ($remote['inventory']['status'] ?? 'inactive');
+            $physicalQuantity = max(0, (int) ($remote['inventory']['stock_quantity'] ?? 0));
+            $reservedQuantity = max(0, (int) ($remote['inventory']['reserved_quantity'] ?? 0));
             $availableQuantity = max(0, (int) ($remote['inventory']['available_quantity'] ?? 0));
+            $reportedUnderRepair = $rawAvailabilityStatus === 'repairing'
+                || (bool) ($remote['availability']['is_under_repair'] ?? false);
+            if ($reportedUnderRepair) {
+                // KIOT marks repair stock as unavailable even when physical
+                // units remain. For the storefront, use usable stock and do
+                // not surface the internal repair status to customers.
+                $availableQuantity = max($availableQuantity, max(0, $physicalQuantity - $reservedQuantity));
+            }
+            $availabilityStatus = $reportedUnderRepair ? 'available' : $rawAvailabilityStatus;
             $categoryVisible = $category?->isVisibleOnStorefront()
                 ?? (bool) ($remote['category']['show_on_pc_website'] ?? false);
             $providerVisible = (bool) ($remote['publishing']['show_on_pc_website'] ?? false);
@@ -558,7 +569,7 @@ class KiotProductSyncService
             $visible = $active && $providerVisible && $categoryVisible;
             $sellable = $visible
                 && $availabilityStatus === 'available'
-                && (bool) ($remote['availability']['is_available'] ?? false)
+                && ($reportedUnderRepair || (bool) ($remote['availability']['is_available'] ?? false))
                 && $availableQuantity > 0
                 && $selectedPrice > 0;
             $attributes = [
@@ -576,11 +587,11 @@ class KiotProductSyncService
                 'show_on_pc_website' => $visible,
                 'kiot_sync_status' => $status,
                 'kiot_availability_status' => $availabilityStatus,
-                'kiot_is_under_repair' => (bool) ($remote['availability']['is_under_repair'] ?? false),
+                'kiot_is_under_repair' => false,
                 'kiot_sellable' => $sellable,
                 'kiot_has_serial' => (bool) ($remote['has_serial'] ?? false),
-                'kiot_physical_quantity' => max(0, (int) ($remote['inventory']['stock_quantity'] ?? 0)),
-                'kiot_reserved_quantity' => max(0, (int) ($remote['inventory']['reserved_quantity'] ?? 0)),
+                'kiot_physical_quantity' => $physicalQuantity,
+                'kiot_reserved_quantity' => $reservedQuantity,
                 'kiot_available_quantity' => $availableQuantity,
                 'kiot_retail_price' => $this->money($remote['pricing']['retail_price'] ?? 0, $remoteId, $report),
                 'kiot_selected_price' => $selectedPrice,
@@ -640,7 +651,7 @@ class KiotProductSyncService
                 }
             }
 
-            if ($availabilityStatus === 'repairing') {
+            if ($reportedUnderRepair) {
                 $report['repairing']++;
             }
             if (! $categoryVisible) {

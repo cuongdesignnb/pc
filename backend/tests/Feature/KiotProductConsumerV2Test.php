@@ -137,7 +137,7 @@ class KiotProductConsumerV2Test extends TestCase
         ]);
     }
 
-    public function test_hidden_repairing_deleted_and_zero_price_products_are_fail_closed_in_public_cart_and_checkout(): void
+    public function test_repairing_products_remain_purchasable_while_hidden_deleted_and_zero_price_products_are_protected(): void
     {
         $visible = $this->category();
         $hidden = $this->category(['id' => 13, 'code' => 'INTERNAL', 'name' => 'Internal', 'slug' => 'internal', 'show_on_pc_website' => false]);
@@ -176,17 +176,21 @@ class KiotProductConsumerV2Test extends TestCase
         $report = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
 
         $repairingLocal = Product::where('remote_product_id', 124)->firstOrFail();
-        $this->assertFalse($repairingLocal->isSellableOnline());
-        $this->assertSame('Đang sửa chữa', $repairingLocal->availability_label);
+        $this->assertTrue($repairingLocal->isSellableOnline());
+        $this->assertSame(1, $repairingLocal->stock_quantity);
+        $this->assertSame('available', $repairingLocal->kiot_availability_status);
+        $this->assertFalse($repairingLocal->kiot_is_under_repair);
+        $this->assertSame('Còn hàng', $repairingLocal->availability_label);
         $this->getJson('/api/v1/products/'.$repairingLocal->slug)
             ->assertOk()
-            ->assertJsonPath('product.is_purchasable', false)
-            ->assertJsonPath('product.availability_label', 'Đang sửa chữa');
+            ->assertJsonPath('product.is_purchasable', true)
+            ->assertJsonPath('product.availability_label', 'Còn hàng');
         $this->withHeader('X-Cart-Session', 'repairing-cart')->postJson('/api/v1/cart/items', [
             'product_id' => $repairingLocal->id,
             'quantity' => 1,
-        ])->assertUnprocessable();
-        $this->postJson('/api/v1/orders', $this->checkoutPayload($repairingLocal->id))->assertUnprocessable();
+        ])->assertOk();
+        config()->set('integrations.kiot.order_sync_enabled', false);
+        $this->postJson('/api/v1/orders', $this->checkoutPayload($repairingLocal->id))->assertCreated();
 
         $listingIds = collect($this->getJson('/api/v1/products?per_page=100')->assertOk()->json('data'))->pluck('id');
         $this->assertTrue($listingIds->contains($repairingLocal->id));

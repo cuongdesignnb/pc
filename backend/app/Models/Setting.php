@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Support\PublicAssetUrl;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 
 class Setting extends Model
 {
@@ -35,7 +37,11 @@ class Setting extends Model
             return $default;
         }
 
-        return self::castValue($setting->value, $setting->type);
+        $value = self::isSecret($setting)
+            ? self::decryptSecret($setting->value)
+            : $setting->value;
+
+        return self::castValue($value, $setting->type);
     }
 
     /**
@@ -50,7 +56,12 @@ class Setting extends Model
         $setting = static::where('key', $key)->first();
 
         if ($setting) {
-            $setting->update(['value' => is_array($value) ? json_encode($value) : (string) $value]);
+            $storedValue = self::serializeValue($value);
+            if (self::isSecret($setting)) {
+                $storedValue = self::encryptSecret($storedValue);
+            }
+
+            $setting->update(['value' => $storedValue]);
         } else {
             static::create([
                 'key' => $key,
@@ -107,6 +118,36 @@ class Setting extends Model
             'site_favicon',
             'seo_og_image',
         ], true);
+    }
+
+    public static function isSecret(self $setting): bool
+    {
+        return $setting->type === 'password' || str_ends_with($setting->key, '_api_key');
+    }
+
+    private static function serializeValue(mixed $value): string
+    {
+        return is_array($value) ? json_encode($value) : (string) $value;
+    }
+
+    private static function encryptSecret(string $value): string
+    {
+        return $value === '' ? '' : Crypt::encryptString($value);
+    }
+
+    private static function decryptSecret(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return $value;
+        }
+
+        try {
+            return Crypt::decryptString($value);
+        } catch (DecryptException) {
+            // Existing secrets may predate encryption. Keep them usable and
+            // encrypt them next time the administrator saves the setting.
+            return $value;
+        }
     }
 
     /**

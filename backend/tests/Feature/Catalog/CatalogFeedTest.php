@@ -59,14 +59,14 @@ class CatalogFeedTest extends TestCase
         $this->assertStringContainsString('Laptop Đồ họa, cao cấp', $xml);
         $this->assertStringContainsString('<g:id>kiot:1</g:id>', $xml);
         $this->assertStringContainsString('<g:id>kiot:2</g:id>', $xml);
-        $this->assertStringContainsString('<g:availability>out_of_stock</g:availability>', $xml);
+        $this->assertStringNotContainsString('<g:availability>out_of_stock</g:availability>', $xml);
         $this->assertStringNotContainsString('kiot:3', $xml);
         $this->assertStringNotContainsString('kiot:4', $xml);
         $this->assertStringNotContainsString('kiot:5', $xml);
 
         $csv = Storage::disk('local')->get('catalog-feed-tests/meta-products.csv');
         $this->assertStringContainsString('Laptop Đồ họa, cao cấp', $csv);
-        $this->assertStringContainsString('UNDER_REPAIR', $csv);
+        $this->assertStringNotContainsString('UNDER_REPAIR', $csv);
         $this->assertSame(MetaCatalogCsvRenderer::HEADERS, str_getcsv(strtok($csv, "\n"), ',', '"', ''));
     }
 

@@ -6,6 +6,7 @@ use App\Exceptions\CheckoutQuoteException;
 use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
+use App\Jobs\Orders\SendNewOrderNotification;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Order;
@@ -118,6 +119,10 @@ class OrderController extends Controller
                 'message' => $this->friendlyError($order->kiot_sync_error_code),
                 'order' => $this->present($order), 'integration_status' => 'rejected',
             ], 422);
+        }
+
+        if (! $result['duplicate']) {
+            SendNewOrderNotification::dispatch($order->id);
         }
 
         if (($validated['checkout_mode'] ?? 'cart') === 'cart'

@@ -148,6 +148,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     // Settings
     Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
     Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
+    Route::post('settings/test-smtp', [SettingController::class, 'sendSmtpTest'])->name('settings.test-smtp');
 
     Route::middleware('permission:settings.view')->group(function () {
         Route::get('integrations/kiot', [KiotIntegrationController::class, 'index'])->name('integrations.kiot.index');

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Order;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -49,6 +50,11 @@ class HandleInertiaRequests extends Middleware
                     'roles' => $user->getRoleNames(),
                     'permissions' => $user->allPermissionNames(),
                 ] : null,
+            ],
+            'admin' => [
+                'pending_orders_count' => fn () => $request->is('admin', 'admin/*')
+                    ? Order::query()->where('order_status', 'pending')->count()
+                    : 0,
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

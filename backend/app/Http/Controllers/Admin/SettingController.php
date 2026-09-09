@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exceptions\SmtpConfigurationException;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
-use App\Support\PublicAssetUrl;
+use App\Services\Mail\StorefrontSmtpMailer;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Throwable;
 
 class SettingController extends Controller
 {
@@ -39,14 +41,7 @@ class SettingController extends Controller
         foreach ($request->input('settings') as $item) {
             $setting = Setting::where('key', $item['key'])->first();
             if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'], ['', '********'], true))) {
-                $value = $item['value'];
-                if (is_array($value)) {
-                    $value = json_encode($value);
-                }
-                if (Setting::isAssetKey($setting->key) && is_string($value)) {
-                    $value = PublicAssetUrl::normalize($value);
-                }
-                $setting->update(['value' => $value]);
+                Setting::set($setting->key, $item['value']);
             }
         }
 
@@ -54,5 +49,24 @@ class SettingController extends Controller
 
         return redirect()->route('admin.settings.index')
             ->with('success', 'Cập nhật cài đặt thành công');
+    }
+
+    public function sendSmtpTest(Request $request, StorefrontSmtpMailer $mailer)
+    {
+        $validated = $request->validate([
+            'recipient' => 'required|email:rfc|max:255',
+        ]);
+
+        try {
+            $mailer->sendTest($validated['recipient']);
+        } catch (SmtpConfigurationException $exception) {
+            return back()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', 'Không thể gửi email thử. Vui lòng kiểm tra lại máy chủ SMTP, cổng và thông tin đăng nhập.');
+        }
+
+        return back()->with('success', 'Đã gửi email thử. Hãy kiểm tra hộp thư nhận và thư mục Spam.');
     }
 }

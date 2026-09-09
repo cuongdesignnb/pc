@@ -298,7 +298,7 @@ class CategoryController extends Controller
                         ->where('provider', 'kiot')
                         ->where('kiot_sellable', true)
                         ->where('kiot_sync_status', 'active')
-                        ->where('kiot_availability_status', 'available')
+                        ->whereIn('kiot_availability_status', ['available', 'repairing'])
                         ->where('kiot_available_quantity', '>', 0)
                         ->where('price', '>', 0);
                 })

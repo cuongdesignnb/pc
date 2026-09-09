@@ -57,7 +57,7 @@ class CatalogProjectionTest extends TestCase
         $this->assertTrue(app(CatalogProductValidator::class)->validate($first)->valid);
     }
 
-    public function test_repairing_product_is_out_of_stock_and_invalid_product_reasons_are_explicit(): void
+    public function test_repair_status_does_not_suppress_catalog_inventory_or_price(): void
     {
         $category = $this->category();
         $repairing = $this->product($category, [
@@ -68,10 +68,11 @@ class CatalogProjectionTest extends TestCase
 
         $projection = app(CatalogProductProjectionService::class)->project($repairing->fresh());
         $validation = app(CatalogProductValidator::class)->validate($projection);
-        $this->assertSame('out_of_stock', $projection->availability);
-        $this->assertSame(0, $projection->inventory);
+        $this->assertSame('in_stock', $projection->availability);
+        $this->assertSame(5, $projection->inventory);
+        $this->assertFalse($projection->isUnderRepair);
         $this->assertTrue($validation->valid);
-        $this->assertContains('UNDER_REPAIR', $validation->warnings);
+        $this->assertNotContains('UNDER_REPAIR', $validation->warnings);
 
         $invalid = $this->product($category, [
             'remote_product_id' => 102,
