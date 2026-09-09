@@ -91,6 +91,12 @@ class KiotOrderService
                         'quantity' => $quantity,
                         'price' => $unitPrice,
                         'total' => $lineTotal,
+                        // Warranty is a purchase-time snapshot. Account
+                        // pages must not recalculate historical coverage
+                        // from a product that may change later.
+                        'warranty_months' => $product->warranty_months === null
+                            ? null
+                            : (int) $product->warranty_months,
                     ];
                 }
 

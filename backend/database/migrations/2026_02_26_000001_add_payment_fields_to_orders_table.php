@@ -28,11 +28,19 @@ return new class extends Migration
         // Copy data
         \DB::statement('UPDATE orders SET payment_status_new = payment_status');
 
+        // SQLite rebuilds the table for dropColumn. Drop the old composite
+        // index in its own blueprint first; combining both commands in one
+        // blueprint can make SQLite rebuild the table before the index is
+        // actually removed.
+        if (\DB::connection()->getDriverName() === 'sqlite') {
+            \DB::statement('DROP INDEX IF EXISTS orders_payment_status_order_status_index');
+        } else {
+            Schema::table('orders', function (Blueprint $table) {
+                $table->dropIndex('orders_payment_status_order_status_index');
+            });
+        }
+
         Schema::table('orders', function (Blueprint $table) {
-            // SQLite rebuilds the table for dropColumn. Remove the composite
-            // index first so the temporary schema does not reference the old
-            // payment_status column.
-            $table->dropIndex(['payment_status', 'order_status']);
             $table->dropColumn('payment_status');
         });
 

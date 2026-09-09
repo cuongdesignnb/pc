@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BlogController;
 use App\Http\Controllers\Api\BrandController;
@@ -143,6 +144,19 @@ Route::prefix('v1')->group(function () {
         // Saved builds (requires auth)
         Route::post('/builder/save', [PcBuilderController::class, 'saveBuild']);
         Route::get('/builder/saved', [PcBuilderController::class, 'savedBuilds']);
+        Route::get('/builder/saved/{savedBuild}', [PcBuilderController::class, 'savedBuild']);
+        Route::delete('/builder/saved/{savedBuild}', [PcBuilderController::class, 'destroySavedBuild']);
+
+        // Customer account dashboard and owned commerce data.
+        Route::get('/account/dashboard', [AccountController::class, 'dashboard']);
+        Route::get('/account/orders', [AccountController::class, 'orders']);
+        Route::get('/account/orders/{order}', [AccountController::class, 'order']);
+        Route::get('/account/saved-builds', [AccountController::class, 'savedBuilds']);
+        Route::get('/account/addresses', [AccountController::class, 'addresses']);
+        Route::post('/account/addresses', [AccountController::class, 'storeAddress']);
+        Route::patch('/account/addresses/{address}', [AccountController::class, 'updateAddress']);
+        Route::delete('/account/addresses/{address}', [AccountController::class, 'destroyAddress']);
+        Route::get('/account/warranties', [AccountController::class, 'warranties']);
 
         // User orders
         Route::get('/orders', [OrderController::class, 'index']);

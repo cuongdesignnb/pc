@@ -13,8 +13,10 @@ class Address extends Model
         'full_name',
         'phone',
         'province',
+        'province_code',
         'district',
         'ward',
+        'ward_code',
         'street',
         'is_default',
     ];
@@ -30,6 +32,8 @@ class Address extends Model
 
     public function getFullAddressAttribute(): string
     {
-        return "{$this->street}, {$this->ward}, {$this->district}, {$this->province}";
+        return collect([$this->street, $this->ward, $this->district, $this->province])
+            ->filter(fn (?string $part): bool => filled($part))
+            ->implode(', ');
     }
 }

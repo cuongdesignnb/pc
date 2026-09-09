@@ -28,6 +28,8 @@ class User extends Authenticatable
         'phone',
         'role',
         'avatar',
+        'date_of_birth',
+        'gender',
     ];
 
     /**
@@ -50,6 +52,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'date_of_birth' => 'date',
         ];
     }
 

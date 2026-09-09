@@ -17,6 +17,7 @@ class OrderItem extends Model
         'quantity',
         'price',
         'total',
+        'warranty_months',
     ];
 
     protected $casts = [
@@ -24,6 +25,7 @@ class OrderItem extends Model
         'variant_id' => 'integer',
         'price' => 'decimal:0',
         'total' => 'decimal:0',
+        'warranty_months' => 'integer',
     ];
 
     public function order(): BelongsTo

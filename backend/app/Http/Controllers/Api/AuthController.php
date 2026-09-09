@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserProfileResource;
 use App\Models\User;
 use App\Services\Auth\CommerceIdentityMergeService;
 use Illuminate\Http\JsonResponse;
@@ -42,7 +43,7 @@ class AuthController extends Controller
 
         return $this->noStore(response()->json([
             'message' => 'Đăng ký thành công',
-            'user' => $user->load('defaultAddress'),
+            'user' => UserProfileResource::make($user->load('defaultAddress'))->resolve($request),
             'token' => $token,
             'commerce' => [
                 'cart_merged' => $commerce['merged'],
@@ -75,7 +76,7 @@ class AuthController extends Controller
 
         return $this->noStore(response()->json([
             'message' => 'Đăng nhập thành công',
-            'user' => $user->load('defaultAddress'),
+            'user' => UserProfileResource::make($user->load('defaultAddress'))->resolve($request),
             'token' => $token,
             'commerce' => [
                 'cart_merged' => $commerce['merged'],
@@ -105,7 +106,7 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return $this->noStore(response()->json([
-            'user' => $request->user()->load('defaultAddress'),
+            'user' => UserProfileResource::make($request->user()->load('defaultAddress'))->resolve($request),
         ]));
     }
 
@@ -144,14 +145,16 @@ class AuthController extends Controller
             'name' => 'sometimes|string|max:255',
             'phone' => 'nullable|string|max:20',
             'avatar' => 'nullable|string|max:255',
+            'date_of_birth' => 'nullable|date|before_or_equal:today',
+            'gender' => 'nullable|in:male,female,other,prefer_not_to_say',
         ]);
 
         $user->update($validated);
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'message' => 'Cập nhật thông tin thành công',
-            'user' => $user,
-        ]);
+            'user' => UserProfileResource::make($user->fresh()->load('defaultAddress'))->resolve($request),
+        ]));
     }
 
     /**
@@ -176,9 +179,9 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        return response()->json([
+        return $this->noStore(response()->json([
             'message' => 'Đổi mật khẩu thành công',
-        ]);
+        ]));
     }
 
     private function issueToken(User $user, bool $remember): string

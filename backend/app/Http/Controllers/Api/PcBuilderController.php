@@ -176,6 +176,23 @@ class PcBuilderController extends Controller
         ]));
     }
 
+    public function savedBuild(Request $request, SavedBuild $savedBuild): JsonResponse
+    {
+        abort_unless((int) $savedBuild->user_id === (int) $request->user()->id, 404);
+
+        return $this->noStore(response()->json([
+            'build' => SavedBuildResource::make($savedBuild)->resolve($request),
+        ]));
+    }
+
+    public function destroySavedBuild(Request $request, SavedBuild $savedBuild): JsonResponse
+    {
+        abort_unless((int) $savedBuild->user_id === (int) $request->user()->id, 404);
+        $savedBuild->delete();
+
+        return $this->noStore(response()->json(['message' => 'Đã xóa cấu hình đã lưu.']));
+    }
+
     private function noStore(JsonResponse $response): JsonResponse
     {
         return $response
