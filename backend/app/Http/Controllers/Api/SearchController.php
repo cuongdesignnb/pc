@@ -22,12 +22,23 @@ class SearchController extends Controller
                 $query->where('name', 'LIKE', "%{$q}%")
                     ->orWhere('sku', 'LIKE', "%{$q}%");
             })
-            ->with(['category:id,slug,name', 'images' => fn ($img) => $img->orderBy('sort_order')->limit(1)])
+            // Do not apply a global limit to the has-many relation. On a
+            // search result containing several products, `limit(1)` returns
+            // one image for the whole eager-load query instead of one image
+            // per product. That made the image disappear for most results.
+            ->with([
+                'category:id,slug,name',
+                'images' => fn ($img) => $img
+                    ->orderByDesc('is_primary')
+                    ->orderBy('sort_order')
+                    ->orderBy('id'),
+            ])
             ->select('id', 'name', 'slug', 'price', 'sale_price', 'category_id', 'provider', 'inventory_source', 'kiot_retail_price', 'kiot_selected_price')
             ->limit(6)
             ->get()
             ->map(function (Product $product): array {
                 $pricing = $product->storefrontPricing();
+                $image = $product->images->first(fn ($image) => filled($image->url));
 
                 return [
                     'id' => $product->id,
@@ -37,7 +48,7 @@ class SearchController extends Controller
                     'sale_price' => $pricing['sale_price'],
                     'display_price' => $pricing['display_price'],
                     'is_contact_price' => $pricing['is_contact_price'],
-                    'image' => $product->images->first()?->url,
+                    'image' => $image?->url,
                     'url' => '/'.($product->category?->slug ?? 'san-pham').'/'.$product->slug,
                 ];
             });

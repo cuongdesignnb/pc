@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductImage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -47,6 +48,18 @@ class SearchApiTest extends TestCase
             'remote_product_id' => 5450,
             'kiot_product_id' => 5450,
         ]);
+        ProductImage::create([
+            'product_id' => $zeroSale->id,
+            'url' => '/storage/products/latitude-zero-sale.webp',
+            'sort_order' => 0,
+            'is_primary' => true,
+        ]);
+        ProductImage::create([
+            'product_id' => $kiot->id,
+            'url' => '/storage/products/dell-latitude-5450.webp',
+            'sort_order' => 0,
+            'is_primary' => true,
+        ]);
 
         $items = collect($this->getJson('/api/v1/search?q=Latitude')->assertOk()->json('products'))
             ->keyBy('id');
@@ -55,6 +68,10 @@ class SearchApiTest extends TestCase
         $this->assertNull($items[$zeroSale->id]['sale_price']);
         $this->assertSame(12000000, $items[$zeroSale->id]['display_price']);
         $this->assertFalse($items[$zeroSale->id]['is_contact_price']);
+        $this->assertSame(
+            'http://localhost/storage/products/latitude-zero-sale.webp',
+            $items[$zeroSale->id]['image'],
+        );
 
         $this->assertSame(0, $items[$contact->id]['display_price']);
         $this->assertTrue($items[$contact->id]['is_contact_price']);
@@ -62,6 +79,10 @@ class SearchApiTest extends TestCase
         $this->assertSame(14990000, $items[$kiot->id]['price']);
         $this->assertSame(14990000, $items[$kiot->id]['display_price']);
         $this->assertFalse($items[$kiot->id]['is_contact_price']);
+        $this->assertSame(
+            'http://localhost/storage/products/dell-latitude-5450.webp',
+            $items[$kiot->id]['image'],
+        );
     }
 
     /** @param array<string, mixed> $overrides */
