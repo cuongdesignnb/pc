@@ -53,7 +53,10 @@ class MenuController extends Controller
                     'name' => $menu?->name ?? 'Danh mục sản phẩm',
                     'slug' => $menu?->slug ?? 'synced-categories',
                 ],
-                'items' => $this->syncedCategoryItems(),
+                // Only the header has a category fallback. A missing footer
+                // menu must stay empty instead of rendering product categories
+                // in the footer.
+                'items' => $location === 'header' ? $this->syncedCategoryItems() : [],
             ]);
         }
 

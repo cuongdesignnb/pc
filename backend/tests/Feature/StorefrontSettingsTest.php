@@ -30,11 +30,29 @@ class StorefrontSettingsTest extends TestCase
         $this->setting('google_analytics_id', 'G-ABC123');
         $this->setting('chatgpt_api_key', 'secret', isPublic: false);
 
-        $this->getJson('/api/v1/settings')
+        $response = $this->getJson('/api/v1/settings')
             ->assertOk()
             ->assertJsonPath('site_name', 'HPCOM Việt Nam')
             ->assertJsonPath('google_analytics_id', 'G-ABC123')
             ->assertJsonMissingPath('chatgpt_api_key');
+
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->assertSame('no-cache', $response->headers->get('Pragma'));
+        $this->assertSame('0', $response->headers->get('Expires'));
+    }
+
+    public function test_missing_footer_menu_does_not_fall_back_to_storefront_categories(): void
+    {
+        Category::create([
+            'name' => 'CPU',
+            'slug' => 'cpu-footer-fallback-test',
+            'is_active' => true,
+            'show_on_pc_website' => true,
+        ]);
+
+        $this->getJson('/api/v1/menus/footer')
+            ->assertOk()
+            ->assertJsonPath('items', []);
     }
 
     public function test_category_localhost_assets_are_normalized_for_storefront(): void

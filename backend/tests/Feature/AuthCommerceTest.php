@@ -97,6 +97,29 @@ class AuthCommerceTest extends TestCase
             ->assertJsonPath('products.0.id', $second->id);
     }
 
+    public function test_authenticated_wishlist_can_add_and_remove_a_product(): void
+    {
+        $product = $this->product();
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/wishlist/items', ['product_id' => $product->id])
+            ->assertOk()
+            ->assertJsonPath('ids.0', $product->id);
+        $this->assertDatabaseHas('wishlist_items', [
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+        ]);
+
+        $this->deleteJson('/api/v1/wishlist/items/'.$product->id)
+            ->assertOk()
+            ->assertJsonCount(0, 'ids');
+        $this->assertDatabaseMissing('wishlist_items', [
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+        ]);
+    }
+
     private function product(array $overrides = []): Product
     {
         $category = Category::create([
