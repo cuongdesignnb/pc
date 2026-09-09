@@ -10,7 +10,7 @@ class ProductCardResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $displayPrice = $this->purchasableUnitPrice();
+        $pricing = $this->storefrontPricing();
 
         return [
             'id' => $this->id,
@@ -30,11 +30,7 @@ class ProductCardResource extends JsonResource
                 'slug' => $this->category->slug,
             ] : null),
             'images' => ProductImageResource::collection($this->whenLoaded('images')),
-            'pricing' => [
-                'price' => (int) $this->price,
-                'sale_price' => $this->sale_price === null ? null : (int) $this->sale_price,
-                'display_price' => $displayPrice,
-            ],
+            'pricing' => $pricing,
             'inventory' => [
                 'purchasable' => $this->is_purchasable,
                 'availability_label' => $this->availability_label,
@@ -46,8 +42,8 @@ class ProductCardResource extends JsonResource
                 'count' => (int) ($this->approved_reviews_count ?? 0),
             ],
             // Backward-compatible presentation values. No operational/sync metadata is exposed.
-            'price' => (int) $this->price,
-            'sale_price' => $this->sale_price === null ? null : (int) $this->sale_price,
+            'price' => $pricing['price'],
+            'sale_price' => $pricing['sale_price'],
             'quantity' => $this->quantity,
             'is_purchasable' => $this->is_purchasable,
             'availability_label' => $this->availability_label,

@@ -101,7 +101,8 @@ class Product extends Model
             ->where(function (Builder $query) {
                 $query->where(function (Builder $query) {
                     $query->whereNull('provider')
-                        ->where('stock_quantity', '>', 0);
+                        ->where('stock_quantity', '>', 0)
+                        ->whereRaw('COALESCE(NULLIF(sale_price, 0), price) > 0');
                 })
                     ->orWhere(function (Builder $query) {
                         $query->where('provider', 'kiot')
@@ -109,7 +110,7 @@ class Product extends Model
                             ->where('kiot_sync_status', 'active')
                             ->whereIn('kiot_availability_status', ['available', 'repairing'])
                             ->where('kiot_available_quantity', '>', 0)
-                            ->where('price', '>', 0);
+                            ->whereRaw('COALESCE(NULLIF(price, 0), NULLIF(kiot_selected_price, 0), kiot_retail_price, 0) > 0');
                     });
             });
     }
@@ -152,14 +153,15 @@ class Product extends Model
         if ($this->provider !== 'kiot') {
             return $this->stock_quantity > 0
                 && ($this->inventory_source === 'local'
-                    || ($this->inventory_source === 'kiot' && $this->kiot_sellable));
+                    || ($this->inventory_source === 'kiot' && $this->kiot_sellable))
+                && $this->purchasableUnitPrice() > 0;
         }
 
         return $this->kiot_sellable
             && $this->kiot_sync_status === 'active'
             && in_array($this->kiot_availability_status, ['available', 'repairing'], true)
             && (int) $this->kiot_available_quantity > 0
-            && (int) $this->price > 0;
+            && $this->purchasableUnitPrice() > 0;
     }
 
     public function isVisibleOnStorefront(): bool
@@ -185,11 +187,11 @@ class Product extends Model
 
     public function getAvailabilityLabelAttribute(): string
     {
+        if ($this->purchasableUnitPrice() <= 0) {
+            return 'Liên hệ';
+        }
         if ($this->inventory_source !== 'kiot') {
             return $this->stock_quantity > 0 ? 'Còn hàng' : 'Hết hàng';
-        }
-        if ((int) $this->price <= 0) {
-            return 'Liên hệ';
         }
 
         return match ($this->kiot_availability_status) {
@@ -205,9 +207,7 @@ class Product extends Model
 
     public function purchasableUnitPrice(): int
     {
-        return (int) ($this->inventory_source === 'kiot'
-            ? $this->price
-            : ($this->sale_price ?? $this->price));
+        return $this->storefrontPricing()['display_price'];
     }
 
     public function category(): BelongsTo
@@ -287,7 +287,60 @@ class Product extends Model
 
     public function getCurrentPriceAttribute(): float
     {
-        return $this->sale_price ?? $this->price;
+        return $this->purchasableUnitPrice();
+    }
+
+    /**
+     * Return the regular storefront price after resolving the price fields
+     * owned by the product provider. KIOT products keep both the selected
+     * website price and the retail fallback, while local products use the
+     * regular `price` column.
+     */
+    public function storefrontRegularPrice(): int
+    {
+        if ($this->inventory_source === 'kiot' || $this->provider === 'kiot') {
+            $selected = max(0, (int) ($this->kiot_selected_price ?? 0));
+            if ($selected > 0) {
+                return $selected;
+            }
+
+            $stored = max(0, (int) ($this->price ?? 0));
+            if ($stored > 0) {
+                return $stored;
+            }
+
+            return max(0, (int) ($this->kiot_retail_price ?? 0));
+        }
+
+        return max(0, (int) ($this->price ?? 0));
+    }
+
+    public function storefrontSalePrice(): ?int
+    {
+        $regularPrice = $this->storefrontRegularPrice();
+        $salePrice = $this->sale_price === null ? null : max(0, (int) $this->sale_price);
+
+        return $salePrice !== null
+            && $regularPrice > 0
+            && $salePrice > 0
+            && $salePrice < $regularPrice
+            ? $salePrice
+            : null;
+    }
+
+    /** @return array{price:int,sale_price:?int,display_price:int,is_contact_price:bool} */
+    public function storefrontPricing(): array
+    {
+        $regularPrice = $this->storefrontRegularPrice();
+        $salePrice = $this->storefrontSalePrice();
+        $displayPrice = $salePrice ?? $regularPrice;
+
+        return [
+            'price' => $regularPrice,
+            'sale_price' => $salePrice,
+            'display_price' => $displayPrice,
+            'is_contact_price' => $displayPrice <= 0,
+        ];
     }
 
     public function getAverageRatingAttribute(): ?float

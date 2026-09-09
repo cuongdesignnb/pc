@@ -23,18 +23,24 @@ class SearchController extends Controller
                     ->orWhere('sku', 'LIKE', "%{$q}%");
             })
             ->with(['category:id,slug,name', 'images' => fn ($img) => $img->orderBy('sort_order')->limit(1)])
-            ->select('id', 'name', 'slug', 'price', 'sale_price', 'category_id')
+            ->select('id', 'name', 'slug', 'price', 'sale_price', 'category_id', 'provider', 'inventory_source', 'kiot_retail_price', 'kiot_selected_price')
             ->limit(6)
             ->get()
-            ->map(fn ($p) => [
-                'id' => $p->id,
-                'name' => $p->name,
-                'slug' => $p->slug,
-                'price' => $p->price,
-                'sale_price' => $p->sale_price,
-                'image' => $p->images->first()?->url,
-                'url' => '/'.($p->category?->slug ?? 'san-pham').'/'.$p->slug,
-            ]);
+            ->map(function (Product $product): array {
+                $pricing = $product->storefrontPricing();
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'slug' => $product->slug,
+                    'price' => $pricing['price'],
+                    'sale_price' => $pricing['sale_price'],
+                    'display_price' => $pricing['display_price'],
+                    'is_contact_price' => $pricing['is_contact_price'],
+                    'image' => $product->images->first()?->url,
+                    'url' => '/'.($product->category?->slug ?? 'san-pham').'/'.$product->slug,
+                ];
+            });
 
         $posts = Post::where('status', 'published')
             ->where('title', 'LIKE', "%{$q}%")

@@ -10,7 +10,10 @@ class ProductDetailResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $displayPrice = $this->purchasableUnitPrice();
+        $pricing = $this->storefrontPricing();
+        $regularPrice = $pricing['price'];
+        $salePrice = $pricing['sale_price'];
+        $displayPrice = $pricing['display_price'];
         $approvedReviews = $this->approvedReviews;
         $reviewCount = $approvedReviews->count();
         $reviewAverage = $reviewCount > 0
@@ -53,14 +56,11 @@ class ProductDetailResource extends JsonResource
                 'slug' => $this->componentType->slug,
             ] : null,
             'is_featured' => (bool) $this->is_featured,
-            'pricing' => [
-                'price' => (int) $this->price,
-                'sale_price' => $this->sale_price === null ? null : (int) $this->sale_price,
-                'display_price' => $displayPrice,
-                'discount_percent' => $this->sale_price !== null && (int) $this->price > 0
-                    ? max(0, (int) round((1 - ((int) $this->sale_price / (int) $this->price)) * 100))
+            'pricing' => $pricing + [
+                'discount_percent' => $salePrice !== null && $regularPrice > 0
+                    ? (int) round((1 - ($salePrice / $regularPrice)) * 100)
                     : 0,
-                'saving' => $this->sale_price !== null ? max(0, (int) $this->price - (int) $this->sale_price) : 0,
+                'saving' => $salePrice !== null ? $regularPrice - $salePrice : 0,
             ],
             'inventory' => [
                 'quantity' => $this->quantity,

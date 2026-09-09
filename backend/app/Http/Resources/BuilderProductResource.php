@@ -10,7 +10,7 @@ class BuilderProductResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $displayPrice = $this->purchasableUnitPrice();
+        $pricing = $this->storefrontPricing();
         $reviewAverage = $this->approved_reviews_avg_rating;
         $reviewCount = $this->approved_reviews_count;
 
@@ -56,11 +56,7 @@ class BuilderProductResource extends JsonResource
                 'alt' => $image->alt ?: $this->name,
             ] : null,
             'images' => ProductImageResource::collection($this->whenLoaded('images')),
-            'pricing' => [
-                'price' => (int) $this->price,
-                'sale_price' => $this->sale_price === null ? null : (int) $this->sale_price,
-                'display_price' => (int) $displayPrice,
-            ],
+            'pricing' => $pricing,
             'inventory' => [
                 'purchasable' => (bool) $this->is_purchasable,
                 'availability_label' => $this->availability_label,
