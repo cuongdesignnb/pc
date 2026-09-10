@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\ComponentType;
 use App\Models\Filter;
+use App\Models\Page;
 use App\Models\Product;
+use App\Services\Seo\SlugRedirectService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -46,7 +49,7 @@ class CategoryController extends Controller
         'admin', 'api', 'san-pham',
     ];
 
-    public function store(Request $request)
+    public function store(Request $request, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -67,11 +70,33 @@ class CategoryController extends Controller
             'meta_description' => 'nullable|string',
         ]);
 
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertLegacySlugAvailable('category', $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+
         // Check slug collision with products
         if (Product::where('slug', $validated['slug'])->exists()) {
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một sản phẩm.'])->withInput();
         }
+        if (Page::where('slug', $validated['slug'])->exists()) {
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một trang.'])->withInput();
+        }
 
+        $validated += [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => now(),
+        ];
         Category::create($validated);
 
         return redirect()->route('admin.categories.index')
@@ -89,7 +114,7 @@ class CategoryController extends Controller
         ]);
     }
 
-    public function update(Request $request, Category $category)
+    public function update(Request $request, Category $category, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -110,12 +135,35 @@ class CategoryController extends Controller
             'meta_description' => 'nullable|string',
         ]);
 
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertSlugChangeAllowed($category, $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+
         // Check slug collision with products
         if (Product::where('slug', $validated['slug'])->exists()) {
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một sản phẩm.'])->withInput();
         }
+        if (Page::where('slug', $validated['slug'])->exists()) {
+            return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một trang.'])->withInput();
+        }
 
-        $category->update($validated);
+        $oldSlug = (string) $category->slug;
+        $category->update($validated + [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => $category->slug_locked_at ?: now(),
+        ]);
+        $redirects->recordCategoryChange($category, $oldSlug, $request->user()?->id);
 
         return redirect()->route('admin.categories.index')
             ->with('success', 'Cập nhật danh mục thành công');

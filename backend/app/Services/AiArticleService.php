@@ -231,7 +231,10 @@ PROMPT;
 
         return [
             'title' => $data['title'] ?? $keyword,
-            'slug' => $data['slug'] ?? Str::slug($keyword),
+            // Keep the model output/source text here. The writer that creates
+            // the post applies the shared Vietnamese slug policy once and
+            // records its metadata.
+            'slug' => $data['slug'] ?? $keyword,
             'excerpt' => $data['excerpt'] ?? '',
             'body' => $data['body'] ?? '',
             'meta_title' => $data['meta_title'] ?? $data['title'] ?? $keyword,

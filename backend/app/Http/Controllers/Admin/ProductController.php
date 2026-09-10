@@ -11,7 +11,10 @@ use App\Models\ProductDetailBlock;
 use App\Models\ProductRelation;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
+use App\Services\Seo\SlugRedirectService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -68,7 +71,7 @@ class ProductController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate(array_merge([
             'name' => 'required|string|max:255',
@@ -126,12 +129,31 @@ class ProductController extends Controller
             'relations.*.sort_order' => 'nullable|integer|min:0',
         ], $this->variantSkuRules($request, false)));
 
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertLegacySlugAvailable('product', $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+
         // Check slug collision with categories
         if (Category::where('slug', $validated['slug'])->exists()) {
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
+        $productData += [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => now(),
+        ];
         $product = Product::create($productData);
 
         if (array_key_exists('variants', $validated)) {
@@ -197,7 +219,7 @@ class ProductController extends Controller
         ]);
     }
 
-    public function update(Request $request, Product $product)
+    public function update(Request $request, Product $product, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate(array_merge([
             'name' => 'required|string|max:255',
@@ -255,17 +277,42 @@ class ProductController extends Controller
             'relations.*.sort_order' => 'nullable|integer|min:0',
         ], $this->variantSkuRules($request, true)));
 
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertSlugChangeAllowed($product, $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+
         // Check slug collision with categories
         if (Category::where('slug', $validated['slug'])->exists()) {
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
+        $oldSlug = (string) $product->slug;
+        $oldCategorySlug = $product->category?->slug;
+        $oldPath = $oldCategorySlug && $oldSlug
+            ? '/'.trim((string) $oldCategorySlug, '/').'/'.trim($oldSlug, '/')
+            : null;
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
+        $productData += [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => $product->slug_locked_at ?: now(),
+        ];
         if ($product->inventory_source === 'kiot') {
             unset($productData['sku'], $productData['price'], $productData['stock_quantity']);
             unset($validated['variants']);
         }
         $product->update($productData);
+        $redirects->recordProductChange($product->fresh(['category']), $oldSlug, $oldCategorySlug, $request->user()?->id, $oldPath);
 
         if (array_key_exists('variants', $validated)) {
             $this->syncVariants($product, $validated['variants'] ?? []);
@@ -500,7 +547,7 @@ class ProductController extends Controller
         ]);
     }
 
-    public function import(Request $request)
+    public function import(Request $request, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $request->validate([
             'file' => 'required|file|mimes:csv,txt|max:10240',
@@ -538,7 +585,13 @@ class ProductController extends Controller
                 $id = trim($row[0] ?? '');
                 $name = trim($row[1] ?? '');
                 $sku = trim($row[2] ?? '');
-                $slug = trim($row[3] ?? '') ?: Str::slug($name);
+                $providedSlug = trim($row[3] ?? '');
+                $slug = $providedSlug
+                    ? $slugs->validateCustom($providedSlug)
+                    : $slugs->normalize($name);
+                if ($slugs->isReserved($slug)) {
+                    throw new \InvalidArgumentException('Slug này dành riêng cho route hệ thống.');
+                }
 
                 if (! $name) {
                     continue;
@@ -569,14 +622,34 @@ class ProductController extends Controller
                     'meta_title' => $row[15] ?? null,
                     'meta_description' => $row[16] ?? null,
                     'barcode' => trim($row[17] ?? '') ?: null,
+                    'slug_source' => $name,
+                    'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                    'slug_locked_at' => now(),
                 ];
 
                 if ($id && ($existingProduct = Product::find($id))) {
+                    $oldSlug = (string) $existingProduct->slug;
+                    $oldCategorySlug = $existingProduct->category?->slug;
+                    $oldPath = $oldCategorySlug && $oldSlug
+                        ? '/'.trim((string) $oldCategorySlug, '/').'/'.trim($oldSlug, '/')
+                        : null;
+                    if ($existingProduct->slug_locked_at) {
+                        $data['slug'] = $oldSlug;
+                    }
                     if ($existingProduct->inventory_source === 'kiot') {
                         unset($data['sku'], $data['price'], $data['stock_quantity'], $data['barcode']);
                         $errors[] = "Dòng {$line}: SKU, giá cơ sở, tồn kho và barcode được bỏ qua vì sản phẩm do KIOT quản lý.";
                     }
-                    $existingProduct->update($data);
+                    $existingProduct->update($data + [
+                        'slug_locked_at' => $existingProduct->slug_locked_at ?: now(),
+                    ]);
+                    $redirects->recordProductChange(
+                        $existingProduct->fresh(['category']),
+                        $oldSlug,
+                        $oldCategorySlug,
+                        Auth::id(),
+                        $oldPath,
+                    );
                     $updated++;
                 } else {
                     // Ensure unique slug

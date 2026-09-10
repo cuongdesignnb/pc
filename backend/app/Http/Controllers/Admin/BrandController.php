@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Brand;
+use App\Services\Seo\SlugRedirectService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -25,18 +27,35 @@ class BrandController extends Controller
         return Inertia::render('Admin/Brands/Create');
     }
 
-    public function store(Request $request)
+    public function store(Request $request, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:brands',
+            'slug' => 'required|string|max:160|unique:brands',
             'logo' => 'nullable|string',
             'description' => 'nullable|string',
             'website' => 'nullable|url',
             'is_active' => 'boolean',
         ]);
 
-        Brand::create($validated);
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertLegacySlugAvailable('brand', $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        Brand::create($validated + [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => now(),
+        ]);
 
         return redirect()->route('admin.brands.index')
             ->with('success', 'Tạo thương hiệu thành công');
@@ -49,18 +68,37 @@ class BrandController extends Controller
         ]);
     }
 
-    public function update(Request $request, Brand $brand)
+    public function update(Request $request, Brand $brand, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:brands,slug,' . $brand->id,
+            'slug' => 'required|string|max:160|unique:brands,slug,' . $brand->id,
             'logo' => 'nullable|string',
             'description' => 'nullable|string',
             'website' => 'nullable|url',
             'is_active' => 'boolean',
         ]);
 
-        $brand->update($validated);
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertSlugChangeAllowed($brand, $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        $oldSlug = (string) $brand->slug;
+        $brand->update($validated + [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => $brand->slug_locked_at ?: now(),
+        ]);
+        $redirects->recordBrandChange($brand, $oldSlug, $request->user()?->id);
 
         return redirect()->route('admin.brands.index')
             ->with('success', 'Cập nhật thương hiệu thành công');

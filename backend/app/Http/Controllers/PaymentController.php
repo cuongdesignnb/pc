@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\Setting;
 use App\Services\Payments\SepayPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -40,9 +41,7 @@ class PaymentController extends Controller
      */
     public function success(Request $request)
     {
-        return view('payment.success', [
-            'order_number' => $request->query('order_invoice_number'),
-        ]);
+        return view('payment.success', $this->callbackViewData($request));
     }
 
     /**
@@ -50,9 +49,7 @@ class PaymentController extends Controller
      */
     public function error(Request $request)
     {
-        return view('payment.error', [
-            'order_number' => $request->query('order_invoice_number'),
-        ]);
+        return view('payment.error', $this->callbackViewData($request));
     }
 
     /**
@@ -60,9 +57,7 @@ class PaymentController extends Controller
      */
     public function cancel(Request $request)
     {
-        return view('payment.cancel', [
-            'order_number' => $request->query('order_invoice_number'),
-        ]);
+        return view('payment.cancel', $this->callbackViewData($request));
     }
 
     /**
@@ -110,5 +105,21 @@ class PaymentController extends Controller
         }
 
         return response()->json(['success' => true]);
+    }
+
+    /** @return array{order_number:?string,order_id:?int,site_name:string,frontend_url:string} */
+    private function callbackViewData(Request $request): array
+    {
+        $orderNumber = trim((string) $request->query('order_invoice_number', ''));
+        $order = $orderNumber === ''
+            ? null
+            : Order::query()->where('order_number', $orderNumber)->first(['id']);
+
+        return [
+            'order_number' => $orderNumber === '' ? null : $orderNumber,
+            'order_id' => $order?->getKey(),
+            'site_name' => (string) Setting::get('site_name', config('app.name')),
+            'frontend_url' => rtrim((string) config('app.frontend_url'), '/'),
+        ];
     }
 }

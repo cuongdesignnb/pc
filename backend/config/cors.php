@@ -3,12 +3,10 @@
 return [
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
     'allowed_methods' => ['*'],
-    'allowed_origins' => [
-        'https://hpcomvietnam.vn',
-        'https://www.hpcomvietnam.vn',
-        'http://localhost:3000',
-        'http://localhost:4455',
-    ],
+    'allowed_origins' => array_values(array_filter(array_map(
+        static fn (string $origin): string => rtrim(trim($origin), '/'),
+        explode(',', (string) env('CORS_ALLOWED_ORIGINS', env('FRONTEND_URL', ''))),
+    ))),
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],

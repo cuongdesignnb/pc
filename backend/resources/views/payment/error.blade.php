@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thanh toán thất bại - PC Shop</title>
+    <title>Thanh toán thất bại - {{ $site_name }}</title>
     <style>
         body {
             display: flex;
@@ -44,7 +44,7 @@
         @endif
         <p>Đã có lỗi xảy ra trong quá trình thanh toán. Vui lòng thử lại hoặc chọn phương thức thanh toán khác.</p>
         <div>
-            <a href="{{ config('app.frontend_url', 'http://localhost:8902') }}/checkout" class="btn">Thử thanh toán lại</a>
+            <a href="{{ $frontend_url }}/thanh-toan" class="btn">Thử thanh toán lại</a>
         </div>
     </div>
 </body>

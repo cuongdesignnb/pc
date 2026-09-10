@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thanh toán thành công - PC Shop</title>
+    <title>Thanh toán thành công - {{ $site_name }}</title>
     <style>
         body {
             display: flex;
@@ -51,17 +51,17 @@
         @endif
         <p>Cảm ơn bạn đã thanh toán. Đơn hàng của bạn đã được xác nhận.</p>
         <div>
-            <a href="{{ config('app.frontend_url', 'http://localhost:8902') }}/products" class="btn btn-outline">Tiếp tục mua sắm</a>
-            @if($order_number)
-                <a href="{{ config('app.frontend_url', 'http://localhost:8902') }}/account/orders" class="btn">Theo dõi đơn hàng</a>
+            <a href="{{ $frontend_url }}/san-pham" class="btn btn-outline">Tiếp tục mua sắm</a>
+            @if($order_id)
+                <a href="{{ $frontend_url }}/tai-khoan/don-hang" class="btn">Theo dõi đơn hàng</a>
             @endif
         </div>
 
         <script>
             // Auto redirect to frontend after 5 seconds
-            @if($order_number)
+            @if($order_id)
             setTimeout(function() {
-                window.location.href = '{{ config("app.frontend_url", "http://localhost:8902") }}/orders/{{ $order_number }}/success';
+                window.location.href = '{{ $frontend_url }}/don-hang/{{ $order_id }}/thanh-cong';
             }, 5000);
             @endif
         </script>

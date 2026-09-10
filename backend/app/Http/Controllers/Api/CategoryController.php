@@ -12,7 +12,10 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Models\SpecificationKey;
 use App\Support\PublicAssetUrl;
+use App\Services\Seo\SlugRedirectService;
+use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -24,13 +27,22 @@ class CategoryController extends Controller
      */
     public function index(): JsonResponse
     {
-        $categories = Category::with('children')
+        $categories = Category::with(['children' => function (Relation $query) {
+                $query->visibleOnStorefront()->orderBy('sort_order');
+            }])
             ->whereNull('parent_id')
             ->visibleOnStorefront()
             ->orderBy('sort_order')
             ->get();
 
-        return response()->json($categories);
+        return response()->json($categories->map(function (Category $category): array {
+            return array_merge($this->basicCategoryPayload($category), [
+                'children' => $category->children
+                    ->map(fn (Category $child): array => $this->basicCategoryPayload($child))
+                    ->values()
+                    ->all(),
+            ]);
+        })->values()->all());
     }
 
     /**
@@ -84,15 +96,18 @@ class CategoryController extends Controller
      * Get a category, its filter metadata, a paginated product listing and
      * real recommendations for the current category.
      */
-    public function show(string $slug, Request $request): JsonResponse
+    public function show(string $slug, Request $request, SlugRedirectService $redirects): JsonResponse
     {
+        $resolved = $redirects->categoryBySlug($slug);
+        abort_unless($resolved && $resolved->isVisibleOnStorefront(), 404);
+
         $category = Category::with([
             'children' => function ($query) {
                 $query->visibleOnStorefront()->orderBy('sort_order');
             },
             'parent',
         ])
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->visibleOnStorefront()
             ->firstOrFail();
 
@@ -462,6 +477,8 @@ class CategoryController extends Controller
 
     private function basicCategoryPayload(Category $category, ?string $description = null): array
     {
+        $urls = app(PublicUrlResolver::class);
+
         return [
             'id' => $category->id,
             'parent_id' => $category->parent_id,
@@ -472,6 +489,8 @@ class CategoryController extends Controller
             'icon' => $category->icon,
             'meta_title' => $category->meta_title,
             'meta_description' => $category->meta_description,
+            'canonical_path' => $urls->categoryPath($category),
+            'canonical_url' => $urls->categoryUrl($category),
         ];
     }
 

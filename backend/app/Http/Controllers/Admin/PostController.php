@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Services\News\ArticleContentSanitizer;
+use App\Services\Seo\SlugRedirectService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -46,11 +48,11 @@ class PostController extends Controller
         ]);
     }
 
-    public function store(Request $request, ArticleContentSanitizer $sanitizer)
+    public function store(Request $request, ArticleContentSanitizer $sanitizer, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:posts',
+            'slug' => 'required|string|max:160|unique:posts',
             'excerpt' => 'nullable|string|max:500',
             'body' => 'required|string',
             'featured_image' => 'nullable|string',
@@ -65,6 +67,24 @@ class PostController extends Controller
         $validated['user_id'] = Auth::id() ?? 1;
         $validated['view_count'] = 0;
         $validated['body'] = $sanitizer->sanitize($validated['body']);
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertLegacySlugAvailable('post', $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        $validated += [
+            'slug_source' => $validated['title'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => now(),
+        ];
 
         Post::create($validated);
 
@@ -82,11 +102,11 @@ class PostController extends Controller
         ]);
     }
 
-    public function update(Request $request, Post $post, ArticleContentSanitizer $sanitizer)
+    public function update(Request $request, Post $post, ArticleContentSanitizer $sanitizer, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:posts,slug,' . $post->id,
+            'slug' => 'required|string|max:160|unique:posts,slug,' . $post->id,
             'excerpt' => 'nullable|string|max:500',
             'body' => 'required|string',
             'featured_image' => 'nullable|string',
@@ -99,7 +119,26 @@ class PostController extends Controller
         ]);
 
         $validated['body'] = $sanitizer->sanitize($validated['body']);
-        $post->update($validated);
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertSlugChangeAllowed($post, $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        $oldSlug = (string) $post->slug;
+        $post->update($validated + [
+            'slug_source' => $validated['title'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => $post->slug_locked_at ?: now(),
+        ]);
+        $redirects->recordPostChange($post, $oldSlug, $request->user()?->id);
 
         return redirect()->route('admin.posts.index')
             ->with('success', 'Cập nhật bài viết thành công');
@@ -155,7 +194,7 @@ class PostController extends Controller
         ]);
     }
 
-    public function import(Request $request, ArticleContentSanitizer $sanitizer)
+    public function import(Request $request, ArticleContentSanitizer $sanitizer, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $request->validate([
             'file' => 'required|file|mimes:csv,txt|max:10240',
@@ -185,7 +224,11 @@ class PostController extends Controller
             try {
                 $id = trim($row[0] ?? '');
                 $title = trim($row[1] ?? '');
-                $slug = trim($row[2] ?? '') ?: Str::slug($title);
+                $providedSlug = trim($row[2] ?? '');
+                $slug = $providedSlug ? $slugs->validateCustom($providedSlug) : $slugs->normalize($title);
+                if ($slugs->isReserved($slug)) {
+                    throw new \InvalidArgumentException('Slug này dành riêng cho route hệ thống.');
+                }
 
                 if (!$title) continue;
 
@@ -206,17 +249,30 @@ class PostController extends Controller
                 ];
 
                 if ($id && Post::find($id)) {
-                    Post::where('id', $id)->update($data);
+                    $existing = Post::findOrFail($id);
+                    $oldSlug = (string) $existing->slug;
+                    if ($existing->slug_locked_at) {
+                        $data['slug'] = $oldSlug;
+                    }
+                    $existing->update($data + [
+                        'slug_source' => $title,
+                        'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                        'slug_locked_at' => $existing->slug_locked_at ?: now(),
+                    ]);
+                    $redirects->recordPostChange($existing, $oldSlug, Auth::id());
                     $updated++;
                 } else {
                     $baseSlug = $data['slug'];
                     $counter = 1;
                     while (Post::where('slug', $data['slug'])->exists()) {
-                        $data['slug'] = $baseSlug . '-' . $counter++;
+                        $data['slug'] = $slugs->normalize($baseSlug.'-'.$counter++);
                     }
                     $data['user_id'] = Auth::id() ?? 1;
                     $data['view_count'] = 0;
                     $data['published_at'] = ($data['status'] === 'published') ? now() : null;
+                    $data['slug_source'] = $title;
+                    $data['slug_policy_version'] = VietnameseSlugNormalizer::POLICY_VERSION;
+                    $data['slug_locked_at'] = now();
                     Post::create($data);
                     $created++;
                 }

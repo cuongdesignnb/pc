@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -13,6 +14,7 @@ class ProductSeeder extends Seeder
 {
     public function run(): void
     {
+        $slugs = app(VietnameseSlugNormalizer::class);
         $products = [
             // ===== CPU (cat:11, comp_type:1) =====
             ['category_id' => 11, 'brand_id' => 1, 'component_type_id' => 1, 'name' => 'Intel Core i9-14900K', 'price' => 15990000, 'sale_price' => 14490000, 'short_description' => '24 nhân 32 luồng, 6.0GHz Turbo, 36MB Cache, LGA 1700', 'warranty_months' => 36, 'is_featured' => true, 'stock_quantity' => 15],
@@ -167,7 +169,10 @@ class ProductSeeder extends Seeder
                 'brand_id' => $data['brand_id'],
                 'component_type_id' => $data['component_type_id'],
                 'name' => $data['name'],
-                'slug' => Str::slug($data['name']),
+                'slug' => $slugs->normalize($data['name']),
+                'slug_source' => $data['name'],
+                'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                'slug_locked_at' => now(),
                 'sku' => 'SP' . str_pad($counter, 5, '0', STR_PAD_LEFT),
                 'short_description' => $data['short_description'],
                 'description' => '<p>' . $data['short_description'] . '</p><p>Sản phẩm chính hãng, bảo hành ' . $data['warranty_months'] . ' tháng. Miễn phí giao hàng toàn quốc.</p>',

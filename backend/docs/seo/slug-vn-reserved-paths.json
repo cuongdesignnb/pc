@@ -1,0 +1,12 @@
+{
+  "policy_version": "vn-v1",
+  "reserved_segments": [
+    "san-pham", "danh-muc", "tin-tuc", "thuong-hieu", "tim-kiem", "cau-hinh",
+    "gioi-thieu", "lien-he", "bao-hanh", "van-chuyen", "dang-nhap", "dang-ky",
+    "tai-khoan", "gio-hang", "thanh-toan", "don-hang", "yeu-thich", "products",
+    "categories", "blog", "search", "cart", "checkout", "account", "orders",
+    "auth", "api", "admin", "payment", "payments", "webhooks", "sanctum", "feeds",
+    "storage", "assets", "build", "health", "robots.txt", "sitemap.xml", "sitemaps",
+    "_nuxt", "_ipx", ".well-known"
+  ]
+}

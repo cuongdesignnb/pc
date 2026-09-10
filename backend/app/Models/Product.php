@@ -57,6 +57,9 @@ class Product extends Model
         'kiot_synced_at',
         'kiot_sync_error_code',
         'kiot_sync_error_message',
+        'slug_source',
+        'slug_policy_version',
+        'slug_locked_at',
     ];
 
     protected $appends = ['quantity', 'is_purchasable', 'availability_label'];
@@ -88,6 +91,7 @@ class Product extends Model
         'show_on_pc_website' => 'boolean',
         'kiot_remote_updated_at' => 'datetime',
         'kiot_synced_at' => 'datetime',
+        'slug_locked_at' => 'datetime',
     ];
 
     public function getQuantityAttribute(): int

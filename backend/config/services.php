@@ -42,7 +42,7 @@ return [
         'webhook_key'  => env('SEPAY_WEBHOOK_API_KEY'),
         'bank_code'    => env('SEPAY_BANK_CODE', 'VCB'),
         'bank_account' => env('SEPAY_BANK_ACCOUNT'),
-        'account_name' => env('SEPAY_ACCOUNT_NAME', 'PC SHOP'),
+        'account_name' => env('SEPAY_ACCOUNT_NAME', env('APP_NAME', '')),
         'env'          => env('SEPAY_ENV', 'sandbox'),
         'endpoints'    => [
             'sandbox'    => env('SEPAY_ENDPOINT_SANDBOX', 'https://sandbox.sepay.vn/v1/checkout/init'),

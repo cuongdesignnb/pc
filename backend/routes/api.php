@@ -89,6 +89,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/blog/home', [BlogController::class, 'home']);
     Route::get('/blog', [BlogController::class, 'index']);
     Route::get('/blog/categories', [BlogController::class, 'categories']);
+    Route::get('/blog/categories/{slug}', [BlogController::class, 'category']);
     Route::get('/blog/featured', [BlogController::class, 'featured']);
     Route::get('/blog/{slug}', [BlogController::class, 'show']);
     Route::post('/blog/{slug}/view', [BlogController::class, 'view'])->middleware('throttle:30,1');

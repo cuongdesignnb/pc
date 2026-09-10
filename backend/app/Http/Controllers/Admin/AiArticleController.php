@@ -9,6 +9,7 @@ use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Setting;
 use App\Services\AiArticleService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -106,7 +107,7 @@ class AiArticleController extends Controller
     /**
      * Run/process a batch.
      */
-    public function run(AiArticleBatch $aiArticle)
+    public function run(AiArticleBatch $aiArticle, VietnameseSlugNormalizer $slugs)
     {
         if ($aiArticle->status === 'processing') {
             return back()->with('error', 'Batch dang duoc xu ly.');
@@ -135,10 +136,13 @@ class AiArticleController extends Controller
                 }
 
                 // Ensure unique slug
-                $slug = $article['slug'];
+                $slug = $slugs->normalize($article['slug'] ?: $article['title']);
+                if ($slugs->isReserved($slug)) {
+                    $slug = $slugs->normalize('bai-viet '.$article['title']);
+                }
                 $counter = 1;
                 while (Post::where('slug', $slug)->exists()) {
-                    $slug = $article['slug'] . '-' . $counter++;
+                    $slug = $slugs->normalize(($article['slug'] ?: $article['title']).' '.$counter++);
                 }
 
                 // Create post
@@ -156,6 +160,9 @@ class AiArticleController extends Controller
                     'meta_title' => $article['meta_title'],
                     'meta_description' => $article['meta_description'],
                     'view_count' => 0,
+                    'slug_source' => $article['title'],
+                    'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                    'slug_locked_at' => now(),
                 ]);
 
                 $item->update([

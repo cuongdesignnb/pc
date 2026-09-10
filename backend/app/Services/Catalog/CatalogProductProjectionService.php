@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Services\Catalog\Pricing\CatalogChannelPriceResolver;
 use App\Services\Catalog\Pricing\CatalogPriceResolver;
+use App\Services\Seo\PublicUrlResolver;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -18,6 +19,7 @@ class CatalogProductProjectionService
         private readonly CatalogProductChecksum $checksum,
         private readonly CatalogPriceResolver $prices,
         private readonly CatalogChannelPriceResolver $channelPrices,
+        private readonly PublicUrlResolver $urls,
     ) {}
 
     public function query(): Builder
@@ -107,7 +109,7 @@ class CatalogProductProjectionService
             'price' => $priceData['retail_price'],
             'currency' => 'VND',
             'sale_price' => $product->sale_price !== null ? max(0, (int) $product->sale_price) : null,
-            'product_url' => $this->productUrl($product, $category),
+            'product_url' => $this->productUrl($product),
             'image_url' => $primaryImage,
             'additional_image_urls' => $images->skip(1)->values()->all(),
             'is_active' => (bool) $product->is_active && ! $isDeleted,
@@ -163,12 +165,11 @@ class CatalogProductProjectionService
         return 'sku:'.Str::lower(trim((string) $product->sku));
     }
 
-    private function productUrl(Product $product, ?Category $category): string
+    private function productUrl(Product $product): string
     {
-        $base = rtrim((string) config('catalog.storefront_url'), '/');
-        $categorySlug = trim((string) ($category?->slug ?: 'san-pham'), '/');
+        $path = $this->urls->productPath($product);
 
-        return $base.'/'.$categorySlug.'/'.rawurlencode((string) $product->slug);
+        return $path === null ? '' : (string) $this->urls->absolute($path);
     }
 
     private function absolutePublicUrl(string $url): string
@@ -177,7 +178,9 @@ class CatalogProductProjectionService
             return $url;
         }
 
-        return rtrim((string) config('catalog.storefront_url'), '/').'/'.ltrim($url, '/');
+        $base = rtrim((string) (config('seo.site_origin') ?: config('catalog.storefront_url')), '/');
+
+        return $base === '' ? '' : $base.'/'.ltrim($url, '/');
     }
 
     private function categoryPath(?int $categoryId, Collection $categories): string

@@ -11,13 +11,18 @@ class SmtpTestMessage extends Mailable
 {
     use Queueable;
 
+    public function __construct(public readonly string $siteName) {}
+
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'Kiểm tra cấu hình SMTP');
+        return new Envelope(subject: 'Kiểm tra cấu hình SMTP - '.$this->siteName);
     }
 
     public function content(): Content
     {
-        return new Content(view: 'emails.smtp-test');
+        return new Content(
+            view: 'emails.smtp-test',
+            with: ['siteName' => $this->siteName],
+        );
     }
 }

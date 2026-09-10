@@ -13,10 +13,14 @@ class Page extends Model
         'meta_title',
         'meta_description',
         'is_active',
+        'slug_source',
+        'slug_policy_version',
+        'slug_locked_at',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'slug_locked_at' => 'datetime',
     ];
 
     public function scopeActive($query)

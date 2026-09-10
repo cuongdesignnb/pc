@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "site_key": "storefront",
+  "policy_version": "vn-v1",
+  "batch_id": "example-only",
+  "generated_at": null,
+  "data_snapshot": {},
+  "counts": {},
+  "mappings": [],
+  "checksum": "generated-by-seo:slug-plan"
+}

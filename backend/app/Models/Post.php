@@ -21,12 +21,16 @@ class Post extends Model
         'published_at',
         'meta_title',
         'meta_description',
+        'slug_source',
+        'slug_policy_version',
+        'slug_locked_at',
     ];
 
     protected $casts = [
         'published_at' => 'datetime',
         'view_count' => 'integer',
         'is_featured' => 'boolean',
+        'slug_locked_at' => 'datetime',
     ];
 
     public function user(): BelongsTo

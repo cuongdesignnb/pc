@@ -14,10 +14,14 @@ class Brand extends Model
         'logo',
         'website',
         'is_active',
+        'slug_source',
+        'slug_policy_version',
+        'slug_locked_at',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'slug_locked_at' => 'datetime',
     ];
 
     public function getLogoAttribute(?string $value): ?string

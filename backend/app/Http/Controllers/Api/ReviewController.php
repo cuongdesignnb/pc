@@ -7,12 +7,13 @@ use App\Http\Resources\ReviewResource;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Review;
+use App\Services\Seo\SlugRedirectService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ReviewController extends Controller
 {
-    public function index(Request $request, string $slug): JsonResponse
+    public function index(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
         $validated = $request->validate([
             'page' => ['nullable', 'integer', 'min:1'],
@@ -20,7 +21,8 @@ class ReviewController extends Controller
             'rating' => ['nullable', 'integer', 'min:1', 'max:5'],
             'sort' => ['nullable', 'in:newest,oldest,highest,lowest'],
         ]);
-        $product = Product::where('slug', $slug)->visibleOnStorefront()->firstOrFail();
+        $product = $redirects->productBySlug($slug);
+        abort_unless($product && $product->isVisibleOnStorefront(), 404);
         $query = Review::with(['user:id,name', 'order.items:id,order_id,product_id', 'media:id,review_id,url,sort_order'])
             ->where('product_id', $product->id)
             ->where('is_approved', true);
@@ -50,11 +52,10 @@ class ReviewController extends Controller
      * Submit a review for a product.
      * Guests can submit with name/email, authenticated users submit with account identity.
      */
-    public function store(Request $request, string $slug): JsonResponse
+    public function store(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
-        $product = Product::where('slug', $slug)
-            ->visibleOnStorefront()
-            ->firstOrFail();
+        $product = $redirects->productBySlug($slug);
+        abort_unless($product && $product->isVisibleOnStorefront(), 404);
 
         $user = $request->user('sanctum');
 
