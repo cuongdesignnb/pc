@@ -16,6 +16,7 @@ class SeoSlugAuditCommand extends Command
         $manifest = $planner->plan('audit-'.now()->format('YmdHis'));
         if ($this->option('json')) {
             $this->line(json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
             return self::SUCCESS;
         }
 

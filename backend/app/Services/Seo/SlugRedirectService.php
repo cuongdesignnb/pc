@@ -155,6 +155,7 @@ class SlugRedirectService
         }
 
         $slug = ltrim($path, '/');
+
         return $this->categoryBySlug($slug)
             ?? $this->categoryFromHistory(SlugHistory::forSourcePath($path)
                 ->where('route_namespace', 'category')
@@ -281,8 +282,7 @@ class SlugRedirectService
         ?int $actorId = null,
         ?string $oldPath = null,
         string $reason = 'slug_change',
-    ): ?SlugHistory
-    {
+    ): ?SlugHistory {
         $targetPath = $this->urls->productPath($product);
         if ($oldSlug === '' || $targetPath === null) {
             return null;
@@ -413,6 +413,7 @@ class SlugRedirectService
         }
 
         $normalized = '/'.trim(preg_replace('#/+#', '/', $path) ?? '', '/');
+
         return $normalized === '/' ? $normalized : rtrim($normalized, '/');
     }
 

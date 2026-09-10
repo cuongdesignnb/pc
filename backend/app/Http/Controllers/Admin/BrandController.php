@@ -72,7 +72,7 @@ class BrandController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:160|unique:brands,slug,' . $brand->id,
+            'slug' => 'required|string|max:160|unique:brands,slug,'.$brand->id,
             'logo' => 'nullable|string',
             'description' => 'nullable|string',
             'website' => 'nullable|url',

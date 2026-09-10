@@ -173,9 +173,9 @@ class ProductSeeder extends Seeder
                 'slug_source' => $data['name'],
                 'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
                 'slug_locked_at' => now(),
-                'sku' => 'SP' . str_pad($counter, 5, '0', STR_PAD_LEFT),
+                'sku' => 'SP'.str_pad($counter, 5, '0', STR_PAD_LEFT),
                 'short_description' => $data['short_description'],
-                'description' => '<p>' . $data['short_description'] . '</p><p>Sản phẩm chính hãng, bảo hành ' . $data['warranty_months'] . ' tháng. Miễn phí giao hàng toàn quốc.</p>',
+                'description' => '<p>'.$data['short_description'].'</p><p>Sản phẩm chính hãng, bảo hành '.$data['warranty_months'].' tháng. Miễn phí giao hàng toàn quốc.</p>',
                 'price' => $data['price'],
                 'sale_price' => $data['sale_price'],
                 'cost_price' => (int) ($data['price'] * 0.75),
@@ -187,10 +187,10 @@ class ProductSeeder extends Seeder
                 'sold_count' => rand(5, 200),
             ]);
 
-            // Create a placeholder image 
+            // Create a placeholder image
             ProductImage::create([
                 'product_id' => $product->id,
-                'url' => 'https://placehold.co/600x600/1a1a2e/e94560?text=' . urlencode(Str::limit($product->name, 25)),
+                'url' => 'https://placehold.co/600x600/1a1a2e/e94560?text='.urlencode(Str::limit($product->name, 25)),
                 'alt_text' => $product->name,
                 'sort_order' => 0,
                 'is_primary' => true,

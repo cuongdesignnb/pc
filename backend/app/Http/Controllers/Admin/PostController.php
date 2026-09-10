@@ -10,7 +10,6 @@ use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -95,7 +94,7 @@ class PostController extends Controller
     public function edit(Post $post)
     {
         $post->load('category');
-        
+
         return Inertia::render('Admin/Posts/Edit', [
             'post' => $post,
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
@@ -106,7 +105,7 @@ class PostController extends Controller
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'slug' => 'required|string|max:160|unique:posts,slug,' . $post->id,
+            'slug' => 'required|string|max:160|unique:posts,slug,'.$post->id,
             'excerpt' => 'nullable|string|max:500',
             'body' => 'required|string',
             'featured_image' => 'nullable|string',
@@ -164,7 +163,7 @@ class PostController extends Controller
         }
 
         $posts = $query->get();
-        $filename = 'bai-viet-' . date('Y-m-d-His') . '.csv';
+        $filename = 'bai-viet-'.date('Y-m-d-His').'.csv';
 
         return response()->streamDownload(function () use ($posts) {
             $handle = fopen('php://output', 'w');
@@ -190,7 +189,7 @@ class PostController extends Controller
             fclose($handle);
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
     }
 
@@ -204,11 +203,14 @@ class PostController extends Controller
         $handle = fopen($file->getPathname(), 'r');
 
         $bom = fread($handle, 3);
-        if ($bom !== "\xEF\xBB\xBF") rewind($handle);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
 
         $header = fgetcsv($handle);
-        if (!$header || count($header) < 3) {
+        if (! $header || count($header) < 3) {
             fclose($handle);
+
             return back()->with('error', 'File CSV không đúng định dạng');
         }
 
@@ -219,7 +221,9 @@ class PostController extends Controller
 
         while (($row = fgetcsv($handle)) !== false) {
             $line++;
-            if (count($row) < 3) continue;
+            if (count($row) < 3) {
+                continue;
+            }
 
             try {
                 $id = trim($row[0] ?? '');
@@ -230,7 +234,9 @@ class PostController extends Controller
                     throw new \InvalidArgumentException('Slug này dành riêng cho route hệ thống.');
                 }
 
-                if (!$title) continue;
+                if (! $title) {
+                    continue;
+                }
 
                 $categoryName = trim($row[3] ?? '');
                 $category = $categoryName ? PostCategory::where('name', $categoryName)->first() : null;
@@ -284,7 +290,7 @@ class PostController extends Controller
 
         $msg = "Import xong: {$created} bài viết mới, {$updated} cập nhật.";
         if (count($errors) > 0) {
-            $msg .= ' Lỗi: ' . implode('; ', array_slice($errors, 0, 5));
+            $msg .= ' Lỗi: '.implode('; ', array_slice($errors, 0, 5));
         }
 
         return back()->with('success', $msg);

@@ -37,10 +37,12 @@ class AiArticleService
             if ($provider === 'gemini') {
                 return $this->callGeminiImage($prompt);
             }
+
             // ChatGPT/DALL-E
             return $this->callDallE($prompt);
         } catch (\Exception $e) {
-            Log::error('AI Image generation failed: ' . $e->getMessage());
+            Log::error('AI Image generation failed: '.$e->getMessage());
+
             return null;
         }
     }
@@ -85,7 +87,7 @@ PROMPT;
         $apiKey = Setting::get('chatgpt_api_key');
         $model = Setting::get('chatgpt_model', 'gpt-4o-mini');
 
-        if (!$apiKey) {
+        if (! $apiKey) {
             throw new \Exception('ChatGPT API Key chua duoc cau hinh. Vui long cap nhat trong Cai dat.');
         }
 
@@ -115,7 +117,7 @@ PROMPT;
         $apiKey = Setting::get('gemini_api_key');
         $model = Setting::get('gemini_model', 'gemini-2.5-flash');
 
-        if (!$apiKey) {
+        if (! $apiKey) {
             throw new \Exception('Gemini API Key chua duoc cau hinh. Vui long cap nhat trong Cai dat.');
         }
 
@@ -144,7 +146,9 @@ PROMPT;
     private function callGeminiImage(string $prompt): ?string
     {
         $apiKey = Setting::get('gemini_api_key');
-        if (!$apiKey) return null;
+        if (! $apiKey) {
+            return null;
+        }
 
         $response = Http::timeout(60)->post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={$apiKey}",
@@ -165,15 +169,16 @@ PROMPT;
                     $data = $part['inlineData']['data'];
                     $mime = $part['inlineData']['mimeType'] ?? 'image/png';
                     $ext = $mime === 'image/jpeg' ? 'jpg' : 'png';
-                    $filename = 'ai-images/' . Str::random(20) . '.' . $ext;
-                    $path = storage_path('app/public/' . $filename);
-                    
-                    if (!is_dir(dirname($path))) {
+                    $filename = 'ai-images/'.Str::random(20).'.'.$ext;
+                    $path = storage_path('app/public/'.$filename);
+
+                    if (! is_dir(dirname($path))) {
                         mkdir(dirname($path), 0755, true);
                     }
-                    
+
                     file_put_contents($path, base64_decode($data));
-                    return '/storage/' . $filename;
+
+                    return '/storage/'.$filename;
                 }
             }
         }
@@ -184,7 +189,9 @@ PROMPT;
     private function callDallE(string $prompt): ?string
     {
         $apiKey = Setting::get('chatgpt_api_key');
-        if (!$apiKey) return null;
+        if (! $apiKey) {
+            return null;
+        }
 
         $response = Http::timeout(60)->withHeaders([
             'Authorization' => "Bearer {$apiKey}",
@@ -201,15 +208,16 @@ PROMPT;
             if ($imageUrl) {
                 // Download and save locally
                 $imageData = Http::timeout(30)->get($imageUrl)->body();
-                $filename = 'ai-images/' . Str::random(20) . '.png';
-                $path = storage_path('app/public/' . $filename);
-                
-                if (!is_dir(dirname($path))) {
+                $filename = 'ai-images/'.Str::random(20).'.png';
+                $path = storage_path('app/public/'.$filename);
+
+                if (! is_dir(dirname($path))) {
                     mkdir(dirname($path), 0755, true);
                 }
-                
+
                 file_put_contents($path, $imageData);
-                return '/storage/' . $filename;
+
+                return '/storage/'.$filename;
             }
         }
 
@@ -225,7 +233,7 @@ PROMPT;
 
         $data = json_decode($raw, true);
 
-        if (!$data || !isset($data['title'])) {
+        if (! $data || ! isset($data['title'])) {
             throw new \Exception('Khong the phan tich phan hoi tu AI. Vui long thu lai.');
         }
 

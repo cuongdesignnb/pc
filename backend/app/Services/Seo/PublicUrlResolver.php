@@ -2,11 +2,11 @@
 
 namespace App\Services\Seo;
 
+use App\Exceptions\SeoSlugException;
 use App\Models\Category;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Product;
-use App\Exceptions\SeoSlugException;
 use RuntimeException;
 
 class PublicUrlResolver
@@ -120,6 +120,7 @@ class PublicUrlResolver
         }
 
         $origin = $this->origin();
+
         return $origin === null ? null : $origin.'/'.ltrim($path, '/');
     }
 

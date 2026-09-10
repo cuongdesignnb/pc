@@ -25,6 +25,7 @@ class SeoSlugMigrateCommand extends Command
         }
         if (! File::exists($path)) {
             $this->error('Không tìm thấy manifest: '.$path);
+
             return self::FAILURE;
         }
 
@@ -42,6 +43,7 @@ class SeoSlugMigrateCommand extends Command
                 $this->line('DRY_RUN=YES');
                 $this->line('MANIFEST_CHECKSUM='.$checksum);
                 $this->line('Không thay đổi database. Dùng --apply + --checksum + --approved-by khi đã review.');
+
                 return self::SUCCESS;
             }
 
@@ -50,9 +52,11 @@ class SeoSlugMigrateCommand extends Command
             $this->line('BATCH_ID='.$result['batch_id']);
             $this->line('CHANGED='.$result['changed']);
             $this->line('CHECKSUM='.$result['checksum']);
+
             return self::SUCCESS;
         } catch (\Throwable $exception) {
             $this->error('SEO_SLUG_MIGRATION_FAILED='.$exception->getMessage());
+
             return self::FAILURE;
         }
     }

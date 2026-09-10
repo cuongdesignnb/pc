@@ -61,8 +61,9 @@ class MenuItem extends Model
     public function getResolvedUrlAttribute(): string
     {
         if ($this->type === 'category' && $this->category) {
-            return '/' . trim((string) $this->category->slug, '/');
+            return '/'.trim((string) $this->category->slug, '/');
         }
+
         return $this->url ?? '#';
     }
 }

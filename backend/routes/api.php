@@ -1,8 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\AiGenerationController;
-use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BlogController;
 use App\Http\Controllers\Api\BrandController;

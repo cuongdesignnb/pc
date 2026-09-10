@@ -3,8 +3,8 @@
 namespace App\Http\Resources;
 
 use App\Services\News\ArticleContentSanitizer;
-use App\Support\PublicAssetUrl;
 use App\Services\Seo\PublicUrlResolver;
+use App\Support\PublicAssetUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 

@@ -60,12 +60,14 @@ class SitemapExportService
         }
         if (preg_match('/^products-(\d+)$/', $shard, $matches) === 1) {
             $page = (int) $matches[1];
+
             return $this->productPageExists($page, $pageSize)
                 ? $this->urlSetXml($this->productEntries($page, $pageSize))
                 : null;
         }
         if (preg_match('/^posts-(\d+)$/', $shard, $matches) === 1) {
             $page = (int) $matches[1];
+
             return $this->postPageExists($page, $pageSize)
                 ? $this->urlSetXml($this->postEntries($page, $pageSize))
                 : null;
@@ -140,6 +142,7 @@ class SitemapExportService
             ->get(['id', 'category_id', 'slug', 'updated_at'])
             ->map(function (Product $product): ?array {
                 $path = $this->urls->productPath($product);
+
                 return $path === null || ! $this->policy->isIndexablePath($path)
                     ? null
                     : ['path' => $path, 'lastmod' => $product->updated_at];

@@ -7,7 +7,6 @@ use App\Models\PostCategory;
 use App\Models\User;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class PostSeeder extends Seeder
 {
@@ -18,14 +17,16 @@ class PostSeeder extends Seeder
     {
         $slugs = app(VietnameseSlugNormalizer::class);
         $admin = User::first(); // Get first user (admin)
-        if (!$admin) {
+        if (! $admin) {
             $this->command->warn('No users found. Please create a user first.');
+
             return;
         }
 
         $categories = PostCategory::all();
         if ($categories->isEmpty()) {
             $this->command->warn('No post categories found. Please run PostCategorySeeder first.');
+
             return;
         }
 
@@ -90,7 +91,7 @@ class PostSeeder extends Seeder
 
         foreach ($posts as $postData) {
             $category = $categories->firstWhere('slug', $postData['category_slug']);
-            
+
             Post::create([
                 'user_id' => $admin->id,
                 'post_category_id' => $category?->id,

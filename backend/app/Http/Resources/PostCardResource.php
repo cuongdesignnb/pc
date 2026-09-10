@@ -2,10 +2,10 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Seo\PublicUrlResolver;
 use App\Support\PublicAssetUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use App\Services\Seo\PublicUrlResolver;
 
 /** @mixin \App\Models\Post */
 class PostCardResource extends JsonResource
@@ -13,6 +13,7 @@ class PostCardResource extends JsonResource
     public function toArray(Request $request): array
     {
         $urls = app(PublicUrlResolver::class);
+
         return [
             'id' => (int) $this->id,
             'title' => $this->title,

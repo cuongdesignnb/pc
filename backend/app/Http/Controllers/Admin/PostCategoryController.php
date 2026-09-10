@@ -70,7 +70,7 @@ class PostCategoryController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:160|unique:post_categories,slug,' . $postCategory->id,
+            'slug' => 'required|string|max:160|unique:post_categories,slug,'.$postCategory->id,
             'description' => 'nullable|string',
             'sort_order' => 'nullable|integer',
         ]);

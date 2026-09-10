@@ -39,8 +39,8 @@ class AiArticleController extends Controller
         return Inertia::render('Admin/AiArticles/Create', [
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
             'hasKeys' => [
-                'chatgpt' => !empty(Setting::get('chatgpt_api_key')),
-                'gemini' => !empty(Setting::get('gemini_api_key')),
+                'chatgpt' => ! empty(Setting::get('chatgpt_api_key')),
+                'gemini' => ! empty(Setting::get('gemini_api_key')),
             ],
         ]);
     }
@@ -89,7 +89,7 @@ class AiArticleController extends Controller
         }
 
         return redirect()->route('admin.ai-articles.index')
-            ->with('success', "Da tao batch \"{$batch->name}\" voi " . count($keywords) . " tu khoa.");
+            ->with('success', "Da tao batch \"{$batch->name}\" voi ".count($keywords).' tu khoa.');
     }
 
     /**
@@ -115,7 +115,7 @@ class AiArticleController extends Controller
 
         $aiArticle->update(['status' => 'processing']);
 
-        $service = new AiArticleService();
+        $service = new AiArticleService;
         $completed = 0;
 
         foreach ($aiArticle->items()->where('status', 'pending')->get() as $item) {
@@ -130,8 +130,8 @@ class AiArticleController extends Controller
 
                 // Generate featured image
                 $imageUrl = null;
-                if (!empty($article['image_prompt'])) {
-                    $imageProvider = !empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
+                if (! empty($article['image_prompt'])) {
+                    $imageProvider = ! empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
                     $imageUrl = $service->generateImage($article['image_prompt'], $imageProvider);
                 }
 
@@ -201,13 +201,13 @@ class AiArticleController extends Controller
         ]);
 
         try {
-            $service = new AiArticleService();
+            $service = new AiArticleService;
             $article = $service->generateArticle($request->keyword, $request->provider);
 
             // Generate image
             $imageUrl = null;
-            if (!empty($article['image_prompt'])) {
-                $imageProvider = !empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
+            if (! empty($article['image_prompt'])) {
+                $imageProvider = ! empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
                 $imageUrl = $service->generateImage($article['image_prompt'], $imageProvider);
             }
             $article['featured_image'] = $imageUrl;

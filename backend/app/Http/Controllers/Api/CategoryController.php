@@ -11,9 +11,9 @@ use App\Models\FilterValue;
 use App\Models\Product;
 use App\Models\Setting;
 use App\Models\SpecificationKey;
-use App\Support\PublicAssetUrl;
-use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\PublicUrlResolver;
+use App\Services\Seo\SlugRedirectService;
+use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\JsonResponse;
@@ -28,8 +28,8 @@ class CategoryController extends Controller
     public function index(): JsonResponse
     {
         $categories = Category::with(['children' => function (Relation $query) {
-                $query->visibleOnStorefront()->orderBy('sort_order');
-            }])
+            $query->visibleOnStorefront()->orderBy('sort_order');
+        }])
             ->whereNull('parent_id')
             ->visibleOnStorefront()
             ->orderBy('sort_order')

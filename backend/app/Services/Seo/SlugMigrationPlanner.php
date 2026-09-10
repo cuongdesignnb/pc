@@ -190,6 +190,7 @@ class SlugMigrationPlanner
                 }
                 if ($this->alreadyApplied($mapping, $entity, $batchId)) {
                     $entities[] = [$mapping, $entity, false];
+
                     continue;
                 }
                 if ((string) $entity->getAttribute('slug') !== (string) ($mapping['current_slug'] ?? '')) {
@@ -399,6 +400,7 @@ class SlugMigrationPlanner
         if ($slug === '') {
             return null;
         }
+
         return match ($type) {
             'category' => $this->urls->categoryPathForSlug($slug),
             'product' => $this->productPath($entity, $slug, $target, $categoryTargets),

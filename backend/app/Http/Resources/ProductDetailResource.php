@@ -2,9 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use App\Services\Seo\PublicUrlResolver;
 
 /** @mixin \App\Models\Product */
 class ProductDetailResource extends JsonResource

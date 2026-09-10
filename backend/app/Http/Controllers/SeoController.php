@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\Seo\SitemapExportService;
-use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\IndexabilityPolicy;
+use App\Services\Seo\PublicUrlResolver;
+use App\Services\Seo\SitemapExportService;
 use Illuminate\Http\Response;
 
 class SeoController extends Controller

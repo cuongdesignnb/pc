@@ -8,8 +8,8 @@ use App\Http\Resources\PostDetailResource;
 use App\Models\Banner;
 use App\Models\Post;
 use App\Models\PostCategory;
-use App\Support\PublicAssetUrl;
 use App\Services\Seo\SlugRedirectService;
+use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -120,9 +120,9 @@ class BlogController extends Controller
         abort_unless($resolved, 404);
 
         $post = Post::with([
-                'category:id,name,slug',
-                'author:id,name,avatar',
-            ])
+            'category:id,name,slug',
+            'author:id,name,avatar',
+        ])
             ->published()
             ->whereKey($resolved->getKey())
             ->firstOrFail();

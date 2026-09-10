@@ -28,6 +28,7 @@ class SeoSlugPlanCommand extends Command
             File::put($path, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
         } catch (JsonException $exception) {
             $this->error('Không thể ghi manifest: '.$exception->getMessage());
+
             return self::FAILURE;
         }
 
