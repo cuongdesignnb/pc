@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Models\Product;
 use App\Models\Review;
 use App\Models\Setting;
+use App\Services\Seo\PublicUrlResolver;
 use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,8 @@ use Illuminate\Support\Collection;
 
 class HomepageController extends Controller
 {
+    public function __construct(private readonly PublicUrlResolver $urls) {}
+
     public function index(): JsonResponse
     {
         $response = [
@@ -106,6 +109,7 @@ class HomepageController extends Controller
                 'id' => $category->id,
                 'name' => $category->name,
                 'slug' => $category->slug,
+                'canonical_path' => $this->urls->categoryPath($category),
                 'image' => PublicAssetUrl::normalize($category->image),
                 'icon' => PublicAssetUrl::normalize($category->icon),
             ])
@@ -149,6 +153,7 @@ class HomepageController extends Controller
                     'id' => $category->id,
                     'name' => $category->name,
                     'slug' => $category->slug,
+                    'canonical_path' => $this->urls->categoryPath($category),
                     'image' => $image,
                     'icon' => PublicAssetUrl::normalize($category->icon),
                 ];
@@ -206,6 +211,7 @@ class HomepageController extends Controller
                 'id' => $category->id,
                 'name' => $category->name,
                 'slug' => $category->slug,
+                'canonical_path' => $this->urls->categoryPath($category),
                 'description' => $category->description,
                 'image' => $image,
                 'icon' => PublicAssetUrl::normalize($category->icon),
@@ -340,6 +346,7 @@ class HomepageController extends Controller
                 'id' => $post->id,
                 'title' => $post->title,
                 'slug' => $post->slug,
+                'public_url' => $this->urls->absolute($this->urls->postPath($post)),
                 'excerpt' => $post->excerpt,
                 'featured_image' => PublicAssetUrl::normalize($post->featured_image),
                 'published_at' => $post->published_at?->toISOString(),

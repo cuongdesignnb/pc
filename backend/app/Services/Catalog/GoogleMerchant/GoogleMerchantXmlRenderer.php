@@ -19,7 +19,8 @@ class GoogleMerchantXmlRenderer implements CatalogFeedRenderer
             fwrite($handle, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
             fwrite($handle, "<rss version=\"2.0\" xmlns:g=\"http://base.google.com/ns/1.0\"><channel>\n");
             fwrite($handle, '<title>'.self::xml((string) config('app.name'))."</title>\n");
-            fwrite($handle, '<link>'.self::xml((string) config('catalog.storefront_url'))."</link>\n");
+            $storefront = rtrim((string) (config('seo.site_origin') ?: config('catalog.storefront_url')), '/');
+            fwrite($handle, '<link>'.self::xml($storefront)."</link>\n");
             fwrite($handle, "<description>Product catalog</description>\n");
 
             foreach ($products as $product) {

@@ -1,0 +1,5 @@
+source_path,target_path,status,owner,verification,notes
+/products/{legacy-product-slug},/{primary-category-slug}/{current-product-slug},301,storefront,SlugHistory,Single-hop legacy product alias
+/categories/{legacy-category-slug},/{current-category-slug},301,storefront,SlugHistory,Single-hop legacy category alias
+/{old-category-slug}/{old-product-slug},/{current-category-slug}/{current-product-slug},301,storefront,SlugHistory,Direct PDP alias after category or product change
+/tin-tuc/{legacy-post-slug},/tin-tuc/{current-post-slug},301,storefront,SlugHistory,Published article alias

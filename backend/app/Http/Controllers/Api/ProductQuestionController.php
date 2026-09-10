@@ -3,20 +3,21 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Product;
 use App\Models\ProductQuestion;
+use App\Services\Seo\SlugRedirectService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ProductQuestionController extends Controller
 {
-    public function index(Request $request, string $slug): JsonResponse
+    public function index(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
         $validated = $request->validate([
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
         ]);
-        $product = Product::where('slug', $slug)->visibleOnStorefront()->firstOrFail();
+        $product = $redirects->productBySlug($slug);
+        abort_unless($product && $product->isVisibleOnStorefront(), 404);
         $questions = ProductQuestion::with([
             'user:id,name',
             'answers' => fn ($query) => $query->where('is_approved', true)->with('user:id,name')->oldest(),
@@ -36,9 +37,10 @@ class ProductQuestionController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $slug): JsonResponse
+    public function store(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
-        $product = Product::where('slug', $slug)->visibleOnStorefront()->firstOrFail();
+        $product = $redirects->productBySlug($slug);
+        abort_unless($product && $product->isVisibleOnStorefront(), 404);
         $user = $request->user('sanctum');
         $rules = ['body' => ['required', 'string', 'min:5', 'max:2000']];
         if ($user) {
@@ -70,7 +72,7 @@ class ProductQuestionController extends Controller
             'created_at' => $question->created_at?->toISOString(),
             'answers' => $question->answers->map(fn ($answer) => [
                 'id' => $answer->id,
-                'author_name' => $answer->user?->name ?? 'PC Shop',
+                'author_name' => $answer->user?->name ?? ($answer->is_official ? 'Nhân viên cửa hàng' : 'Khách hàng'),
                 'body' => $answer->body,
                 'is_official' => $answer->is_official,
                 'created_at' => $answer->created_at?->toISOString(),

@@ -4,11 +4,14 @@ namespace App\Services\Integrations\Kiot;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\SlugHistory;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Str;
 
 class KiotCategorySyncService
 {
+    public function __construct(private readonly VietnameseSlugNormalizer $slugs) {}
+
     public function sync(array $items, bool $dryRun, array &$report): void
     {
         $items = collect($items)
@@ -26,9 +29,15 @@ class KiotCategorySyncService
             $status = (string) ($remote['sync_status'] ?? (($remote['is_active'] ?? true) ? 'active' : 'inactive'));
             $active = $status === 'active' && (bool) ($remote['is_active'] ?? true);
             $visible = $active && (bool) ($remote['show_on_pc_website'] ?? false);
+            $name = trim((string) ($remote['name'] ?? '')) ?: 'KIOT Category '.$remoteId;
             $attributes = [
-                'name' => trim((string) ($remote['name'] ?? '')) ?: 'KIOT Category '.$remoteId,
-                'slug' => $this->uniqueSlug((string) ($remote['slug'] ?? $remote['name'] ?? ''), $remoteId, $category?->id),
+                'name' => $name,
+                // A KIOT update is not allowed to rename a public URL. Only
+                // new records receive a generated slug.
+                'slug' => $category?->slug ?: $this->uniqueSlug((string) ($remote['slug'] ?? $name), $remoteId, null),
+                'slug_source' => $category?->slug_source ?: $name,
+                'slug_policy_version' => $category?->slug_policy_version ?: VietnameseSlugNormalizer::POLICY_VERSION,
+                'slug_locked_at' => $category?->slug_locked_at ?: now(),
                 'is_active' => $active,
                 'show_on_pc_website' => $visible,
                 'provider_sync_status' => $status,
@@ -92,12 +101,18 @@ class KiotCategorySyncService
 
     private function uniqueSlug(string $value, int $remoteId, ?int $ignoreCategoryId): string
     {
-        $base = Str::slug($value) ?: 'kiot-category-'.$remoteId;
+        try {
+            $base = $this->slugs->normalize($value);
+        } catch (\InvalidArgumentException) {
+            $base = 'kiot-category-'.$remoteId;
+        }
         $slug = $base;
         $suffix = 0;
         while (Category::query()->where('slug', $slug)
             ->when($ignoreCategoryId, fn ($query) => $query->whereKeyNot($ignoreCategoryId))
-            ->exists() || Product::query()->where('slug', $slug)->exists()) {
+            ->exists()
+            || Product::query()->where('slug', $slug)->exists()
+            || SlugHistory::forAlias('category', $slug)->exists()) {
             $suffix++;
             $slug = $base.'-'.$remoteId.($suffix > 1 ? '-'.$suffix : '');
         }

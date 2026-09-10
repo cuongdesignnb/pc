@@ -189,7 +189,9 @@ class KiotProductConsumerV2Test extends TestCase
             'product_id' => $repairingLocal->id,
             'quantity' => 1,
         ])->assertOk();
-        config()->set('integrations.kiot.order_sync_enabled', false);
+        IntegrationConnection::query()
+            ->where('provider', IntegrationConnection::PROVIDER_KIOT)
+            ->update(['order_sync_enabled' => false]);
         $this->postJson('/api/v1/orders', $this->checkoutPayload($repairingLocal->id))->assertCreated();
 
         $listingIds = collect($this->getJson('/api/v1/products?per_page=100')->assertOk()->json('data'))->pluck('id');

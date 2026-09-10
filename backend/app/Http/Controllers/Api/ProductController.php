@@ -10,6 +10,7 @@ use App\Models\CompatibilityRule;
 use App\Models\ComponentType;
 use App\Models\Product;
 use App\Models\ProductRelation;
+use App\Services\Seo\SlugRedirectService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -105,8 +106,19 @@ class ProductController extends Controller
     /**
      * Get single product by slug
      */
-    public function show(string $slug): JsonResponse
+    public function show(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
+        $resolved = $redirects->productBySlug($slug);
+        if ($request->filled('category_path')) {
+            $categoryPath = trim((string) $request->input('category_path'), '/');
+            abort_unless($categoryPath !== '' && ! str_contains($categoryPath, '/'), 404);
+
+            $pathResolved = $redirects->productByPath('/'.$categoryPath.'/'.$slug);
+            abort_unless($pathResolved && $resolved && $pathResolved->is($resolved), 404);
+            $resolved = $pathResolved;
+        }
+        abort_unless($resolved && $resolved->isVisibleOnStorefront(), 404);
+
         $product = Product::with([
             'category',
             'brand',
@@ -124,7 +136,7 @@ class ProductController extends Controller
             ->withCount([
                 'questions as approved_questions_count' => fn ($query) => $query->where('is_approved', true),
             ])
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->visibleOnStorefront()
             ->firstOrFail();
 
@@ -136,10 +148,12 @@ class ProductController extends Controller
     /**
      * Return PDP compatibility facts sourced solely from the compatibility schema.
      */
-    public function compatibilitySummary(string $slug): JsonResponse
+    public function compatibilitySummary(string $slug, SlugRedirectService $redirects): JsonResponse
     {
+        $resolved = $redirects->productBySlug($slug);
+        abort_unless($resolved && $resolved->isVisibleOnStorefront(), 404);
         $product = Product::with(['componentType', 'specifications.specificationKey', 'powerRequirement'])
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->visibleOnStorefront()
             ->firstOrFail();
 
@@ -174,7 +188,7 @@ class ProductController extends Controller
      * Return manual merchandising relations. The related/alternative fallback is
      * intentionally limited to published products and never uses PC compatibility.
      */
-    public function relations(Request $request, string $slug): JsonResponse
+    public function relations(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
         $validated = $request->validate([
             'type' => ['nullable', 'in:related,accessory,frequently_bought,alternative'],
@@ -182,8 +196,10 @@ class ProductController extends Controller
         ]);
         $type = $validated['type'] ?? 'related';
         $limit = $validated['limit'] ?? 8;
+        $resolved = $redirects->productBySlug($slug);
+        abort_unless($resolved && $resolved->isVisibleOnStorefront(), 404);
         $product = Product::with(['category', 'brand'])
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->visibleOnStorefront()
             ->firstOrFail();
 
@@ -273,10 +289,12 @@ class ProductController extends Controller
      * Get compatible product suggestions for a given product
      * Groups compatible products by component type
      */
-    public function suggestions(string $slug): JsonResponse
+    public function suggestions(string $slug, SlugRedirectService $redirects): JsonResponse
     {
+        $resolved = $redirects->productBySlug($slug);
+        abort_unless($resolved && $resolved->isSellableOnline(), 404);
         $product = Product::with(['componentType', 'specifications.specificationKey'])
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->sellableOnline()
             ->firstOrFail();
 

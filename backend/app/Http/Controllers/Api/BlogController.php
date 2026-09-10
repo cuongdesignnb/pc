@@ -8,11 +8,13 @@ use App\Http\Resources\PostDetailResource;
 use App\Models\Banner;
 use App\Models\Post;
 use App\Models\PostCategory;
+use App\Services\Seo\SlugRedirectService;
 use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class BlogController extends Controller
 {
@@ -112,14 +114,17 @@ class BlogController extends Controller
     /**
      * Get single post
      */
-    public function show(Request $request, string $slug): JsonResponse
+    public function show(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
+        $resolved = $redirects->postBySlug($slug);
+        abort_unless($resolved, 404);
+
         $post = Post::with([
-                'category:id,name,slug',
-                'author:id,name,avatar',
-            ])
+            'category:id,name,slug',
+            'author:id,name,avatar',
+        ])
             ->published()
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->firstOrFail();
 
         $related = $this->relatedPosts($post);
@@ -158,11 +163,14 @@ class BlogController extends Controller
      * A privacy-preserving IP/user-agent hash prevents refreshes and bots
      * from inflating the counter on every GET request.
      */
-    public function view(Request $request, string $slug): JsonResponse
+    public function view(Request $request, string $slug, SlugRedirectService $redirects): JsonResponse
     {
+        $resolved = $redirects->postBySlug($slug);
+        abort_unless($resolved, 404);
+
         $post = Post::query()
             ->published()
-            ->where('slug', $slug)
+            ->whereKey($resolved->getKey())
             ->firstOrFail();
         $sessionId = $request->hasSession() ? $request->session()->getId() : '';
         $visitor = hash('sha256', implode('|', [
@@ -176,7 +184,13 @@ class BlogController extends Controller
         $tracked = Cache::add($key, true, now()->addMinutes(30));
 
         if ($tracked) {
-            $post->increment('view_count');
+            // View tracking is telemetry, not editorial content. Update it
+            // through the base query builder so Laravel does not refresh
+            // `updated_at`, which is also used as the article sitemap
+            // lastmod value.
+            DB::table($post->getTable())
+                ->where($post->getKeyName(), $post->getKey())
+                ->update(['view_count' => DB::raw('view_count + 1')]);
         }
 
         return response()->json([
@@ -191,6 +205,48 @@ class BlogController extends Controller
     public function categories(): JsonResponse
     {
         return response()->json($this->categoriesPayload());
+    }
+
+    /**
+     * Resolve a current or historical article category for the crawlable
+     * category landing route. The API returns JSON so the storefront can
+     * issue a single permanent redirect for an old category slug.
+     */
+    public function category(string $slug, SlugRedirectService $redirects): JsonResponse
+    {
+        $category = $redirects->postCategoryBySlug($slug);
+        abort_unless($category, 404);
+
+        $postsCount = $category->posts()
+            ->published()
+            ->count();
+        abort_unless($postsCount > 0, 404);
+
+        $urls = app(\App\Services\Seo\PublicUrlResolver::class);
+        $canonicalPath = $urls->postCategoryPath($category);
+        abort_unless($canonicalPath, 404);
+
+        return response()->json([
+            'category' => [
+                'id' => (int) $category->id,
+                'name' => (string) $category->name,
+                'slug' => (string) $category->slug,
+                'description' => $category->description,
+                'posts_count' => $postsCount,
+                'canonical_path' => $canonicalPath,
+                'canonical_url' => $urls->absolute($canonicalPath),
+            ],
+            'trending' => PostCardResource::collection(
+                $this->publishedPosts()
+                    ->orderByDesc('view_count')
+                    ->orderByDesc('published_at')
+                    ->orderByDesc('id')
+                    ->limit(5)
+                    ->get(),
+            )->resolve(),
+            'categories' => $this->categoriesPayload(),
+            'pc_builder' => $this->pcBuilderPayload(),
+        ]);
     }
 
     /**
@@ -224,21 +280,33 @@ class BlogController extends Controller
             });
     }
 
-    /** @return list<array{id: int, name: string, slug: string, posts_count: int}> */
+    /** @return list<array{id: int, name: string, slug: string, posts_count: int, canonical_path: string|null, canonical_url: string|null}> */
     private function categoriesPayload(): array
     {
+        $urls = app(\App\Services\Seo\PublicUrlResolver::class);
+
         return PostCategory::query()
             ->withCount(['posts' => fn (Builder $query) => $query->published()])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
             ->filter(fn (PostCategory $category): bool => (int) $category->posts_count > 0)
-            ->map(fn (PostCategory $category): array => [
-                'id' => (int) $category->id,
-                'name' => (string) $category->name,
-                'slug' => (string) $category->slug,
-                'posts_count' => (int) $category->posts_count,
-            ])
+            ->map(function (PostCategory $category) use ($urls): ?array {
+                $canonicalPath = $urls->postCategoryPath($category);
+                if ($canonicalPath === null) {
+                    return null;
+                }
+
+                return [
+                    'id' => (int) $category->id,
+                    'name' => (string) $category->name,
+                    'slug' => (string) $category->slug,
+                    'posts_count' => (int) $category->posts_count,
+                    'canonical_path' => $canonicalPath,
+                    'canonical_url' => $urls->absolute($canonicalPath),
+                ];
+            })
+            ->filter()
             ->values()
             ->all();
     }
@@ -247,11 +315,12 @@ class BlogController extends Controller
      * Prefer the reference topics when those categories exist, then fill any
      * missing slots with the most populated published categories.
      *
-     * @param  list<array{id: int, name: string, slug: string, posts_count: int}>  $categories
-     * @return list<array{id: int, name: string, slug: string, posts_count: int, image: string|null}>
+     * @param  list<array{id: int, name: string, slug: string, posts_count: int, canonical_path: string|null, canonical_url: string|null}>  $categories
+     * @return list<array{id: int, name: string, slug: string, posts_count: int, image: string|null, canonical_path: string|null, canonical_url: string|null}>
      */
     private function topicsPayload(array $categories): array
     {
+        $urls = app(\App\Services\Seo\PublicUrlResolver::class);
         $categoryModels = PostCategory::query()
             ->whereIn('slug', array_column($categories, 'slug'))
             ->withCount(['posts' => fn (Builder $query) => $query->published()])
@@ -275,7 +344,7 @@ class BlogController extends Controller
             )->values();
         }
 
-        return $selected->map(function (PostCategory $category): array {
+        return $selected->map(function (PostCategory $category) use ($urls): ?array {
             $image = $category->posts()
                 ->published()
                 ->whereNotNull('featured_image')
@@ -283,6 +352,10 @@ class BlogController extends Controller
                 ->orderByDesc('published_at')
                 ->orderByDesc('id')
                 ->value('featured_image');
+            $canonicalPath = $urls->postCategoryPath($category);
+            if ($canonicalPath === null) {
+                return null;
+            }
 
             return [
                 'id' => (int) $category->id,
@@ -290,8 +363,10 @@ class BlogController extends Controller
                 'slug' => (string) $category->slug,
                 'posts_count' => (int) $category->posts_count,
                 'image' => PublicAssetUrl::normalize($image),
+                'canonical_path' => $canonicalPath,
+                'canonical_url' => $urls->absolute($canonicalPath),
             ];
-        })->all();
+        })->filter()->values()->all();
     }
 
     /** @return array<string, mixed>|null */

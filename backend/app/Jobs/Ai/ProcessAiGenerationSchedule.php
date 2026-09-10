@@ -5,6 +5,7 @@ namespace App\Jobs\Ai;
 use App\Models\AiGenerationSchedule;
 use App\Models\Post;
 use App\Services\Ai\AiGenerationService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -22,7 +23,7 @@ class ProcessAiGenerationSchedule implements ShouldQueue
 
     public function __construct(public readonly int $scheduleId) {}
 
-    public function handle(AiGenerationService $generation): void
+    public function handle(AiGenerationService $generation, VietnameseSlugNormalizer $slugs): void
     {
         $schedule = AiGenerationSchedule::find($this->scheduleId);
         if (! $schedule || $schedule->status !== 'processing') {
@@ -46,16 +47,20 @@ class ProcessAiGenerationSchedule implements ShouldQueue
 
             $articleId = null;
             if ($schedule->type === 'article') {
-                $slug = Str::slug($result['title'] ?: $schedule->topic) ?: 'bai-viet-ai';
+                $articleTitle = $result['title'] ?: $schedule->topic;
+                $slug = $slugs->normalize($result['slug'] ?? $articleTitle);
+                if ($slugs->isReserved($slug)) {
+                    $slug = $slugs->normalize('bai-viet '.$articleTitle);
+                }
                 $baseSlug = $slug;
                 $counter = 1;
                 while (Post::where('slug', $slug)->exists()) {
-                    $slug = $baseSlug.'-'.($counter++);
+                    $slug = $slugs->normalize($baseSlug.' '.($counter++));
                 }
                 $post = Post::create([
                     'user_id' => $schedule->created_by ?? 1,
                     'post_category_id' => $schedule->category_id,
-                    'title' => $result['title'] ?: $schedule->topic,
+                    'title' => $articleTitle,
                     'slug' => $slug,
                     'excerpt' => $result['excerpt'],
                     'body' => $result['content'],
@@ -65,6 +70,9 @@ class ProcessAiGenerationSchedule implements ShouldQueue
                     'meta_title' => $result['meta_title'],
                     'meta_description' => $result['meta_description'],
                     'view_count' => 0,
+                    'slug_source' => $articleTitle,
+                    'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                    'slug_locked_at' => now(),
                 ]);
                 $articleId = $post->id;
             } elseif ($schedule->type === 'product_description' && $schedule->product) {

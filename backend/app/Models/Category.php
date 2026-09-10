@@ -30,6 +30,9 @@ class Category extends Model
         'provider_synced_at',
         'meta_title',
         'meta_description',
+        'slug_source',
+        'slug_policy_version',
+        'slug_locked_at',
     ];
 
     protected $casts = [
@@ -39,6 +42,7 @@ class Category extends Model
         'provider_updated_at' => 'datetime',
         'provider_synced_at' => 'datetime',
         'sort_order' => 'integer',
+        'slug_locked_at' => 'datetime',
     ];
 
     /**

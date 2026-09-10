@@ -3,7 +3,9 @@
 namespace App\Http\Middleware;
 
 use App\Models\Order;
+use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -51,10 +53,9 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => $user->allPermissionNames(),
                 ] : null,
             ],
+            'siteName' => fn (): string => $this->siteName(),
             'admin' => [
-                'pending_orders_count' => fn () => $request->is('admin', 'admin/*')
-                    ? Order::query()->where('order_status', 'pending')->count()
-                    : 0,
+                'pending_orders_count' => fn (): int => $this->pendingOrdersCount($request),
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
@@ -63,5 +64,36 @@ class HandleInertiaRequests extends Middleware
                 'feed_url' => fn () => $request->session()->pull('feed_url'),
             ],
         ];
+    }
+
+    private function siteName(): string
+    {
+        try {
+            if (! Schema::hasTable('settings')) {
+                return (string) config('app.name', '');
+            }
+
+            return trim((string) Setting::get('site_name', config('app.name', '')));
+        } catch (\Throwable) {
+            // The admin login must still render while a fresh installation is
+            // being migrated or when the settings table is temporarily
+            // unavailable.
+            return (string) config('app.name', '');
+        }
+    }
+
+    private function pendingOrdersCount(Request $request): int
+    {
+        if (! $request->is('admin', 'admin/*')) {
+            return 0;
+        }
+
+        try {
+            return Schema::hasTable('orders')
+                ? Order::query()->where('order_status', 'pending')->count()
+                : 0;
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 }

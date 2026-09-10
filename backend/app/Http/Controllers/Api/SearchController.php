@@ -5,11 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Post;
 use App\Models\Product;
+use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Http\Request;
 
 class SearchController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, PublicUrlResolver $urls)
     {
         $q = trim($request->get('q', ''));
 
@@ -36,7 +37,7 @@ class SearchController extends Controller
             ->select('id', 'name', 'slug', 'price', 'sale_price', 'category_id', 'provider', 'inventory_source', 'kiot_retail_price', 'kiot_selected_price')
             ->limit(6)
             ->get()
-            ->map(function (Product $product): array {
+            ->map(function (Product $product) use ($urls): array {
                 $pricing = $product->storefrontPricing();
                 $image = $product->images->first(fn ($image) => filled($image->url));
 
@@ -49,7 +50,7 @@ class SearchController extends Controller
                     'display_price' => $pricing['display_price'],
                     'is_contact_price' => $pricing['is_contact_price'],
                     'image' => $image?->url,
-                    'url' => '/'.($product->category?->slug ?? 'san-pham').'/'.$product->slug,
+                    'url' => $urls->productPath($product),
                 ];
             });
 
@@ -64,7 +65,7 @@ class SearchController extends Controller
                 'id' => $p->id,
                 'title' => $p->title,
                 'slug' => $p->slug,
-                'url' => '/tin-tuc/'.$p->slug,
+                'url' => $urls->postPath($p),
                 'category' => $p->category?->name,
             ]);
 

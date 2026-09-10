@@ -9,6 +9,8 @@ use App\Models\IntegrationSyncConflict;
 use App\Models\IntegrationSyncRun;
 use App\Models\IntegrationSyncState;
 use App\Models\Product;
+use App\Models\SlugHistory;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Database\Eloquent\Collection;
@@ -24,6 +26,7 @@ class KiotProductSyncService
         private readonly KiotConfigurationResolver $resolver,
         private readonly KiotCategorySyncService $categories,
         private readonly KiotImageMirrorService $images,
+        private readonly VietnameseSlugNormalizer $slugs,
     ) {}
 
     public function sync(
@@ -610,6 +613,9 @@ class KiotProductSyncService
             }
             if ($product === null) {
                 $attributes['slug'] = $this->uniqueProductSlug($attributes['name'], $sku, $remoteId);
+                $attributes['slug_source'] = $attributes['name'];
+                $attributes['slug_policy_version'] = VietnameseSlugNormalizer::POLICY_VERSION;
+                $attributes['slug_locked_at'] = now();
                 $attributes['description'] = $remote['description'] ?? null;
                 $attributes['short_description'] = null;
                 $attributes['sale_price'] = null;
@@ -631,9 +637,19 @@ class KiotProductSyncService
                     $report['created']++;
                 }
             } elseif (hash_equals((string) $product->kiot_sync_checksum, $checksum)) {
+                if ($product->slug_policy_version === null || $product->slug_locked_at === null) {
+                    $product->forceFill([
+                        'slug_source' => $product->slug_source ?: $product->name,
+                        'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                        'slug_locked_at' => $product->slug_locked_at ?: now(),
+                    ])->save();
+                }
                 $report['unchanged']++;
                 $report['matched']++;
             } else {
+                $attributes['slug_source'] = $product->slug_source ?: $product->name;
+                $attributes['slug_policy_version'] = $product->slug_policy_version ?: VietnameseSlugNormalizer::POLICY_VERSION;
+                $attributes['slug_locked_at'] = $product->slug_locked_at ?: now();
                 if (blank($product->description) && filled($remote['description'] ?? null)) {
                     $attributes['description'] = $remote['description'];
                 }
@@ -855,10 +871,20 @@ class KiotProductSyncService
 
     private function uniqueProductSlug(string $name, string $sku, int $remoteId): string
     {
-        $base = Str::slug($name) ?: Str::slug($sku) ?: 'kiot-product-'.$remoteId;
+        try {
+            $base = $this->slugs->normalize($name);
+        } catch (\InvalidArgumentException) {
+            try {
+                $base = $this->slugs->normalize($sku);
+            } catch (\InvalidArgumentException) {
+                $base = 'kiot-product-'.$remoteId;
+            }
+        }
         $slug = $base;
         $suffix = 0;
-        while (Product::query()->where('slug', $slug)->exists() || Category::query()->where('slug', $slug)->exists()) {
+        while (Product::query()->where('slug', $slug)->exists()
+            || Category::query()->where('slug', $slug)->exists()
+            || SlugHistory::forAlias('product', $slug)->exists()) {
             $suffix++;
             $slug = $base.'-'.$remoteId.($suffix > 1 ? '-'.$suffix : '');
         }

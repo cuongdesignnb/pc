@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -10,6 +11,9 @@ class ProductDetailResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $urls = app(PublicUrlResolver::class);
+        $canonicalPath = $urls->productPath($this->resource);
+        $canonicalUrl = $urls->absolute($canonicalPath);
         $pricing = $this->storefrontPricing();
         $regularPrice = $pricing['price'];
         $salePrice = $pricing['sale_price'];
@@ -49,6 +53,7 @@ class ProductDetailResource extends JsonResource
                 'id' => $this->category->id,
                 'name' => $this->category->name,
                 'slug' => $this->category->slug,
+                'canonical_path' => $urls->categoryPath($this->category),
             ] : null,
             'component_type' => $this->componentType ? [
                 'id' => $this->componentType->id,
@@ -105,7 +110,11 @@ class ProductDetailResource extends JsonResource
             'seo' => [
                 'title' => $this->meta_title,
                 'description' => $this->meta_description,
+                'canonical_path' => $canonicalPath,
+                'canonical_url' => $canonicalUrl,
+                'robots' => 'index,follow',
             ],
+            'public_url' => $canonicalUrl,
         ];
     }
 }

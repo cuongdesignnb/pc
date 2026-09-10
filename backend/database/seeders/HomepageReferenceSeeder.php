@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\Review;
 use App\Models\User;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -209,8 +210,9 @@ class HomepageReferenceSeeder extends Seeder
                 continue;
             }
 
+            $slugSource = $data['name'];
             $product = Product::firstOrCreate(
-                ['slug' => Str::slug($data['name'])],
+                ['slug' => app(VietnameseSlugNormalizer::class)->normalize($slugSource)],
                 [
                     'category_id' => $category->id,
                     'name' => $data['name'],
@@ -228,6 +230,9 @@ class HomepageReferenceSeeder extends Seeder
                     'views_count' => 800,
                     'inventory_source' => 'local',
                     'show_on_pc_website' => true,
+                    'slug_source' => $slugSource,
+                    'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                    'slug_locked_at' => now(),
                 ],
             );
 

@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Order;
+use App\Models\Setting;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -23,6 +24,9 @@ class NewOrderNotification extends Mailable
 
     public function content(): Content
     {
-        return new Content(view: 'emails.orders.new-order');
+        return new Content(
+            view: 'emails.orders.new-order',
+            with: ['site_name' => (string) Setting::get('site_name', config('app.name'))],
+        );
     }
 }

@@ -9,6 +9,7 @@ use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Setting;
 use App\Services\AiArticleService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -38,8 +39,8 @@ class AiArticleController extends Controller
         return Inertia::render('Admin/AiArticles/Create', [
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
             'hasKeys' => [
-                'chatgpt' => !empty(Setting::get('chatgpt_api_key')),
-                'gemini' => !empty(Setting::get('gemini_api_key')),
+                'chatgpt' => ! empty(Setting::get('chatgpt_api_key')),
+                'gemini' => ! empty(Setting::get('gemini_api_key')),
             ],
         ]);
     }
@@ -88,7 +89,7 @@ class AiArticleController extends Controller
         }
 
         return redirect()->route('admin.ai-articles.index')
-            ->with('success', "Da tao batch \"{$batch->name}\" voi " . count($keywords) . " tu khoa.");
+            ->with('success', "Da tao batch \"{$batch->name}\" voi ".count($keywords).' tu khoa.');
     }
 
     /**
@@ -106,7 +107,7 @@ class AiArticleController extends Controller
     /**
      * Run/process a batch.
      */
-    public function run(AiArticleBatch $aiArticle)
+    public function run(AiArticleBatch $aiArticle, VietnameseSlugNormalizer $slugs)
     {
         if ($aiArticle->status === 'processing') {
             return back()->with('error', 'Batch dang duoc xu ly.');
@@ -114,7 +115,7 @@ class AiArticleController extends Controller
 
         $aiArticle->update(['status' => 'processing']);
 
-        $service = new AiArticleService();
+        $service = new AiArticleService;
         $completed = 0;
 
         foreach ($aiArticle->items()->where('status', 'pending')->get() as $item) {
@@ -129,16 +130,19 @@ class AiArticleController extends Controller
 
                 // Generate featured image
                 $imageUrl = null;
-                if (!empty($article['image_prompt'])) {
-                    $imageProvider = !empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
+                if (! empty($article['image_prompt'])) {
+                    $imageProvider = ! empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
                     $imageUrl = $service->generateImage($article['image_prompt'], $imageProvider);
                 }
 
                 // Ensure unique slug
-                $slug = $article['slug'];
+                $slug = $slugs->normalize($article['slug'] ?: $article['title']);
+                if ($slugs->isReserved($slug)) {
+                    $slug = $slugs->normalize('bai-viet '.$article['title']);
+                }
                 $counter = 1;
                 while (Post::where('slug', $slug)->exists()) {
-                    $slug = $article['slug'] . '-' . $counter++;
+                    $slug = $slugs->normalize(($article['slug'] ?: $article['title']).' '.$counter++);
                 }
 
                 // Create post
@@ -156,6 +160,9 @@ class AiArticleController extends Controller
                     'meta_title' => $article['meta_title'],
                     'meta_description' => $article['meta_description'],
                     'view_count' => 0,
+                    'slug_source' => $article['title'],
+                    'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                    'slug_locked_at' => now(),
                 ]);
 
                 $item->update([
@@ -194,13 +201,13 @@ class AiArticleController extends Controller
         ]);
 
         try {
-            $service = new AiArticleService();
+            $service = new AiArticleService;
             $article = $service->generateArticle($request->keyword, $request->provider);
 
             // Generate image
             $imageUrl = null;
-            if (!empty($article['image_prompt'])) {
-                $imageProvider = !empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
+            if (! empty($article['image_prompt'])) {
+                $imageProvider = ! empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
                 $imageUrl = $service->generateImage($article['image_prompt'], $imageProvider);
             }
             $article['featured_image'] = $imageUrl;

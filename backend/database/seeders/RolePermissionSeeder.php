@@ -122,6 +122,9 @@ class RolePermissionSeeder extends Seeder
             'settings.view',
             'settings.edit',
 
+            // SEO URL governance
+            'seo.slugs.manage',
+
             // Catalog channels
             'catalog-channels.view',
             'catalog-channels.manage',

@@ -1,10 +1,12 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
 const props = defineProps({ questions: Object, filters: Object });
 const flash = usePage().props.flash;
+const page = usePage();
+const siteName = computed(() => page.props.siteName || '');
 const search = ref(props.filters?.search || '');
 const filterApproved = ref(props.filters?.is_approved ?? '');
 const answeringId = ref(null);
@@ -43,7 +45,7 @@ function formatDate(date) { return date ? new Date(date).toLocaleString('vi-VN')
                 <div class="flex shrink-0 items-start gap-2"><span :class="question.is_approved ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/30 bg-amber-500/10 text-amber-300'" class="rounded-full border px-2 py-1 text-xs">{{ question.is_approved ? 'Đã duyệt' : 'Chờ duyệt' }}</span><button v-if="!question.is_approved" @click="approve(question.id)" class="text-xs text-emerald-400">Duyệt</button><button v-else @click="reject(question.id)" class="text-xs text-amber-400">Ẩn</button><button @click="remove(question.id)" class="text-xs text-red-400">Xóa</button></div>
             </div>
             <div v-if="question.answers?.length" class="mt-4 space-y-2 border-l-2 border-cyan-500/40 pl-4">
-                <div v-for="answer in question.answers" :key="answer.id" :class="answer.is_approved ? 'bg-slate-950/50' : 'bg-amber-500/5'" class="rounded-lg p-3"><div class="flex justify-between gap-3"><div><p class="text-xs font-semibold text-cyan-300">{{ answer.user?.name || (answer.is_official ? 'PC Shop' : 'Nhân viên') }}</p><p class="mt-1 whitespace-pre-line text-sm text-slate-300">{{ answer.body }}</p></div><button @click="toggleAnswer(answer.id)" class="shrink-0 text-xs text-slate-400">{{ answer.is_approved ? 'Ẩn' : 'Duyệt' }}</button></div></div>
+                <div v-for="answer in question.answers" :key="answer.id" :class="answer.is_approved ? 'bg-slate-950/50' : 'bg-amber-500/5'" class="rounded-lg p-3"><div class="flex justify-between gap-3"><div><p class="text-xs font-semibold text-cyan-300">{{ answer.user?.name || (answer.is_official ? siteName : 'Nhân viên') }}</p><p class="mt-1 whitespace-pre-line text-sm text-slate-300">{{ answer.body }}</p></div><button @click="toggleAnswer(answer.id)" class="shrink-0 text-xs text-slate-400">{{ answer.is_approved ? 'Ẩn' : 'Duyệt' }}</button></div></div>
             </div>
             <div v-if="answeringId === question.id" class="mt-4 flex gap-2"><textarea v-model="answerText" rows="2" placeholder="Nhập câu trả lời chính thức..." class="min-w-0 flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea><div class="flex flex-col gap-2"><button @click="submitAnswer(question.id)" :disabled="!answerText.trim()" class="rounded-lg bg-cyan-600 px-3 py-2 text-sm text-white disabled:opacity-50">Gửi</button><button @click="answeringId = null" class="text-sm text-slate-400">Hủy</button></div></div>
             <button v-else @click="answeringId = question.id; answerText = ''" class="mt-4 text-sm text-cyan-300 hover:text-cyan-200">+ Trả lời chính thức</button>

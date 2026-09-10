@@ -3,7 +3,7 @@
 <body style="margin:0;background:#f4f7fb;color:#172554;font-family:Arial,sans-serif">
   <main style="max-width:680px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #dbeafe">
     <header style="padding:24px;background:#0b55bd;color:#fff">
-      <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em">PC Center</p>
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em">{{ $site_name }}</p>
       <h1 style="margin:0;font-size:24px">Có đơn hàng mới {{ $order->order_number }}</h1>
     </header>
     <section style="padding:24px">

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hủy thanh toán - PC Shop</title>
+    <title>Hủy thanh toán - {{ $site_name }}</title>
     <style>
         body {
             display: flex;
@@ -50,8 +50,8 @@
         @endif
         <p>Bạn đã hủy thanh toán. Đơn hàng vẫn được giữ nguyên, bạn có thể thanh toán lại bất cứ lúc nào.</p>
         <div>
-            <a href="{{ config('app.frontend_url', 'http://localhost:8902') }}/checkout" class="btn">Thanh toán lại</a>
-            <a href="{{ config('app.frontend_url', 'http://localhost:8902') }}/products" class="btn btn-outline">Tiếp tục mua sắm</a>
+            <a href="{{ $frontend_url }}/thanh-toan" class="btn">Thanh toán lại</a>
+            <a href="{{ $frontend_url }}/san-pham" class="btn btn-outline">Tiếp tục mua sắm</a>
         </div>
     </div>
 </body>

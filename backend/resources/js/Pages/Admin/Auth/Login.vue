@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import { useForm, Head, usePage } from '@inertiajs/vue3';
 
 const form = useForm({
     email: '',
@@ -9,6 +10,8 @@ const form = useForm({
 });
 
 const showPassword = ref(false);
+const page = usePage();
+const siteName = computed(() => page.props.siteName || '');
 
 function submit() {
     form.post('/admin/login', {
@@ -37,7 +40,7 @@ function submit() {
                             d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                 </div>
-                <h1 class="login-title">PC Shop</h1>
+                <h1 class="login-title">{{ siteName }}</h1>
                 <p class="login-subtitle">Đăng nhập vào hệ thống quản trị</p>
             </div>
 
@@ -138,7 +141,7 @@ function submit() {
 
             <!-- Footer -->
             <p class="login-footer">
-                © {{ new Date().getFullYear() }} PC Shop — Hệ thống quản trị
+                © {{ new Date().getFullYear() }} {{ siteName }} — Hệ thống quản trị
             </p>
         </div>
     </div>

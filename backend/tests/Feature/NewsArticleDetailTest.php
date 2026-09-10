@@ -81,12 +81,15 @@ class NewsArticleDetailTest extends TestCase
         $this->getJson('/api/v1/blog/'.$future->slug)->assertNotFound();
     }
 
-    public function test_view_tracking_is_deduplicated_without_mutating_get(): void
+    public function test_view_tracking_is_deduplicated_without_mutating_article_timestamp(): void
     {
         Cache::flush();
         $author = User::factory()->create();
         $category = PostCategory::create(['name' => 'Tin công nghệ', 'slug' => 'tin-cong-nghe']);
         $post = $this->createPost($author, $category, ['slug' => 'view-tracking', 'view_count' => 10]);
+        $updatedAt = now()->subHours(2)->format('Y-m-d H:i:s');
+        Post::query()->whereKey($post->getKey())->update(['updated_at' => $updatedAt]);
+        $timestampBeforeTracking = Post::query()->whereKey($post->getKey())->value('updated_at');
         $headers = ['User-Agent' => 'NewsArticleDetailTest/1.0'];
 
         $first = $this->withHeaders($headers)->postJson('/api/v1/blog/'.$post->slug.'/view')->assertOk();
@@ -95,6 +98,10 @@ class NewsArticleDetailTest extends TestCase
         $first->assertJsonPath('tracked', true)->assertJsonPath('view_count', 11);
         $second->assertJsonPath('tracked', false)->assertJsonPath('view_count', 11);
         $this->assertDatabaseHas('posts', ['id' => $post->id, 'view_count' => 11]);
+        $this->assertEquals(
+            $timestampBeforeTracking,
+            Post::query()->whereKey($post->getKey())->value('updated_at'),
+        );
     }
 
     /** @param array<string, mixed> $overrides */

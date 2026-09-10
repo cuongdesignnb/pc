@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'storefront_url' => env('CATALOG_STOREFRONT_URL', env('FRONTEND_URL', env('APP_URL'))),
+    'storefront_url' => env('SEO_SITE_ORIGIN', env('CATALOG_STOREFRONT_URL', env('FRONTEND_URL', env('APP_URL')))),
     'feed_disk' => env('CATALOG_FEED_DISK', 'local'),
     'feed_directory' => 'catalog-feeds',
     'feed_cache_seconds' => (int) env('CATALOG_FEED_CACHE_SECONDS', 900),

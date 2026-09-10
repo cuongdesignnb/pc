@@ -5,8 +5,8 @@ namespace Database\Seeders;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\User;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class PostSeeder extends Seeder
 {
@@ -15,15 +15,18 @@ class PostSeeder extends Seeder
      */
     public function run(): void
     {
+        $slugs = app(VietnameseSlugNormalizer::class);
         $admin = User::first(); // Get first user (admin)
-        if (!$admin) {
+        if (! $admin) {
             $this->command->warn('No users found. Please create a user first.');
+
             return;
         }
 
         $categories = PostCategory::all();
         if ($categories->isEmpty()) {
             $this->command->warn('No post categories found. Please run PostCategorySeeder first.');
+
             return;
         }
 
@@ -88,12 +91,15 @@ class PostSeeder extends Seeder
 
         foreach ($posts as $postData) {
             $category = $categories->firstWhere('slug', $postData['category_slug']);
-            
+
             Post::create([
                 'user_id' => $admin->id,
                 'post_category_id' => $category?->id,
                 'title' => $postData['title'],
-                'slug' => Str::slug($postData['title']),
+                'slug' => $slugs->normalize($postData['title']),
+                'slug_source' => $postData['title'],
+                'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+                'slug_locked_at' => now(),
                 'excerpt' => $postData['excerpt'],
                 'body' => $postData['body'],
                 'status' => 'published',

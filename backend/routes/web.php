@@ -24,11 +24,19 @@ use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ProductQuestionController;
 use App\Http\Controllers\Admin\ReviewController;
 use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\SeoSlugController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\CatalogFeedController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\SeoController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('sitemap.xml', [SeoController::class, 'sitemapIndex'])->name('seo.sitemap');
+Route::get('sitemaps/{shard}.xml', [SeoController::class, 'sitemapShard'])
+    ->where('shard', '[a-z0-9-]+')
+    ->name('seo.sitemap.shard');
+Route::get('robots.txt', [SeoController::class, 'robots'])->name('seo.robots');
 
 Route::get('/', function () {
     return redirect('/admin');
@@ -106,6 +114,19 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
 
     // Pages
     Route::resource('pages', PageController::class);
+
+    // SEO URL governance. Slug changes are intentionally separated from
+    // ordinary CRUD so every rename has a preview and a verified 301 history.
+    Route::middleware('permission:seo.slugs.manage')->prefix('seo/slugs')->name('seo.slugs.')->group(function () {
+        Route::get('{entityType}/{entityId}/preview', [SeoSlugController::class, 'preview'])
+            ->whereIn('entityType', ['category', 'product', 'post', 'post-category', 'page', 'brand'])
+            ->whereNumber('entityId')
+            ->name('preview');
+        Route::post('{entityType}/{entityId}/change', [SeoSlugController::class, 'change'])
+            ->whereIn('entityType', ['category', 'product', 'post', 'post-category', 'page', 'brand'])
+            ->whereNumber('entityId')
+            ->name('change');
+    });
 
     // Banners
     Route::resource('banners', BannerController::class);

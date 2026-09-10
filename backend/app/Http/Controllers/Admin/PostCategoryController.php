@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\PostCategory;
+use App\Services\Seo\SlugRedirectService;
+use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -25,16 +27,33 @@ class PostCategoryController extends Controller
         return Inertia::render('Admin/PostCategories/Create');
     }
 
-    public function store(Request $request)
+    public function store(Request $request, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:post_categories',
+            'slug' => 'required|string|max:160|unique:post_categories',
             'description' => 'nullable|string',
             'sort_order' => 'nullable|integer',
         ]);
 
-        PostCategory::create($validated);
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertLegacySlugAvailable('post-category', $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        PostCategory::create($validated + [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => now(),
+        ]);
 
         return redirect()->route('admin.post-categories.index')
             ->with('success', 'Danh mục đã được tạo.');
@@ -47,16 +66,35 @@ class PostCategoryController extends Controller
         ]);
     }
 
-    public function update(Request $request, PostCategory $postCategory)
+    public function update(Request $request, PostCategory $postCategory, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:post_categories,slug,' . $postCategory->id,
+            'slug' => 'required|string|max:160|unique:post_categories,slug,'.$postCategory->id,
             'description' => 'nullable|string',
             'sort_order' => 'nullable|integer',
         ]);
 
-        $postCategory->update($validated);
+        try {
+            $validated['slug'] = $slugs->validateCustom($validated['slug']);
+        } catch (\InvalidArgumentException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        if ($slugs->isReserved($validated['slug'])) {
+            return back()->withErrors(['slug' => 'Slug này dành riêng cho route hệ thống.'])->withInput();
+        }
+        try {
+            $redirects->assertSlugChangeAllowed($postCategory, $validated['slug']);
+        } catch (\LogicException $exception) {
+            return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+        $oldSlug = (string) $postCategory->slug;
+        $postCategory->update($validated + [
+            'slug_source' => $validated['name'],
+            'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
+            'slug_locked_at' => $postCategory->slug_locked_at ?: now(),
+        ]);
+        $redirects->recordPostCategoryChange($postCategory, $oldSlug, $request->user()?->id);
 
         return redirect()->route('admin.post-categories.index')
             ->with('success', 'Danh mục đã được cập nhật.');

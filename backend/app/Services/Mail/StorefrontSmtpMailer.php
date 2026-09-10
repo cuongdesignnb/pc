@@ -35,7 +35,8 @@ class StorefrontSmtpMailer
     public function sendTest(string $recipient): void
     {
         $this->configureMailer();
-        Mail::mailer('smtp')->to($recipient)->send(new SmtpTestMessage());
+        $siteName = $this->string('site_name', (string) config('app.name'));
+        Mail::mailer('smtp')->to($recipient)->send(new SmtpTestMessage($siteName));
     }
 
     private function notificationsEnabled(): bool

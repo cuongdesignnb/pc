@@ -54,6 +54,12 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // The storefront origin is the only trusted target for payment callback
+    // links. Keep it separate from APP_URL because the API and storefront may
+    // run behind different public hosts.
+    'frontend_url' => env('SEO_SITE_ORIGIN', env('CATALOG_STOREFRONT_URL', env('FRONTEND_URL', env('APP_URL')))),
+    'release' => env('SEO_SOURCE_COMMIT', env('APP_RELEASE')),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

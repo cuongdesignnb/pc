@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -11,11 +12,19 @@ class ProductCardResource extends JsonResource
     public function toArray(Request $request): array
     {
         $pricing = $this->storefrontPricing();
+        $urls = app(PublicUrlResolver::class);
+        $canonicalPath = $urls->productPath($this->resource);
 
         return [
             'id' => $this->id,
             'name' => $this->name,
             'slug' => $this->slug,
+            'public_url' => $urls->absolute($canonicalPath),
+            'seo' => [
+                'canonical_path' => $canonicalPath,
+                'canonical_url' => $urls->absolute($canonicalPath),
+                'robots' => 'index,follow',
+            ],
             'sku' => $this->sku,
             'short_description' => $this->short_description,
             'brand' => $this->whenLoaded('brand', fn () => $this->brand ? [
@@ -28,6 +37,7 @@ class ProductCardResource extends JsonResource
                 'id' => $this->category->id,
                 'name' => $this->category->name,
                 'slug' => $this->category->slug,
+                'canonical_path' => $urls->categoryPath($this->category),
             ] : null),
             'images' => ProductImageResource::collection($this->whenLoaded('images')),
             'pricing' => $pricing,
