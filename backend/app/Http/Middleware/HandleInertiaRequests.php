@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Order;
 use App\Models\Setting;
+use App\Support\PublicAssetUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Middleware;
@@ -54,6 +55,7 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
             'siteName' => fn (): string => $this->siteName(),
+            'siteLogo' => fn (): ?string => $this->siteLogo(),
             'admin' => [
                 'pending_orders_count' => fn (): int => $this->pendingOrdersCount($request),
             ],
@@ -80,6 +82,31 @@ class HandleInertiaRequests extends Middleware
             // unavailable.
             return (string) config('app.name', '');
         }
+    }
+
+    private function siteLogo(): ?string
+    {
+        try {
+            if (! Schema::hasTable('settings')) {
+                return null;
+            }
+
+            foreach (['site_logo_white', 'site_logo'] as $key) {
+                $value = Setting::get($key);
+                if (! is_string($value)) {
+                    continue;
+                }
+
+                $logo = PublicAssetUrl::normalize($value);
+                if (is_string($logo) && trim($logo) !== '') {
+                    return $logo;
+                }
+            }
+        } catch (\Throwable) {
+            // Keep admin usable while settings/storage are unavailable.
+        }
+
+        return null;
     }
 
     private function pendingOrdersCount(Request $request): int

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import { Link, usePage, router } from '@inertiajs/vue3';
 import ToastNotification from '@/Components/ToastNotification.vue';
 
@@ -10,8 +10,14 @@ const props = defineProps({
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
 const siteName = computed(() => page.props.siteName || '');
+const siteLogoFailed = ref(false);
+const siteLogo = computed(() => siteLogoFailed.value ? '' : String(page.props.siteLogo || '').trim());
 const currentUrl = computed(() => page.props.ziggy?.location || page.url);
 const pendingOrderCount = computed(() => Number(page.props.admin?.pending_orders_count || 0));
+
+watch(() => page.props.siteLogo, () => {
+    siteLogoFailed.value = false;
+});
 
 // Permission check helper
 const can = (perm) => {
@@ -152,13 +158,25 @@ const icons = {
             style="background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%)"
         >
             <!-- Logo -->
-            <div class="flex items-center h-14 px-4 border-b border-slate-800/80 flex-shrink-0">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/20">
+            <div class="flex items-center h-14 min-w-0 gap-2 overflow-hidden px-3 border-b border-slate-800/80 flex-shrink-0">
+                <div
+                    v-if="siteLogo"
+                    :class="sidebarCollapsed ? 'h-8 w-8' : 'h-10 min-w-0 flex-1'"
+                    class="flex items-center justify-start overflow-hidden"
+                >
+                    <img
+                        :src="siteLogo"
+                        :alt="siteName ? `${siteName} logo` : 'Logo website'"
+                        class="block max-h-9 max-w-full object-contain object-left"
+                        @error="siteLogoFailed = true"
+                    />
+                </div>
+                <div v-else class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/20">
                     <svg class="w-4.5 h-4.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                 </div>
                 <template v-if="!sidebarCollapsed">
-                    <span class="ml-3 text-sm font-bold text-white tracking-wide">{{ siteName }}</span>
-                    <span class="ml-auto text-[9px] font-semibold text-cyan-400 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">ADMIN</span>
+                    <span v-if="!siteLogo" :title="siteName" class="min-w-0 flex-1 truncate text-sm font-bold text-white tracking-wide">{{ siteName || 'Admin' }}</span>
+                    <span class="ml-auto flex-shrink-0 text-[9px] font-semibold text-cyan-400 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">ADMIN</span>
                 </template>
             </div>
 
