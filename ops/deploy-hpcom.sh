@@ -80,11 +80,28 @@ RUN_SEEDERS="${RUN_SEEDERS:-0}"
 SEEDERS="${SEEDERS:-}"
 SKIP_PUBLIC_CHECK="${SKIP_PUBLIC_CHECK:-0}"
 PHP_FPM_RELOAD_COMMAND="${PHP_FPM_RELOAD_COMMAND:-}"
+API_LOCAL_IP="${API_LOCAL_IP:-127.0.0.1}"
 
 API_ORIGIN="${API_ORIGIN%/}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN%/}"
 PUBLIC_RELEASE_PATH="/${PUBLIC_RELEASE_PATH#/}"
 FRONTEND_HEALTH_PATH="/${FRONTEND_HEALTH_PATH#/}"
+
+# Resolve the API vhost directly to this server for origin health checks. This
+# prevents a CDN, public DNS record, or stale proxy cache from hiding the state
+# of the code that was just activated by PHP-FPM.
+api_scheme="${API_ORIGIN%%://*}"
+api_authority="${API_ORIGIN#*://}"
+api_authority="${api_authority%%/*}"
+api_host="${api_authority%%:*}"
+if [[ "$api_authority" == *:* ]]; then
+    api_port="${api_authority##*:}"
+elif [ "$api_scheme" = "https" ]; then
+    api_port=443
+else
+    api_port=80
+fi
+API_LOCAL_RESOLVE="${API_LOCAL_RESOLVE:-${api_host}:${api_port}:${API_LOCAL_IP}}"
 
 # npm and PM2 entrypoints on aaPanel commonly use /usr/bin/env node. Put the
 # selected Node runtime first so an unrelated system Node cannot be chosen.
@@ -143,6 +160,53 @@ require_file() {
 
 require_directory() {
     test -d "$1" || fail "Required directory not found: $1"
+}
+
+validate_locations_file() {
+    local label="$1"
+    local file="$2"
+
+    "$PHP_BIN" -r '
+        $label = $argv[1];
+        $file = $argv[2];
+        $raw = file_get_contents($file);
+        if ($raw === false) {
+            fwrite(STDERR, "LOCATION_FILE=FAIL label={$label} reason=unreadable\n");
+            exit(1);
+        }
+
+        $data = json_decode(ltrim($raw, "\xEF\xBB\xBF"), true);
+        $provinces = is_array($data) ? ($data["provinces"] ?? $data) : [];
+        $provinces = is_array($provinces) ? array_values($provinces) : [];
+        $first = $provinces[0] ?? null;
+        $code = is_array($first) ? trim((string) ($first["code"] ?? "")) : "";
+        $wards = is_array($first) && is_array($first["wards"] ?? null)
+            ? array_values($first["wards"])
+            : [];
+
+        if (json_last_error() !== JSON_ERROR_NONE || $code === "" || $wards === []) {
+            fwrite(STDERR, sprintf(
+                "LOCATION_FILE=FAIL label=%s bytes=%d json_error=%s provinces=%d first_code=%s first_wards=%d\n",
+                $label,
+                strlen($raw),
+                json_last_error_msg(),
+                count($provinces),
+                $code === "" ? "missing" : $code,
+                count($wards)
+            ));
+            exit(1);
+        }
+
+        printf(
+            "LOCATION_FILE=OK label=%s bytes=%d sha256=%s provinces=%d first_code=%s first_wards=%d\n",
+            $label,
+            strlen($raw),
+            hash("sha256", $raw),
+            count($provinces),
+            $code,
+            count($wards)
+        );
+    ' "$label" "$file"
 }
 
 fetch_main_with_retry() {
@@ -285,7 +349,7 @@ trap 'exit 143' TERM
 trap '' HUP
 
 CURRENT_STEP=preflight
-for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash; do
+for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash cmp; do
     require_command "$command"
 done
 require_executable "$PHP_BIN"
@@ -380,6 +444,8 @@ require_file "$BACKEND_STAGE_DIR/backend/composer.lock"
 require_file "$BACKEND_STAGE_DIR/backend/locations.json"
 require_file "$FRONTEND_STAGE_DIR/package.json"
 require_file "$FRONTEND_STAGE_DIR/package-lock.json"
+validate_locations_file staged "$BACKEND_STAGE_DIR/backend/locations.json" \
+    || fail "Staged locations.json is invalid"
 
 # Do not allow a stale tracked .env.server from the source repository to win
 # over the HPCom runtime values during the Nuxt build.
@@ -488,6 +554,10 @@ step "Syncing backend source while preserving config and data"
 BACKEND_SYNC_STARTED=1
 "$RSYNC_BIN" -a "${BACKEND_EXCLUDES[@]}" \
     "$BACKEND_STAGE_DIR/backend/" "$BACKEND_DIR/"
+cmp -s "$BACKEND_STAGE_DIR/backend/locations.json" "$BACKEND_DIR/locations.json" \
+    || fail "Active locations.json does not match the staged release"
+validate_locations_file active "$BACKEND_DIR/locations.json" \
+    || fail "Active locations.json is invalid after sync"
 
 CURRENT_STEP=backend_dependencies
 step "Installing backend dependencies with active HPCom .env"
@@ -495,6 +565,52 @@ step "Installing backend dependencies with active HPCom .env"
     cd "$BACKEND_DIR"
     "$COMPOSER_BIN" install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 )
+
+check_location_directory_cli() {
+    (
+        cd "$BACKEND_DIR"
+        "$PHP_BIN" -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+            $kernel->bootstrap();
+
+            Illuminate\Support\Facades\Cache::forget("locations_payload");
+            Illuminate\Support\Facades\Cache::forget("locations_provinces");
+
+            $directory = $app->make(App\Services\Locations\LocationDirectory::class);
+            $provinces = $directory->provinces();
+            $first = is_array($provinces) ? ($provinces[0] ?? null) : null;
+            $provinceCode = is_array($first)
+                ? trim((string) ($first["code"] ?? ""))
+                : "";
+            $wards = $provinceCode !== "" ? $directory->wards($provinceCode) : null;
+            $firstWard = is_array($wards) ? ($wards[0] ?? null) : null;
+            $wardCode = is_array($firstWard)
+                ? trim((string) ($firstWard["code"] ?? ""))
+                : "";
+
+            if ($provinceCode === "" || $wardCode === "") {
+                fwrite(STDERR, sprintf(
+                    "LOCATION_DIRECTORY_CLI=FAIL provinces=%d province_code=%s wards=%d ward_code=%s\n",
+                    is_array($provinces) ? count($provinces) : -1,
+                    $provinceCode === "" ? "missing" : $provinceCode,
+                    is_array($wards) ? count($wards) : -1,
+                    $wardCode === "" ? "missing" : $wardCode
+                ));
+                exit(1);
+            }
+
+            printf(
+                "LOCATION_DIRECTORY_CLI=OK provinces=%d first_code=%s first_wards=%d first_ward_code=%s\n",
+                count($provinces),
+                $provinceCode,
+                count($wards),
+                $wardCode
+            );
+        '
+    )
+}
 
 CURRENT_STEP=backend_cache
 step "Clearing only Laravel runtime caches"
@@ -511,6 +627,11 @@ step "Clearing only Laravel runtime caches"
     "$PHP_BIN" artisan cache:forget locations_provinces --no-ansi || true
 )
 
+CURRENT_STEP=backend_location_runtime
+step "Validating and warming the active Laravel location directory"
+check_location_directory_cli \
+    || fail "Active Laravel location directory is invalid"
+
 CURRENT_STEP=backend_reload
 step "Restarting PHP-FPM to activate the backend source"
 restart_php_fpm
@@ -518,46 +639,183 @@ restart_php_fpm
 check_http() {
     local label="$1"
     local url="$2"
+    local mode="${3:-public}"
+    local -a curl_args=(
+        curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30
+        -H 'Cache-Control: no-cache'
+        -H 'Pragma: no-cache'
+    )
     local status
-    status="$(curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 \
-        -sS -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)" || status=000
-    printf '%s URL=%s HTTP=%s\n' "$label" "$url" "$status"
+
+    if [ "$mode" = "origin" ]; then
+        curl_args+=(--resolve "$API_LOCAL_RESOLVE" --insecure)
+    elif [ "$mode" != "public" ]; then
+        echo "HTTP_CHECK=FAIL label=$label reason=invalid_mode mode=$mode" >&2
+        return 1
+    fi
+
+    status="$("${curl_args[@]}" -sS -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)" \
+        || status=000
+    printf '%s MODE=%s URL=%s HTTP=%s\n' "$label" "$mode" "$url" "$status"
     [[ "$status" == 2?? ]]
 }
 
-read_province_code() {
+read_location_code() {
+    local response_file="$1"
+
     "$PHP_BIN" -r '
-        $raw = stream_get_contents(STDIN);
-        $data = json_decode(ltrim((string)$raw, "\xEF\xBB\xBF"), true);
-        $items = is_array($data) ? ($data["data"] ?? $data["provinces"] ?? $data) : [];
-        $items = is_array($items) ? array_values($items) : [];
-        $first = $items[0] ?? [];
-        if (is_array($first)) {
-            echo (string)($first["code"] ?? $first["id"] ?? "");
+        $raw = file_get_contents($argv[1]);
+        $raw = $raw === false ? "" : $raw;
+        $data = json_decode(ltrim($raw, "\xEF\xBB\xBF"), true);
+
+        $extract = static function (mixed $value) use (&$extract): array {
+            if (! is_array($value)) {
+                return [];
+            }
+            if (array_is_list($value)) {
+                return array_values($value);
+            }
+            foreach (["data", "provinces", "wards", "items", "result"] as $key) {
+                if (array_key_exists($key, $value)) {
+                    $items = $extract($value[$key]);
+                    if ($items !== []) {
+                        return $items;
+                    }
+                }
+            }
+            return [];
+        };
+
+        $items = $extract($data);
+        $first = $items[0] ?? null;
+        $code = is_array($first)
+            ? trim((string) ($first["code"] ?? $first["id"] ?? ""))
+            : "";
+        $rootKeys = is_array($data) && ! array_is_list($data)
+            ? implode(",", array_keys($data))
+            : "list";
+        $head = preg_replace("/\\s+/u", " ", mb_substr($raw, 0, 240));
+
+        fwrite(STDERR, sprintf(
+            "LOCATION_RESPONSE bytes=%d json_error=%s root_type=%s root_keys=%s items=%d first_code=%s body_head=%s\n",
+            strlen($raw),
+            json_last_error_msg(),
+            get_debug_type($data),
+            $rootKeys,
+            count($items),
+            $code === "" ? "missing" : $code,
+            json_encode($head, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)
+        ));
+
+        if ($code === "") {
+            exit(1);
         }
-    '
+        echo $code;
+    ' "$response_file"
+}
+
+fetch_location_code() {
+    local label="$1"
+    local path="$2"
+    local mode="$3"
+    local response_file headers_file probe url result status content_type code
+    local -a curl_args=(
+        curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30
+        -H 'Accept: application/json'
+        -H 'Cache-Control: no-cache'
+        -H 'Pragma: no-cache'
+    )
+
+    response_file="$(mktemp "/tmp/hpcom-${label}-body-XXXXXX")"
+    headers_file="$(mktemp "/tmp/hpcom-${label}-headers-XXXXXX")"
+    probe="${BACKEND_TAG}-$(date +%s)-${RANDOM}"
+    url="${API_ORIGIN}${path}?deploy_probe=${probe}"
+
+    if [ "$mode" = "origin" ]; then
+        curl_args+=(--resolve "$API_LOCAL_RESOLVE" --insecure)
+    elif [ "$mode" != "public" ]; then
+        rm -f -- "$response_file" "$headers_file"
+        echo "LOCATION_HTTP=FAIL label=$label reason=invalid_mode mode=$mode" >&2
+        return 1
+    fi
+
+    result="$("${curl_args[@]}" -sS -D "$headers_file" -o "$response_file" \
+        -w '%{http_code}|%{content_type}' "$url" 2>/dev/null)" || result='000|'
+    status="${result%%|*}"
+    content_type="${result#*|}"
+    printf 'LOCATION_HTTP label=%s mode=%s HTTP=%s CONTENT_TYPE=%s URL=%s\n' \
+        "$label" "$mode" "$status" "${content_type:-missing}" "$url" >&2
+
+    if [[ "$status" != 2?? ]]; then
+        read_location_code "$response_file" >/dev/null || true
+        rm -f -- "$response_file" "$headers_file"
+        return 1
+    fi
+
+    if ! code="$(read_location_code "$response_file")"; then
+        rm -f -- "$response_file" "$headers_file"
+        return 1
+    fi
+    rm -f -- "$response_file" "$headers_file"
+    printf '%s' "$code"
 }
 
 check_locations_api() {
-    local body province_code
-    body="$(curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 \
-        -fsS "$API_ORIGIN/api/v1/locations/provinces")" || return 1
-    province_code="$(printf '%s' "$body" | read_province_code)"
-    test -n "$province_code" || return 1
-    printf 'LOCATIONS_PROVINCES=OK FIRST_CODE=%s\n' "$province_code"
-    check_http locations_wards "$API_ORIGIN/api/v1/locations/provinces/$province_code/wards"
+    local mode="$1"
+    local province_code ward_code
+
+    province_code="$(fetch_location_code locations_provinces \
+        /api/v1/locations/provinces "$mode")" || return 1
+    ward_code="$(fetch_location_code locations_wards \
+        "/api/v1/locations/provinces/${province_code}/wards" "$mode")" || return 1
+    printf 'LOCATIONS_API=OK MODE=%s FIRST_PROVINCE_CODE=%s FIRST_WARD_CODE=%s\n' \
+        "$mode" "$province_code" "$ward_code"
+}
+
+check_frontend_locations_dataset() {
+    local response_file url result status content_type code
+
+    response_file="$(mktemp "/tmp/hpcom-frontend-locations-body-XXXXXX")"
+    url="${PUBLIC_ORIGIN}/data/locations.json?deploy_probe=${FRONTEND_TAG}-$(date +%s)-${RANDOM}"
+    result="$(curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 \
+        -H 'Accept: application/json' \
+        -H 'Cache-Control: no-cache' \
+        -H 'Pragma: no-cache' \
+        -sS -o "$response_file" -w '%{http_code}|%{content_type}' "$url" 2>/dev/null)" \
+        || result='000|'
+    status="${result%%|*}"
+    content_type="${result#*|}"
+    printf 'FRONTEND_LOCATION_HTTP HTTP=%s CONTENT_TYPE=%s URL=%s\n' \
+        "$status" "${content_type:-missing}" "$url"
+
+    if [[ "$status" != 2?? ]]; then
+        read_location_code "$response_file" >/dev/null || true
+        rm -f -- "$response_file"
+        return 1
+    fi
+    if ! code="$(read_location_code "$response_file")"; then
+        rm -f -- "$response_file"
+        return 1
+    fi
+    rm -f -- "$response_file"
+    printf 'FRONTEND_LOCATION_DATASET=OK FIRST_CODE=%s\n' "$code"
 }
 
 CURRENT_STEP=backend_smoke_before_migration
 step "Checking HPCom backend before migration"
-check_http admin_login "$API_ORIGIN/admin/login" \
-    || fail "Admin login endpoint failed"
-check_http locations_provinces "$API_ORIGIN/api/v1/locations/provinces" \
-    || fail "Locations provinces endpoint failed"
-check_locations_api \
-    || fail "Locations API returned invalid province/ward data"
-check_http header_menu "$API_ORIGIN/api/v1/menus/header" \
-    || fail "Header menu endpoint failed"
+echo "API_LOCAL_RESOLVE=$API_LOCAL_RESOLVE"
+check_http admin_login_origin "$API_ORIGIN/admin/login" origin \
+    || fail "Admin login origin endpoint failed"
+check_locations_api origin \
+    || fail "Locations origin API returned invalid province/ward data"
+check_http header_menu_origin "$API_ORIGIN/api/v1/menus/header" origin \
+    || fail "Header menu origin endpoint failed"
+check_http admin_login_public "$API_ORIGIN/admin/login" public \
+    || fail "Admin login public endpoint failed"
+check_locations_api public \
+    || fail "Locations public API returned invalid province/ward data"
+check_http header_menu_public "$API_ORIGIN/api/v1/menus/header" public \
+    || fail "Header menu public endpoint failed"
 
 if [ "$RUN_MIGRATIONS" = "1" ]; then
     CURRENT_STEP=migrate
@@ -608,8 +866,12 @@ check_http public_frontend "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" \
     || fail "Public frontend endpoint failed"
 check_http public_admin_login "$API_ORIGIN/admin/login" \
     || fail "Public admin endpoint failed"
-check_http public_locations "$API_ORIGIN/api/v1/locations/provinces" \
-    || fail "Public locations endpoint failed"
+check_locations_api origin \
+    || fail "Final locations origin API check failed"
+check_locations_api public \
+    || fail "Final locations public API check failed"
+check_frontend_locations_dataset \
+    || fail "Public frontend locations dataset is invalid"
 
 check_release() {
     local url="$1"
