@@ -20,6 +20,8 @@ umask 022
 #
 # Default invocation:
 #   curl -fsSL https://raw.githubusercontent.com/cuongdesignnb/pc/main/ops/deploy-hpcom.sh | DEPLOY_DETACH=1 bash
+# Add DEPLOY_FOLLOW=1 to stream the detached job until it exits; the job keeps
+# running if the terminal follower is interrupted or disconnected.
 #
 # Optional pinned commits:
 #   ... | DEPLOY_DETACH=1 bash -s -- BACKEND_SHA FRONTEND_SHA
@@ -49,11 +51,23 @@ if [[ "${DEPLOY_DETACH:-0}" == "1" && "${DEPLOY_DAEMONIZED:-0}" != "1" ]]; then
         nohup bash -lc "$child_command" >"$deploy_log" 2>&1 < /dev/null &
     fi
 
-    echo "DEPLOY_PID=$!"
+    deploy_pid=$!
+    echo "DEPLOY_PID=$deploy_pid"
     echo "DEPLOY_LOG=$deploy_log"
     # Consume the remaining curl stream before returning. This prevents the
     # upstream curl from failing with exit 23 after the child is detached.
     while IFS= read -r; do :; done
+
+    # Optional live output keeps the aaPanel terminal informative while the
+    # detached process remains independent. Closing the terminal or pressing
+    # Ctrl+C stops only this follower; the deploy itself keeps running.
+    if [[ "${DEPLOY_FOLLOW:-0}" == "1" ]]; then
+        tail --pid="$deploy_pid" -n +1 -F "$deploy_log" || true
+        deploy_exit=0
+        wait "$deploy_pid" || deploy_exit=$?
+        echo "DEPLOY_PROCESS_EXIT=$deploy_exit"
+        exit "$deploy_exit"
+    fi
     exit 0
 fi
 
