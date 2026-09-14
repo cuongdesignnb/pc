@@ -15,8 +15,8 @@ umask 022
 #
 # The script deliberately deploys immutable commits from the two Git
 # repositories. It never replaces either .env file, never deletes storage or
-# public upload directories, and creates a database/code/output backup before
-# the first production mutation.
+# public upload directories, and creates a database/code/admin-assets/output
+# backup before the first production mutation.
 #
 # Default invocation:
 #   curl -fsSL https://raw.githubusercontent.com/cuongdesignnb/pc/main/ops/deploy-hpcom.sh | DEPLOY_DETACH=1 bash
@@ -164,6 +164,8 @@ BACKEND_STAGE_DIR=
 FRONTEND_STAGE_DIR=
 BACKUP_DIR=
 BACKEND_BEFORE_DIR=
+ADMIN_ASSET_BACKUP=
+ADMIN_ASSET_MANIFEST_SHA256=
 FRONTEND_OUTPUT_BACKUP=
 FRONTEND_OUTPUT_FAILED=
 MYSQL_CNF=
@@ -181,6 +183,14 @@ BACKEND_EXCLUDES=(
     --exclude=public/.well-known/
     --exclude=node_modules/
     --exclude=bootstrap/cache/
+)
+
+# The old admin bundle is included in BACKEND_BEFORE_DIR for rollback, but is
+# activated separately from the PHP source. This prevents rsync from exposing
+# a partially copied Vite build while deployment is still in progress.
+BACKEND_SYNC_EXCLUDES=(
+    "${BACKEND_EXCLUDES[@]}"
+    --exclude=public/build/
 )
 
 fail() {
@@ -671,6 +681,9 @@ require_directory "$BACKEND_STAGE_DIR/backend"
 require_file "$BACKEND_STAGE_DIR/backend/composer.json"
 require_file "$BACKEND_STAGE_DIR/backend/composer.lock"
 require_file "$BACKEND_STAGE_DIR/backend/locations.json"
+require_file "$BACKEND_STAGE_DIR/backend/package.json"
+require_file "$BACKEND_STAGE_DIR/backend/package-lock.json"
+require_file "$BACKEND_STAGE_DIR/backend/vite.config.js"
 require_file "$FRONTEND_STAGE_DIR/package.json"
 require_file "$FRONTEND_STAGE_DIR/package-lock.json"
 validate_locations_file staged "$BACKEND_STAGE_DIR/backend/locations.json" \
@@ -690,6 +703,35 @@ cat > "$FRONTEND_STAGE_DIR/public/release.json" <<EOF
 }
 EOF
 
+CURRENT_STEP=admin_assets_build
+step "Building Laravel admin assets from $BACKEND_SHA"
+(
+    cd "$BACKEND_STAGE_DIR/backend"
+    # Vite imports Ziggy and scans Laravel vendor views, so install the locked
+    # production Composer dependencies in the isolated source tree first.
+    # --no-scripts guarantees the staging build cannot execute Artisan against
+    # the live HPCom environment.
+    "$COMPOSER_BIN" install --no-dev --prefer-dist --no-interaction \
+        --no-progress --no-scripts --optimize-autoloader
+    "$NPM_BIN" ci --include=dev --no-audit --no-fund
+    NODE_ENV=production "$NPM_BIN" run build
+)
+require_file "$BACKEND_STAGE_DIR/backend/public/build/manifest.json"
+ADMIN_ASSET_MANIFEST_SHA256="$(
+    sha256sum "$BACKEND_STAGE_DIR/backend/public/build/manifest.json" \
+        | awk '{print $1}'
+)"
+test -n "$ADMIN_ASSET_MANIFEST_SHA256" \
+    || fail "Could not fingerprint the staged Laravel admin manifest"
+echo "ADMIN_ASSET_BUILD=READY manifest_sha256=$ADMIN_ASSET_MANIFEST_SHA256"
+
+# Dependencies are installed again against the preserved production .env
+# after source activation. Do not copy staging vendor/node_modules into the
+# active tree as a side effect of the source rsync.
+rm -rf -- \
+    "$BACKEND_STAGE_DIR/backend/vendor" \
+    "$BACKEND_STAGE_DIR/backend/node_modules"
+
 CURRENT_STEP=frontend_build
 step "Building frontend from $FRONTEND_SHA"
 (
@@ -708,6 +750,7 @@ BACKUP_DIR="$BACKUP_ROOT/${BACKEND_TAG}-${FRONTEND_TAG}-$(date -u +%Y%m%d-%H%M%S
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 BACKEND_BEFORE_DIR="$BACKUP_DIR/backend-before"
+ADMIN_ASSET_BACKUP="$BACKUP_DIR/admin-build-before"
 FRONTEND_OUTPUT_BACKUP="$BACKUP_DIR/frontend-output-before"
 FRONTEND_OUTPUT_FAILED="$BACKUP_DIR/frontend-output-failed"
 echo "BACKUP_DIR=$BACKUP_DIR"
@@ -778,12 +821,13 @@ PHP_VERSION=$php_version
 NODE_VERSION=$node_version
 RUN_MIGRATIONS=$RUN_MIGRATIONS
 RUN_SEEDERS=$RUN_SEEDERS
+ADMIN_ASSET_MANIFEST_SHA256=$ADMIN_ASSET_MANIFEST_SHA256
 EOF
 
 CURRENT_STEP=backend_sync
 step "Syncing backend source while preserving config and data"
 BACKEND_SYNC_STARTED=1
-"$RSYNC_BIN" -a "${BACKEND_EXCLUDES[@]}" \
+"$RSYNC_BIN" -a "${BACKEND_SYNC_EXCLUDES[@]}" \
     "$BACKEND_STAGE_DIR/backend/" "$BACKEND_DIR/"
 cmp -s "$BACKEND_STAGE_DIR/backend/locations.json" "$BACKEND_DIR/locations.json" \
     || fail "Active locations.json does not match the staged release"
@@ -796,6 +840,25 @@ step "Installing backend dependencies with active HPCom .env"
     cd "$BACKEND_DIR"
     "$COMPOSER_BIN" install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 )
+
+CURRENT_STEP=admin_assets_activate
+step "Activating the immutable Laravel admin asset bundle"
+mkdir -p "$BACKEND_DIR/public"
+if [ -e "$BACKEND_DIR/public/build" ] || [ -L "$BACKEND_DIR/public/build" ]; then
+    test ! -e "$ADMIN_ASSET_BACKUP" \
+        || fail "Admin asset backup path already exists: $ADMIN_ASSET_BACKUP"
+    mv -- "$BACKEND_DIR/public/build" "$ADMIN_ASSET_BACKUP"
+fi
+mv -- "$BACKEND_STAGE_DIR/backend/public/build" "$BACKEND_DIR/public/build"
+chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$BACKEND_DIR/public/build"
+find "$BACKEND_DIR/public/build" -type d -exec chmod 0755 {} +
+find "$BACKEND_DIR/public/build" -type f -exec chmod 0644 {} +
+ACTIVE_ADMIN_ASSET_MANIFEST_SHA256="$(
+    sha256sum "$BACKEND_DIR/public/build/manifest.json" | awk '{print $1}'
+)"
+test "$ACTIVE_ADMIN_ASSET_MANIFEST_SHA256" = "$ADMIN_ASSET_MANIFEST_SHA256" \
+    || fail "Active Laravel admin manifest does not match the staged release"
+echo "ADMIN_ASSET_SWAP=COMPLETE manifest_sha256=$ACTIVE_ADMIN_ASSET_MANIFEST_SHA256"
 
 CURRENT_STEP=backend_permissions
 step "Verifying backend files as PHP-FPM user $PHP_FPM_USER"
@@ -1266,6 +1329,8 @@ echo "PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
 echo "API_ORIGIN=$API_ORIGIN"
 echo "FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN"
 echo "FRONTEND_RUNTIME=$FRONTEND_HOST:$FRONTEND_PORT"
+echo "ADMIN_ASSET_MANIFEST_SHA256=$ADMIN_ASSET_MANIFEST_SHA256"
+echo "ADMIN_ASSETS=BUILT_AND_ACTIVATED"
 echo "MIGRATION=$MIGRATION_STATUS"
 echo "SEEDERS=$([ "$RUN_SEEDERS" = "1" ] && echo "$SEEDERS" || echo NOT_RUN)"
 echo "DATABASE_CHANGED=$DATABASE_CHANGED"

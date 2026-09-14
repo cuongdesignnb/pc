@@ -50,11 +50,13 @@ curl --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 -fsSL \
 The script creates/reuses dedicated source checkouts under
 `/www/deploy/hpcom-source`, then fetches the latest `main` commits from `pc`
 and `pcfrontend`,
-backs up the active MySQL database, backend code, frontend output and runtime
-fingerprints, then preserves `.env`, `storage`, uploads and aaPanel files.
-It runs migrations after the backup but does not run seeders unless explicitly
-requested. It reloads PM2, checks the admin/login and locations API, and
-checks `/release.json` on `hpcomvietnam.vn` before reporting
+builds the Laravel/Vite admin assets and Nuxt storefront from immutable source,
+backs up the active MySQL database, backend code, previous admin bundle,
+frontend output and runtime fingerprints, then preserves `.env`, `storage`,
+uploads and aaPanel files. It runs migrations after the backup but does not run
+seeders unless explicitly requested. It reloads PHP-FPM and PM2, checks the
+admin/login and locations API, and checks `/release.json` on
+`hpcomvietnam.vn` before reporting `ADMIN_ASSETS=BUILT_AND_ACTIVATED`,
 `HPCOM_DEPLOY_COMPLETE=YES` and `DEPLOY_STATUS=SUCCESS`.
 
 For a code-only deploy, set `RUN_MIGRATIONS=0`. For reviewed data changes,
