@@ -549,16 +549,7 @@ fi
 
 CURRENT_STEP=frontend_ready
 step "Frontend output is ready from $FRONTEND_SHA"
-(
-    cd "$FRONTEND_STAGE_DIR"
-    export NODE_ENV=production
-    export NUXT_PUBLIC_API_BASE="$API_ORIGIN/api/v1"
-    export NUXT_API_PROXY_TARGET="$API_ORIGIN"
-    export NUXT_PUBLIC_SITE_URL="$PUBLIC_ORIGIN"
-    # npm ci/build already ran above. This step is intentionally a no-op
-    # marker for the deploy log and keeps the source/build boundary explicit.
-    test -f .output/server/index.mjs
-)
+test -f "$FRONTEND_STAGE_DIR/.output/server/index.mjs"
 
 CURRENT_STEP=frontend_swap
 step "Installing frontend output and reloading PM2 app $PM2_APP"
@@ -603,7 +594,6 @@ else
 fi
 
 CURRENT_STEP=finalize
-FRONTEND_OUTPUT_OLD_MOVED=0
 DEPLOY_SUCCEEDED=1
 echo "BACKUP_DIR=$BACKUP_DIR"
 echo "BACKEND_SHA=$BACKEND_SHA"
