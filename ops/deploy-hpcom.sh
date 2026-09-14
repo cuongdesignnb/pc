@@ -81,6 +81,11 @@ PUBLIC_ORIGIN="${PUBLIC_ORIGIN%/}"
 PUBLIC_RELEASE_PATH="/${PUBLIC_RELEASE_PATH#/}"
 FRONTEND_HEALTH_PATH="/${FRONTEND_HEALTH_PATH#/}"
 
+# npm and PM2 entrypoints on aaPanel commonly use /usr/bin/env node. Put the
+# selected Node runtime first so an unrelated system Node cannot be chosen.
+NODE_BIN_DIR="${NODE_BIN%/*}"
+export PATH="$NODE_BIN_DIR:$PATH"
+
 CURRENT_STEP=initialization
 ERROR_REPORTED=0
 DEPLOY_SUCCEEDED=0
