@@ -8,6 +8,7 @@ umask 077
 # Runtime layout on the aaPanel host:
 #   backend  /www/wwwroot/admin.hpcomvietnam.vn  (Laravel + PHP-FPM)
 #   frontend /www/wwwroot/hpcomvietnam.vn        (Nuxt output + PM2)
+#   sources  /www/deploy/hpcom-source             (dedicated Git mirrors)
 #
 # The script deliberately deploys immutable commits from the two Git
 # repositories. It never replaces either .env file, never deletes storage or
@@ -53,8 +54,11 @@ if [[ "${DEPLOY_DETACH:-0}" == "1" && "${DEPLOY_DAEMONIZED:-0}" != "1" ]]; then
     exit 0
 fi
 
-BACKEND_SOURCE_REPO="${BACKEND_SOURCE_REPO:-/www/docker/laptopplus.vn}"
-FRONTEND_SOURCE_REPO="${FRONTEND_SOURCE_REPO:-/www/wwwroot/pcfrontend}"
+SOURCE_ROOT="${SOURCE_ROOT:-/www/deploy/hpcom-source}"
+BACKEND_SOURCE_URL="${BACKEND_SOURCE_URL:-https://github.com/cuongdesignnb/pc.git}"
+FRONTEND_SOURCE_URL="${FRONTEND_SOURCE_URL:-https://github.com/cuongdesignnb/pcfrontend.git}"
+BACKEND_SOURCE_REPO="${BACKEND_SOURCE_REPO:-$SOURCE_ROOT/pc}"
+FRONTEND_SOURCE_REPO="${FRONTEND_SOURCE_REPO:-$SOURCE_ROOT/pcfrontend}"
 BACKEND_DIR="${BACKEND_DIR:-/www/wwwroot/admin.hpcomvietnam.vn}"
 FRONTEND_DIR="${FRONTEND_DIR:-/www/wwwroot/hpcomvietnam.vn}"
 PM2_APP="${PM2_APP:-hpcom}"
@@ -161,6 +165,20 @@ fetch_main_with_retry() {
     done
 
     return 1
+}
+
+prepare_source_repository() {
+    local repository="$1"
+    local remote_url="$2"
+
+    if [ ! -e "$repository/.git" ]; then
+        [ ! -e "$repository" ] \
+            || fail "Source path exists but is not a Git repository: $repository"
+        mkdir -p "$SOURCE_ROOT"
+        step "Cloning dedicated source repository $remote_url"
+        git clone --no-tags --branch main "$remote_url" "$repository" \
+            || fail "Could not clone source repository: $remote_url"
+    fi
 }
 
 step() {
@@ -281,6 +299,8 @@ if [ "$RUN_SEEDERS" = "1" ]; then
     test -n "$SEEDERS" || fail 'RUN_SEEDERS=1 requires SEEDERS="SeederA SeederB"'
 fi
 
+prepare_source_repository "$BACKEND_SOURCE_REPO" "$BACKEND_SOURCE_URL"
+prepare_source_repository "$FRONTEND_SOURCE_REPO" "$FRONTEND_SOURCE_URL"
 require_directory "$BACKEND_SOURCE_REPO"
 require_directory "$FRONTEND_SOURCE_REPO"
 require_directory "$BACKEND_DIR"
@@ -447,6 +467,7 @@ MYSQL_CNF=
 cat > "$BACKUP_DIR/manifest.env" <<EOF
 BACKEND_SHA=$BACKEND_SHA
 FRONTEND_SHA=$FRONTEND_SHA
+SOURCE_ROOT=$SOURCE_ROOT
 BACKEND_DIR=$BACKEND_DIR
 FRONTEND_DIR=$FRONTEND_DIR
 API_ORIGIN=$API_ORIGIN
