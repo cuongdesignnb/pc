@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -26,7 +27,14 @@ class AdminBrandingTest extends TestCase
     {
         Setting::set('site_name', 'HPCom Việt Nam');
         Setting::set('site_logo', '/storage/media/logo-default.svg');
-        Setting::set('site_logo_white', 'http://localhost:8000/storage/media/logo-white.svg');
+        Setting::query()->updateOrCreate(['key' => 'site_logo_white'], [
+            'value' => 'http://localhost:8000/storage/media/logo-white.svg',
+            'group' => 'general',
+            'type' => 'text',
+            'label' => 'Logo trắng',
+            'is_public' => true,
+        ]);
+        Cache::forget('setting.site_logo_white');
 
         $this->actingAs($this->admin())
             ->get('/admin')
