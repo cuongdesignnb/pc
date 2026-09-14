@@ -310,6 +310,9 @@ ensure_laravel_runtime_permissions() {
         chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$directory"
         find "$directory" -type d -exec chmod 2770 {} +
         find "$directory" -type f -exec chmod 0660 {} +
+        runuser -u "$PHP_FPM_USER" -- test -r "$directory"
+        runuser -u "$PHP_FPM_USER" -- test -w "$directory"
+        runuser -u "$PHP_FPM_USER" -- test -x "$directory"
     done
 
     printf 'LARAVEL_RUNTIME_PERMISSIONS=OK owner=%s group=%s\n' \
@@ -356,6 +359,56 @@ step() {
     printf '\n[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
 }
 
+find_php_fpm_master_pid() {
+    local runtime_root config_file pid
+
+    runtime_root="${PHP_BIN%/bin/php}"
+    config_file="$runtime_root/etc/php-fpm.conf"
+    pid="$(ps -eo pid=,args= | awk -v config="$config_file" '
+        index($0, "php-fpm: master process (" config ")") { print $1; exit }
+    ')"
+    test -n "$pid" || return 1
+    printf '%s' "$pid"
+}
+
+find_php_fpm_worker_user() {
+    local master_pid="$1"
+    local user
+
+    user="$(ps -eo ppid=,user=,args= | awk -v master="$master_pid" '
+        $1 == master && $2 != "root" && index($0, "php-fpm: pool") {
+            print $2;
+            exit;
+        }
+    ')"
+    test -n "$user" || return 1
+    printf '%s' "$user"
+}
+
+assert_php_fpm_runtime_identity() {
+    local attempt master_pid worker_user
+
+    for ((attempt = 1; attempt <= 15; attempt++)); do
+        master_pid=
+        worker_user=
+        master_pid="$(find_php_fpm_master_pid 2>/dev/null || true)"
+        if [ -n "$master_pid" ]; then
+            worker_user="$(find_php_fpm_worker_user "$master_pid" 2>/dev/null || true)"
+            if [ "$worker_user" = "$PHP_FPM_USER" ]; then
+                printf 'PHP_FPM_RUNTIME_IDENTITY=PASS master_pid=%s user=%s attempt=%d/15\n' \
+                    "$master_pid" "$worker_user" "$attempt"
+                return 0
+            fi
+        fi
+
+        printf 'PHP_FPM_RUNTIME_IDENTITY_WAIT attempt=%d/15 master_pid=%s detected_user=%s expected_user=%s\n' \
+            "$attempt" "${master_pid:-missing}" "${worker_user:-missing}" "$PHP_FPM_USER"
+        sleep 1
+    done
+
+    return 1
+}
+
 cleanup() {
     [ -z "$BACKEND_STAGE_DIR" ] || rm -rf -- "$BACKEND_STAGE_DIR" || true
     [ -z "$FRONTEND_STAGE_DIR" ] || rm -rf -- "$FRONTEND_STAGE_DIR" || true
@@ -388,6 +441,7 @@ restart_php_fpm() {
         # starting a daemon; the parent shell keeps holding the lock for the
         # remainder of the deployment.
         bash -lc "$PHP_FPM_RELOAD_COMMAND" 9>&-
+        assert_php_fpm_runtime_identity
         assert_php_fpm_does_not_hold_deploy_lock
         return 0
     fi
@@ -401,6 +455,7 @@ restart_php_fpm() {
         if [ -x "$init_script" ]; then
             echo "PHP_FPM_RESTART=$init_script"
             "$init_script" restart 9>&-
+            assert_php_fpm_runtime_identity
             assert_php_fpm_does_not_hold_deploy_lock
             return 0
         fi
@@ -412,6 +467,7 @@ restart_php_fpm() {
             if systemctl is-active --quiet "$unit" 2>/dev/null; then
                 echo "PHP_FPM_RESTART=$unit"
                 systemctl restart "$unit" 9>&-
+                assert_php_fpm_runtime_identity
                 assert_php_fpm_does_not_hold_deploy_lock
                 return 0
             fi
@@ -520,14 +576,18 @@ require_file "$BACKEND_DIR/.env"
 require_file "$FRONTEND_DIR/.env"
 require_file "$FRONTEND_DIR/.output/server/index.mjs"
 
+exec 9>"$DEPLOY_LOCK"
+flock -n 9 || fail "Another HPCom deploy is already running: $DEPLOY_LOCK"
+
+PHP_FPM_MASTER_PID="$(find_php_fpm_master_pid)" \
+    || fail "Could not find the PHP-FPM master for ${PHP_BIN%/bin/php}/etc/php-fpm.conf"
+PHP_FPM_DETECTED_USER="$(find_php_fpm_worker_user "$PHP_FPM_MASTER_PID")" \
+    || fail "Could not determine the PHP-FPM worker user for master PID $PHP_FPM_MASTER_PID"
 if [ -z "$PHP_FPM_USER" ]; then
-    PHP_FPM_USER="$(ps -eo user=,comm= \
-        | awk '$2 ~ /^php-fpm/ && $1 != "root" && user == "" { user = $1 } END { print user }')"
+    PHP_FPM_USER="$PHP_FPM_DETECTED_USER"
+elif [ "$PHP_FPM_USER" != "$PHP_FPM_DETECTED_USER" ]; then
+    fail "PHP_FPM_USER=$PHP_FPM_USER does not match PHP 8.3 worker user $PHP_FPM_DETECTED_USER"
 fi
-if [ -z "$PHP_FPM_USER" ] && [ -d "$BACKEND_DIR/storage" ]; then
-    PHP_FPM_USER="$(stat -c '%U' "$BACKEND_DIR/storage")"
-fi
-test -n "$PHP_FPM_USER" || fail "Could not determine the PHP-FPM runtime user"
 test "$PHP_FPM_USER" != root || fail "PHP-FPM runtime user must not be root"
 id "$PHP_FPM_USER" >/dev/null 2>&1 \
     || fail "PHP-FPM runtime user does not exist: $PHP_FPM_USER"
@@ -537,6 +597,18 @@ fi
 test -n "$PHP_FPM_GROUP" || fail "Could not determine the PHP-FPM runtime group"
 echo "PHP_FPM_USER=$PHP_FPM_USER"
 echo "PHP_FPM_GROUP=$PHP_FPM_GROUP"
+echo "PHP_FPM_MASTER_PID=$PHP_FPM_MASTER_PID"
+echo "PHP_FPM_IDENTITY_SOURCE=${PHP_BIN%/bin/php}/etc/php-fpm.conf"
+
+# A previous interrupted or failed deployment may have left Laravel's cache,
+# session, view or log directories owned by a different PHP installation's
+# worker. Repair them immediately using the worker attached to the exact PHP
+# runtime selected above; file contents and application configuration remain
+# untouched.
+CURRENT_STEP=preflight_runtime_permissions
+ensure_laravel_runtime_permissions
+echo "LARAVEL_RUNTIME_PREFLIGHT_REPAIR=COMPLETE"
+CURRENT_STEP=preflight
 
 test "$(git -C "$BACKEND_SOURCE_REPO" rev-parse --is-inside-work-tree)" = true \
     || fail "Backend source path is not a Git worktree: $BACKEND_SOURCE_REPO"
@@ -564,9 +636,6 @@ php_minor="${php_minor%%.*}"
     || fail "PHP >= 8.2 is required; found $php_version"
 echo "RUNTIME_PHP=$php_version"
 echo "RUNTIME_NODE=$node_version"
-
-exec 9>"$DEPLOY_LOCK"
-flock -n 9 || fail "Another HPCom deploy is already running: $DEPLOY_LOCK"
 
 CURRENT_STEP=fetch_sources
 step "Fetching backend and frontend main"
@@ -828,6 +897,38 @@ check_http() {
     [[ "$status" == 2?? ]]
 }
 
+backend_diagnostics() {
+    local master_pid directory
+    local -a runtime_directories=(
+        "$BACKEND_DIR/storage/framework/cache"
+        "$BACKEND_DIR/storage/framework/sessions"
+        "$BACKEND_DIR/storage/framework/views"
+        "$BACKEND_DIR/storage/logs"
+        "$BACKEND_DIR/bootstrap/cache"
+    )
+
+    echo "BACKEND_DIAGNOSTICS=START" >&2
+    master_pid="$(find_php_fpm_master_pid 2>/dev/null || true)"
+    if [ -n "$master_pid" ]; then
+        ps -eo pid=,ppid=,user=,args= \
+            | awk -v master="$master_pid" '$1 == master || $2 == master' >&2 || true
+    else
+        echo "BACKEND_DIAGNOSTIC_PHP_FPM_MASTER=missing" >&2
+    fi
+
+    for directory in "${runtime_directories[@]}"; do
+        stat -c 'BACKEND_RUNTIME_PATH=%n owner=%U group=%G mode=%a' \
+            "$directory" >&2 || true
+    done
+
+    if [ -f "$BACKEND_DIR/storage/logs/laravel.log" ]; then
+        echo "BACKEND_LARAVEL_LOG_TAIL=START" >&2
+        tail -n 100 "$BACKEND_DIR/storage/logs/laravel.log" >&2 || true
+        echo "BACKEND_LARAVEL_LOG_TAIL=END" >&2
+    fi
+    echo "BACKEND_DIAGNOSTICS=END" >&2
+}
+
 frontend_http_status() {
     local url="$1"
     local mode="${2:-direct}"
@@ -1045,7 +1146,7 @@ CURRENT_STEP=backend_smoke_before_migration
 step "Checking HPCom backend before migration"
 echo "API_LOCAL_RESOLVE=$API_LOCAL_RESOLVE"
 check_http admin_login_origin "$API_ORIGIN/admin/login" origin \
-    || fail "Admin login origin endpoint failed"
+    || { backend_diagnostics; fail "Admin login origin endpoint failed"; }
 check_locations_api origin \
     || fail "Locations origin API returned invalid province/ward data"
 check_http header_menu_origin "$API_ORIGIN/api/v1/menus/header" origin \
