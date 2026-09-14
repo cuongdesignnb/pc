@@ -32,3 +32,37 @@ The server must keep these paths and files in place:
 Successful output ends with `LAPTOPPLUS_DEPLOY_COMPLETE=YES` and
 `DEPLOY_STATUS=SUCCESS`. A failed or interrupted run prints
 `DEPLOY_STATUS=FAILED` and attempts rollback before exiting.
+
+## HPCom aaPanel deploy
+
+HPCom uses a different runtime from Laptop Plus: Laravel is served by
+aaPanel PHP-FPM from `/www/wwwroot/admin.hpcomvietnam.vn`, while the Nuxt
+server runs as PM2 app `hpcom` from `/www/wwwroot/hpcomvietnam.vn`. Use the
+dedicated script so the Docker deploy does not accidentally target the other
+site:
+
+```bash
+curl --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 -fsSL \
+  https://raw.githubusercontent.com/cuongdesignnb/pc/main/ops/deploy-hpcom.sh \
+  | DEPLOY_DETACH=1 bash
+```
+
+The script fetches the latest `main` commits from `pc` and `pcfrontend`,
+backs up the active MySQL database, backend code, frontend output and runtime
+fingerprints, then preserves `.env`, `storage`, uploads and aaPanel files.
+It runs migrations after the backup but does not run seeders unless explicitly
+requested. It reloads PM2, checks the admin/login and locations API, and
+checks `/release.json` on `hpcomvietnam.vn` before reporting
+`HPCOM_DEPLOY_COMPLETE=YES` and `DEPLOY_STATUS=SUCCESS`.
+
+For a code-only deploy, set `RUN_MIGRATIONS=0`. For reviewed data changes,
+seeders must be explicit, for example:
+
+```bash
+RUN_SEEDERS=1 SEEDERS="ReviewedSeeder" DEPLOY_DETACH=1 bash
+```
+
+The backup directory is printed in the final output. Database rollback is not
+automatic because restoring a dump could overwrite orders or settings created
+by another process; the dump remains available for an operator-approved
+recovery.
