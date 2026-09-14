@@ -84,6 +84,7 @@ SEEDERS="${SEEDERS:-}"
 SKIP_PUBLIC_CHECK="${SKIP_PUBLIC_CHECK:-0}"
 PHP_FPM_RELOAD_COMMAND="${PHP_FPM_RELOAD_COMMAND:-}"
 PHP_FPM_USER="${PHP_FPM_USER:-}"
+PHP_FPM_GROUP="${PHP_FPM_GROUP:-}"
 API_LOCAL_IP="${API_LOCAL_IP:-127.0.0.1}"
 
 API_ORIGIN="${API_ORIGIN%/}"
@@ -255,6 +256,28 @@ ensure_backend_runtime_readability() {
     printf 'BACKEND_RUNTIME_READABILITY=OK user=%s\n' "$PHP_FPM_USER"
 }
 
+ensure_laravel_runtime_permissions() {
+    local -a runtime_directories=(
+        "$BACKEND_DIR/storage/framework/cache"
+        "$BACKEND_DIR/storage/framework/sessions"
+        "$BACKEND_DIR/storage/framework/views"
+        "$BACKEND_DIR/storage/logs"
+        "$BACKEND_DIR/bootstrap/cache"
+    )
+    local directory
+
+    for directory in "${runtime_directories[@]}"; do
+        test -d "$directory" \
+            || fail "Required Laravel runtime directory is missing: $directory"
+        chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$directory"
+        find "$directory" -type d -exec chmod 2770 {} +
+        find "$directory" -type f -exec chmod 0660 {} +
+    done
+
+    printf 'LARAVEL_RUNTIME_PERMISSIONS=OK owner=%s group=%s\n' \
+        "$PHP_FPM_USER" "$PHP_FPM_GROUP"
+}
+
 fetch_main_with_retry() {
     local repository="$1"
     local attempt
@@ -420,7 +443,7 @@ trap 'exit 143' TERM
 trap '' HUP
 
 CURRENT_STEP=preflight
-for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash cmp chmod ps stat runuser id; do
+for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash cmp chmod chown find ps stat runuser id; do
     require_command "$command"
 done
 require_executable "$PHP_BIN"
@@ -460,7 +483,12 @@ test -n "$PHP_FPM_USER" || fail "Could not determine the PHP-FPM runtime user"
 test "$PHP_FPM_USER" != root || fail "PHP-FPM runtime user must not be root"
 id "$PHP_FPM_USER" >/dev/null 2>&1 \
     || fail "PHP-FPM runtime user does not exist: $PHP_FPM_USER"
+if [ -z "$PHP_FPM_GROUP" ]; then
+    PHP_FPM_GROUP="$(id -gn "$PHP_FPM_USER")"
+fi
+test -n "$PHP_FPM_GROUP" || fail "Could not determine the PHP-FPM runtime group"
 echo "PHP_FPM_USER=$PHP_FPM_USER"
+echo "PHP_FPM_GROUP=$PHP_FPM_GROUP"
 
 test "$(git -C "$BACKEND_SOURCE_REPO" rev-parse --is-inside-work-tree)" = true \
     || fail "Backend source path is not a Git worktree: $BACKEND_SOURCE_REPO"
@@ -652,6 +680,7 @@ step "Installing backend dependencies with active HPCom .env"
 
 CURRENT_STEP=backend_permissions
 step "Verifying backend files as PHP-FPM user $PHP_FPM_USER"
+ensure_laravel_runtime_permissions
 ensure_backend_runtime_readability \
     || fail "Backend dependencies are not readable by PHP-FPM user $PHP_FPM_USER"
 
@@ -705,15 +734,15 @@ CURRENT_STEP=backend_cache
 step "Clearing only Laravel runtime caches"
 (
     cd "$BACKEND_DIR"
-    "$PHP_BIN" artisan config:clear --no-ansi
-    "$PHP_BIN" artisan route:clear --no-ansi
-    "$PHP_BIN" artisan view:clear --no-ansi
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan config:clear --no-ansi
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan route:clear --no-ansi
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan view:clear --no-ansi
     # LocationDirectory intentionally uses rememberForever. Remove only its
     # two known keys so a previous invalid/BOM parse cannot survive a deploy;
     # do not run cache:clear because that could evict unrelated application
     # state.
-    "$PHP_BIN" artisan cache:forget locations_payload --no-ansi || true
-    "$PHP_BIN" artisan cache:forget locations_provinces --no-ansi || true
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan cache:forget locations_payload --no-ansi || true
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan cache:forget locations_provinces --no-ansi || true
 )
 
 CURRENT_STEP=backend_location_runtime
@@ -913,7 +942,7 @@ if [ "$RUN_MIGRATIONS" = "1" ]; then
     DATABASE_CHANGED=POSSIBLY_CHANGED
     (
         cd "$BACKEND_DIR"
-        "$PHP_BIN" artisan migrate --force --no-ansi
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan migrate --force --no-ansi
     )
     MIGRATION_STATUS=RUN
     DATABASE_CHANGED=YES
@@ -928,7 +957,8 @@ if [ "$RUN_SEEDERS" = "1" ]; then
         step "Running reviewed seeder $seeder"
         (
             cd "$BACKEND_DIR"
-            "$PHP_BIN" artisan db:seed --class="$seeder" --force --no-ansi
+            runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan db:seed \
+                --class="$seeder" --force --no-ansi
         )
     done
 fi
