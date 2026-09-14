@@ -37,6 +37,7 @@ class ProductDetailResource extends JsonResource
                 'value' => $spec['value'],
                 'unit' => null,
             ])->values();
+        $images = ProductImageResource::usable($this->images);
 
         return [
             'id' => $this->id,
@@ -87,7 +88,7 @@ class ProductDetailResource extends JsonResource
                 ])->all(),
             ],
             'questions_count' => (int) ($this->approved_questions_count ?? 0),
-            'images' => ProductImageResource::collection($this->images),
+            'images' => ProductImageResource::collection($images),
             'variants' => ProductVariantResource::collection($this->variants),
             'highlights' => $this->highlights->where('is_active', true)->values()->map(fn ($highlight) => [
                 'id' => $highlight->id,

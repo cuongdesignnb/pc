@@ -39,7 +39,10 @@ class ProductCardResource extends JsonResource
                 'slug' => $this->category->slug,
                 'canonical_path' => $urls->categoryPath($this->category),
             ] : null),
-            'images' => ProductImageResource::collection($this->whenLoaded('images')),
+            'images' => $this->when(
+                $this->resource->relationLoaded('images'),
+                fn () => ProductImageResource::collection(ProductImageResource::usable($this->resource->images)),
+            ),
             'pricing' => $pricing,
             'inventory' => [
                 'purchasable' => $this->is_purchasable,

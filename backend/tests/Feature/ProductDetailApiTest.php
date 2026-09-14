@@ -2,9 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Http\Resources\ProductImageResource;
 use App\Models\Cart;
+use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\ProductQuestion;
 use App\Models\ProductRelation;
 use App\Models\ProductVariant;
@@ -51,6 +54,93 @@ class ProductDetailApiTest extends TestCase
             ->assertJsonMissingPath('product.provider')
             ->assertJsonMissingPath('product.kiot_sync_error_message')
             ->assertJsonMissingPath('product.reviews');
+    }
+
+    public function test_detail_endpoint_exposes_only_usable_deduplicated_public_images(): void
+    {
+        $product = $this->product();
+        $product->images()->createMany([
+            ['url' => 'javascript:alert(1)', 'is_primary' => true, 'sort_order' => -1],
+            ['url' => '/storage/media/pdp-primary.jpg', 'is_primary' => true, 'sort_order' => 0],
+            ['url' => ' /storage/media/pdp-primary.jpg ', 'is_primary' => false, 'sort_order' => 1],
+            ['url' => '', 'is_primary' => false, 'sort_order' => 2],
+            ['url' => '   ', 'is_primary' => false, 'sort_order' => 3],
+            ['url' => '/storage/media/pdp-gallery.jpg', 'is_primary' => false, 'sort_order' => 5],
+        ]);
+
+        $images = $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertOk()
+            ->json('product.images');
+
+        $this->assertCount(2, $images);
+        $this->assertStringEndsWith('/storage/media/pdp-primary.jpg', $images[0]['url']);
+        $this->assertStringEndsWith('/storage/media/pdp-gallery.jpg', $images[1]['url']);
+
+        $cardImages = $this->getJson('/api/v1/products?search='.urlencode($product->name))
+            ->assertOk()
+            ->json('data.0.images');
+
+        $this->assertCount(2, $cardImages);
+        $this->assertSame($images[0]['url'], $cardImages[0]['url']);
+    }
+
+    public function test_image_filter_rejects_null_blank_and_disallowed_values(): void
+    {
+        $usable = ProductImageResource::usable(collect([
+            new ProductImage(['url' => null]),
+            new ProductImage(['url' => '']),
+            new ProductImage(['url' => '   ']),
+            new ProductImage(['url' => 'data:image/png;base64,invalid']),
+            new ProductImage(['url' => '//cdn.example.test/not-public.jpg']),
+            new ProductImage(['url' => '/storage/media/usable.jpg']),
+        ]));
+
+        $this->assertCount(1, $usable);
+        $this->assertStringEndsWith('/storage/media/usable.jpg', $usable->first()->url);
+    }
+
+    public function test_unmirrored_kiot_image_source_is_not_exposed_as_a_public_product_image(): void
+    {
+        $category = Category::create([
+            'name' => 'Kiot media test',
+            'slug' => 'kiot-media-test-'.Str::lower(Str::random(6)),
+            'is_active' => true,
+            'show_on_pc_website' => true,
+        ]);
+        $product = $this->product([
+            'category_id' => $category->id,
+            'provider' => 'kiot',
+            'inventory_source' => 'kiot',
+            'kiot_sync_status' => 'active',
+        ]);
+        $product->images()->create([
+            'provider' => 'kiot',
+            'url' => 'https://kiot.example.test/source-only.jpg',
+            'source_url' => 'https://kiot.example.test/source-only.jpg',
+            'storage_path' => null,
+            'is_primary' => true,
+            'sort_order' => 0,
+        ]);
+
+        $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertOk()
+            ->assertJsonCount(0, 'product.images');
+
+        $product->images()->create([
+            'provider' => 'kiot',
+            'url' => '/storage/media/kiot-mirrored.jpg',
+            'source_url' => 'https://kiot.example.test/mirrored.jpg',
+            'storage_path' => 'products/'.$product->id.'/kiot-mirrored.jpg',
+            'is_primary' => false,
+            'sort_order' => 1,
+        ]);
+
+        $mirroredImages = $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertOk()
+            ->json('product.images');
+
+        $this->assertCount(1, $mirroredImages);
+        $this->assertStringEndsWith('/storage/media/kiot-mirrored.jpg', $mirroredImages[0]['url']);
     }
 
     public function test_review_feed_hides_guest_email_and_marks_only_real_orders_as_verified(): void
