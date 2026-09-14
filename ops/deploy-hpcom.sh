@@ -255,10 +255,33 @@ cleanup() {
     [ -z "$MYSQL_CNF" ] || rm -f -- "$MYSQL_CNF" || true
 }
 
+assert_php_fpm_does_not_hold_deploy_lock() {
+    local pid process_name
+
+    if ! command -v fuser >/dev/null 2>&1; then
+        echo "DEPLOY_LOCK_INHERITANCE_CHECK=SKIPPED reason=fuser_unavailable"
+        return 0
+    fi
+
+    for pid in $(fuser "$DEPLOY_LOCK" 2>/dev/null || true); do
+        process_name="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+        if [[ "$process_name" == *php-fpm* ]]; then
+            echo "DEPLOY_LOCK_INHERITANCE_CHECK=FAIL pid=$pid process=$process_name" >&2
+            return 1
+        fi
+    done
+
+    echo "DEPLOY_LOCK_INHERITANCE_CHECK=PASS"
+}
+
 restart_php_fpm() {
     if [ -n "$PHP_FPM_RELOAD_COMMAND" ]; then
         echo "PHP_FPM_RESTART=custom"
-        bash -lc "$PHP_FPM_RELOAD_COMMAND"
+        # FD 9 owns the deployment flock. Close only the child copy before
+        # starting a daemon; the parent shell keeps holding the lock for the
+        # remainder of the deployment.
+        bash -lc "$PHP_FPM_RELOAD_COMMAND" 9>&-
+        assert_php_fpm_does_not_hold_deploy_lock
         return 0
     fi
 
@@ -270,7 +293,8 @@ restart_php_fpm() {
     for init_script in /etc/init.d/php-fpm-83 /etc/init.d/php83-php-fpm; do
         if [ -x "$init_script" ]; then
             echo "PHP_FPM_RESTART=$init_script"
-            "$init_script" restart
+            "$init_script" restart 9>&-
+            assert_php_fpm_does_not_hold_deploy_lock
             return 0
         fi
     done
@@ -280,7 +304,8 @@ restart_php_fpm() {
         for unit in php8.3-fpm php-fpm-83 php83-php-fpm; do
             if systemctl is-active --quiet "$unit" 2>/dev/null; then
                 echo "PHP_FPM_RESTART=$unit"
-                systemctl restart "$unit"
+                systemctl restart "$unit" 9>&-
+                assert_php_fpm_does_not_hold_deploy_lock
                 return 0
             fi
         done
@@ -316,7 +341,7 @@ rollback() {
         fi
         mv -- "$FRONTEND_OUTPUT_BACKUP" "$FRONTEND_DIR/.output" || true
         echo "ROLLBACK_FRONTEND_OUTPUT=RESTORED" >&2
-        "$PM2_BIN" reload "$PM2_APP" --update-env >/dev/null 2>&1 || true
+        "$PM2_BIN" reload "$PM2_APP" --update-env 9>&- >/dev/null 2>&1 || true
     fi
 
     # A database dump is intentionally retained rather than automatically
@@ -858,7 +883,7 @@ export NODE_ENV=production
 export NUXT_PUBLIC_API_BASE="$API_ORIGIN/api/v1"
 export NUXT_API_PROXY_TARGET="$API_ORIGIN"
 export NUXT_PUBLIC_SITE_URL="$PUBLIC_ORIGIN"
-"$PM2_BIN" reload "$PM2_APP" --update-env
+"$PM2_BIN" reload "$PM2_APP" --update-env 9>&-
 
 CURRENT_STEP=production_smoke
 step "Running HPCom production smoke checks"
