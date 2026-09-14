@@ -50,8 +50,14 @@ class SearchApiTest extends TestCase
         ]);
         ProductImage::create([
             'product_id' => $zeroSale->id,
+            'url' => 'javascript:alert(1)',
+            'sort_order' => -1,
+            'is_primary' => true,
+        ]);
+        ProductImage::create([
+            'product_id' => $zeroSale->id,
             'url' => '/storage/products/latitude-zero-sale.webp',
-            'sort_order' => 0,
+            'sort_order' => 1,
             'is_primary' => true,
         ]);
         ProductImage::create([

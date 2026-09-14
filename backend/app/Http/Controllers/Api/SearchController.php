@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ProductImageResource;
 use App\Models\Post;
 use App\Models\Product;
 use App\Services\Seo\PublicUrlResolver;
@@ -39,7 +40,7 @@ class SearchController extends Controller
             ->get()
             ->map(function (Product $product) use ($urls): array {
                 $pricing = $product->storefrontPricing();
-                $image = $product->images->first(fn ($image) => filled($image->url));
+                $image = ProductImageResource::usable($product->images)->first();
 
                 return [
                     'id' => $product->id,
