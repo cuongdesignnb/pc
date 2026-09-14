@@ -458,7 +458,7 @@ chmod 600 "$MYSQL_CNF"
     printf 'password=%s\n' "$DB_PASSWORD"
 } > "$MYSQL_CNF"
 "$MYSQLDUMP_BIN" --defaults-extra-file="$MYSQL_CNF" \
-    --single-transaction --routines --triggers --hex-blob \
+    --single-transaction --routines --triggers --hex-blob --no-tablespaces \
     "$DB_DATABASE" > "$BACKUP_DIR/database.sql"
 test -s "$BACKUP_DIR/database.sql" || fail "Database backup is empty"
 rm -f -- "$MYSQL_CNF"
@@ -498,6 +498,12 @@ step "Clearing only Laravel runtime caches"
     "$PHP_BIN" artisan config:clear --no-ansi
     "$PHP_BIN" artisan route:clear --no-ansi
     "$PHP_BIN" artisan view:clear --no-ansi
+    # LocationDirectory intentionally uses rememberForever. Remove only its
+    # two known keys so a previous invalid/BOM parse cannot survive a deploy;
+    # do not run cache:clear because that could evict unrelated application
+    # state.
+    "$PHP_BIN" artisan cache:forget locations_payload --no-ansi || true
+    "$PHP_BIN" artisan cache:forget locations_provinces --no-ansi || true
 )
 
 CURRENT_STEP=backend_reload
