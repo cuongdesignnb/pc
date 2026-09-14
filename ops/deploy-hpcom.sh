@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
+umask 077
 
 # One-command, data-preserving deployment for hpcomvietnam.vn.
 #
