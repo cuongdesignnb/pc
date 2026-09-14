@@ -47,7 +47,9 @@ curl --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 -fsSL \
   | DEPLOY_DETACH=1 bash
 ```
 
-The script fetches the latest `main` commits from `pc` and `pcfrontend`,
+The script creates/reuses dedicated source checkouts under
+`/www/deploy/hpcom-source`, then fetches the latest `main` commits from `pc`
+and `pcfrontend`,
 backs up the active MySQL database, backend code, frontend output and runtime
 fingerprints, then preserves `.env`, `storage`, uploads and aaPanel files.
 It runs migrations after the backup but does not run seeders unless explicitly
