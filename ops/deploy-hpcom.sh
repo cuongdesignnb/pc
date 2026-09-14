@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
-umask 077
+# Application source, Composer dependencies and Nuxt output must be readable by
+# the unprivileged PHP-FPM/PM2 runtime users. Sensitive deploy artifacts are
+# protected separately by their 0700 backup directory and explicit 0600 modes.
+umask 022
 
 # One-command, data-preserving deployment for hpcomvietnam.vn.
 #
@@ -80,6 +83,7 @@ RUN_SEEDERS="${RUN_SEEDERS:-0}"
 SEEDERS="${SEEDERS:-}"
 SKIP_PUBLIC_CHECK="${SKIP_PUBLIC_CHECK:-0}"
 PHP_FPM_RELOAD_COMMAND="${PHP_FPM_RELOAD_COMMAND:-}"
+PHP_FPM_USER="${PHP_FPM_USER:-}"
 API_LOCAL_IP="${API_LOCAL_IP:-127.0.0.1}"
 
 API_ORIGIN="${API_ORIGIN%/}"
@@ -207,6 +211,48 @@ validate_locations_file() {
             count($wards)
         );
     ' "$label" "$file"
+}
+
+ensure_backend_runtime_readability() {
+    local -a readable_directories=()
+    local path
+
+    for path in app bootstrap config database resources routes vendor; do
+        if [ -d "$BACKEND_DIR/$path" ]; then
+            readable_directories+=("$BACKEND_DIR/$path")
+        fi
+    done
+
+    if [ "${#readable_directories[@]}" -gt 0 ]; then
+        chmod -R a+rX "${readable_directories[@]}"
+    fi
+    for path in artisan composer.json composer.lock locations.json public/index.php; do
+        if [ -f "$BACKEND_DIR/$path" ]; then
+            chmod a+r "$BACKEND_DIR/$path"
+        fi
+    done
+
+    (
+        cd "$BACKEND_DIR"
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" -r '
+            $root = getcwd();
+            $required = [
+                "vendor/composer/platform_check.php",
+                "vendor/autoload.php",
+                "bootstrap/app.php",
+                "locations.json",
+            ];
+            foreach ($required as $relative) {
+                if (! is_readable($root . DIRECTORY_SEPARATOR . $relative)) {
+                    fwrite(STDERR, "BACKEND_RUNTIME_READABILITY=FAIL file={$relative}\n");
+                    exit(1);
+                }
+            }
+            require "vendor/autoload.php";
+            echo "BACKEND_RUNTIME_AUTOLOAD=OK\n";
+        '
+    )
+    printf 'BACKEND_RUNTIME_READABILITY=OK user=%s\n' "$PHP_FPM_USER"
 }
 
 fetch_main_with_retry() {
@@ -374,7 +420,7 @@ trap 'exit 143' TERM
 trap '' HUP
 
 CURRENT_STEP=preflight
-for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash cmp; do
+for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash cmp chmod ps stat runuser id; do
     require_command "$command"
 done
 require_executable "$PHP_BIN"
@@ -402,6 +448,19 @@ require_directory "$FRONTEND_DIR"
 require_file "$BACKEND_DIR/.env"
 require_file "$FRONTEND_DIR/.env"
 require_file "$FRONTEND_DIR/.output/server/index.mjs"
+
+if [ -z "$PHP_FPM_USER" ]; then
+    PHP_FPM_USER="$(ps -eo user=,comm= \
+        | awk '$2 ~ /^php-fpm/ && $1 != "root" && user == "" { user = $1 } END { print user }')"
+fi
+if [ -z "$PHP_FPM_USER" ] && [ -d "$BACKEND_DIR/storage" ]; then
+    PHP_FPM_USER="$(stat -c '%U' "$BACKEND_DIR/storage")"
+fi
+test -n "$PHP_FPM_USER" || fail "Could not determine the PHP-FPM runtime user"
+test "$PHP_FPM_USER" != root || fail "PHP-FPM runtime user must not be root"
+id "$PHP_FPM_USER" >/dev/null 2>&1 \
+    || fail "PHP-FPM runtime user does not exist: $PHP_FPM_USER"
+echo "PHP_FPM_USER=$PHP_FPM_USER"
 
 test "$(git -C "$BACKEND_SOURCE_REPO" rev-parse --is-inside-work-tree)" = true \
     || fail "Backend source path is not a Git worktree: $BACKEND_SOURCE_REPO"
@@ -591,10 +650,15 @@ step "Installing backend dependencies with active HPCom .env"
     "$COMPOSER_BIN" install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 )
 
+CURRENT_STEP=backend_permissions
+step "Verifying backend files as PHP-FPM user $PHP_FPM_USER"
+ensure_backend_runtime_readability \
+    || fail "Backend dependencies are not readable by PHP-FPM user $PHP_FPM_USER"
+
 check_location_directory_cli() {
     (
         cd "$BACKEND_DIR"
-        "$PHP_BIN" -r '
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" -r '
             require "vendor/autoload.php";
             $app = require "bootstrap/app.php";
             $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
