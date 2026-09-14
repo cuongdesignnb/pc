@@ -69,6 +69,12 @@ API_ORIGIN="${API_ORIGIN:-https://admin.hpcomvietnam.vn}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN:-https://hpcomvietnam.vn}"
 PUBLIC_RELEASE_PATH="${PUBLIC_RELEASE_PATH:-/release.json}"
 FRONTEND_HEALTH_PATH="${FRONTEND_HEALTH_PATH:-/}"
+FRONTEND_PORT="${FRONTEND_PORT:-4455}"
+FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
+FRONTEND_LOCAL_ORIGIN="${FRONTEND_LOCAL_ORIGIN:-http://127.0.0.1:${FRONTEND_PORT}}"
+FRONTEND_READY_ATTEMPTS="${FRONTEND_READY_ATTEMPTS:-60}"
+FRONTEND_PUBLIC_ATTEMPTS="${FRONTEND_PUBLIC_ATTEMPTS:-30}"
+FRONTEND_READY_DELAY="${FRONTEND_READY_DELAY:-2}"
 BACKUP_ROOT="${BACKUP_ROOT:-/www/backups/hpcomvietnam.vn}"
 DEPLOY_LOCK="${DEPLOY_LOCK:-/tmp/hpcom-production-deploy.lock}"
 PHP_BIN="${PHP_BIN:-/www/server/php/83/bin/php}"
@@ -86,9 +92,11 @@ PHP_FPM_RELOAD_COMMAND="${PHP_FPM_RELOAD_COMMAND:-}"
 PHP_FPM_USER="${PHP_FPM_USER:-}"
 PHP_FPM_GROUP="${PHP_FPM_GROUP:-}"
 API_LOCAL_IP="${API_LOCAL_IP:-127.0.0.1}"
+PUBLIC_LOCAL_IP="${PUBLIC_LOCAL_IP:-127.0.0.1}"
 
 API_ORIGIN="${API_ORIGIN%/}"
 PUBLIC_ORIGIN="${PUBLIC_ORIGIN%/}"
+FRONTEND_LOCAL_ORIGIN="${FRONTEND_LOCAL_ORIGIN%/}"
 PUBLIC_RELEASE_PATH="/${PUBLIC_RELEASE_PATH#/}"
 FRONTEND_HEALTH_PATH="/${FRONTEND_HEALTH_PATH#/}"
 
@@ -107,6 +115,22 @@ else
     api_port=80
 fi
 API_LOCAL_RESOLVE="${API_LOCAL_RESOLVE:-${api_host}:${api_port}:${API_LOCAL_IP}}"
+
+# Probe the public frontend vhost through loopback after PM2 is ready. This
+# separates application startup from public DNS/network reachability and
+# catches the exact Nginx/PM2 integration used by real requests.
+public_scheme="${PUBLIC_ORIGIN%%://*}"
+public_authority="${PUBLIC_ORIGIN#*://}"
+public_authority="${public_authority%%/*}"
+public_host="${public_authority%%:*}"
+if [[ "$public_authority" == *:* ]]; then
+    public_port="${public_authority##*:}"
+elif [ "$public_scheme" = "https" ]; then
+    public_port=443
+else
+    public_port=80
+fi
+PUBLIC_LOCAL_RESOLVE="${PUBLIC_LOCAL_RESOLVE:-${public_host}:${public_port}:${PUBLIC_LOCAL_IP}}"
 
 # npm and PM2 entrypoints on aaPanel commonly use /usr/bin/env node. Put the
 # selected Node runtime first so an unrelated system Node cannot be chosen.
@@ -458,6 +482,16 @@ require_command "$PM2_BIN"
     || fail "RUN_MIGRATIONS must be 0 or 1"
 [[ "$RUN_SEEDERS" == 0 || "$RUN_SEEDERS" == 1 ]] \
     || fail "RUN_SEEDERS must be 0 or 1"
+[[ "$FRONTEND_READY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] \
+    || fail "FRONTEND_READY_ATTEMPTS must be a positive integer"
+[[ "$FRONTEND_PUBLIC_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] \
+    || fail "FRONTEND_PUBLIC_ATTEMPTS must be a positive integer"
+[[ "$FRONTEND_READY_DELAY" =~ ^[1-9][0-9]*$ ]] \
+    || fail "FRONTEND_READY_DELAY must be a positive integer"
+[[ "$FRONTEND_PORT" =~ ^[0-9]+$ ]] \
+    && (( FRONTEND_PORT >= 1 && FRONTEND_PORT <= 65535 )) \
+    || fail "FRONTEND_PORT must be between 1 and 65535"
+test -n "$FRONTEND_HOST" || fail "FRONTEND_HOST must not be empty"
 if [ "$RUN_SEEDERS" = "1" ]; then
     test -n "$SEEDERS" || fail 'RUN_SEEDERS=1 requires SEEDERS="SeederA SeederB"'
 fi
@@ -655,6 +689,8 @@ BACKEND_DIR=$BACKEND_DIR
 FRONTEND_DIR=$FRONTEND_DIR
 API_ORIGIN=$API_ORIGIN
 PUBLIC_ORIGIN=$PUBLIC_ORIGIN
+FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN
+FRONTEND_RUNTIME=$FRONTEND_HOST:$FRONTEND_PORT
 PHP_VERSION=$php_version
 NODE_VERSION=$node_version
 RUN_MIGRATIONS=$RUN_MIGRATIONS
@@ -776,6 +812,78 @@ check_http() {
         || status=000
     printf '%s MODE=%s URL=%s HTTP=%s\n' "$label" "$mode" "$url" "$status"
     [[ "$status" == 2?? ]]
+}
+
+frontend_http_status() {
+    local url="$1"
+    local mode="${2:-direct}"
+    local -a curl_args=(
+        curl --connect-timeout 3 --max-time 10
+        -H 'Cache-Control: no-cache'
+        -H 'Pragma: no-cache'
+        -sS -o /dev/null -w '%{http_code}'
+    )
+    local status
+
+    case "$mode" in
+        direct|public)
+            ;;
+        origin)
+            curl_args+=(--resolve "$PUBLIC_LOCAL_RESOLVE" --insecure)
+            ;;
+        *)
+            echo "FRONTEND_HTTP=FAIL reason=invalid_mode mode=$mode" >&2
+            return 1
+            ;;
+    esac
+
+    status="$("${curl_args[@]}" "$url" 2>/dev/null)" || status=000
+    printf '%s' "$status"
+}
+
+wait_for_frontend_http() {
+    local label="$1"
+    local url="$2"
+    local mode="$3"
+    local attempts="$4"
+    local attempt status
+
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        status="$(frontend_http_status "$url" "$mode")" || status=000
+        if [[ "$status" == 2?? ]]; then
+            printf 'FRONTEND_READY=YES label=%s mode=%s URL=%s HTTP=%s attempt=%d/%d\n' \
+                "$label" "$mode" "$url" "$status" "$attempt" "$attempts"
+            return 0
+        fi
+
+        printf 'FRONTEND_HEALTH_WAIT label=%s mode=%s attempt=%d/%d HTTP=%s\n' \
+            "$label" "$mode" "$attempt" "$attempts" "$status"
+        sleep "$FRONTEND_READY_DELAY"
+    done
+
+    return 1
+}
+
+frontend_diagnostics() {
+    echo "FRONTEND_DIAGNOSTICS=START" >&2
+    "$PM2_BIN" describe "$PM2_APP" 9>&- >&2 || true
+    "$PM2_BIN" logs "$PM2_APP" --lines 80 --nostream 9>&- >&2 || true
+
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnp 2>&1 | grep -E "(^|:)${FRONTEND_PORT}([[:space:]]|$)" >&2 || true
+    fi
+
+    curl --connect-timeout 3 --max-time 10 -sS -o /dev/null \
+        -w 'FRONTEND_DIAGNOSTIC_LOCAL HTTP=%{http_code}\n' \
+        "$FRONTEND_LOCAL_ORIGIN$FRONTEND_HEALTH_PATH" >&2 || true
+    curl --connect-timeout 3 --max-time 10 --resolve "$PUBLIC_LOCAL_RESOLVE" \
+        --insecure -sS -o /dev/null \
+        -w 'FRONTEND_DIAGNOSTIC_ORIGIN HTTP=%{http_code}\n' \
+        "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" >&2 || true
+    curl --connect-timeout 3 --max-time 10 -sS -o /dev/null \
+        -w 'FRONTEND_DIAGNOSTIC_PUBLIC HTTP=%{http_code}\n' \
+        "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" >&2 || true
+    echo "FRONTEND_DIAGNOSTICS=END" >&2
 }
 
 read_location_code() {
@@ -977,12 +1085,29 @@ export NODE_ENV=production
 export NUXT_PUBLIC_API_BASE="$API_ORIGIN/api/v1"
 export NUXT_API_PROXY_TARGET="$API_ORIGIN"
 export NUXT_PUBLIC_SITE_URL="$PUBLIC_ORIGIN"
+export PORT="$FRONTEND_PORT"
+export NITRO_PORT="$FRONTEND_PORT"
+export HOST="$FRONTEND_HOST"
+export NITRO_HOST="$FRONTEND_HOST"
 "$PM2_BIN" reload "$PM2_APP" --update-env 9>&-
 
 CURRENT_STEP=production_smoke
 step "Running HPCom production smoke checks"
-check_http public_frontend "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" \
-    || fail "Public frontend endpoint failed"
+echo "FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN"
+echo "FRONTEND_RUNTIME=${FRONTEND_HOST}:${FRONTEND_PORT}"
+echo "PUBLIC_LOCAL_RESOLVE=$PUBLIC_LOCAL_RESOLVE"
+wait_for_frontend_http local \
+    "$FRONTEND_LOCAL_ORIGIN$FRONTEND_HEALTH_PATH" direct \
+    "$FRONTEND_READY_ATTEMPTS" \
+    || { frontend_diagnostics; fail "Frontend PM2 endpoint did not become ready"; }
+wait_for_frontend_http nginx_origin \
+    "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" origin \
+    "$FRONTEND_READY_ATTEMPTS" \
+    || { frontend_diagnostics; fail "Frontend Nginx origin endpoint did not become ready"; }
+wait_for_frontend_http public \
+    "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" public \
+    "$FRONTEND_PUBLIC_ATTEMPTS" \
+    || { frontend_diagnostics; fail "Public frontend endpoint did not become ready"; }
 check_http public_admin_login "$API_ORIGIN/admin/login" \
     || fail "Public admin endpoint failed"
 check_locations_api origin \
@@ -1024,6 +1149,8 @@ echo "BACKEND_DIR=$BACKEND_DIR"
 echo "FRONTEND_DIR=$FRONTEND_DIR"
 echo "PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
 echo "API_ORIGIN=$API_ORIGIN"
+echo "FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN"
+echo "FRONTEND_RUNTIME=$FRONTEND_HOST:$FRONTEND_PORT"
 echo "MIGRATION=$MIGRATION_STATUS"
 echo "SEEDERS=$([ "$RUN_SEEDERS" = "1" ] && echo "$SEEDERS" || echo NOT_RUN)"
 echo "DATABASE_CHANGED=$DATABASE_CHANGED"
