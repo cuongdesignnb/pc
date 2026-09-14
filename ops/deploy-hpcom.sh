@@ -191,21 +191,22 @@ cleanup() {
     [ -z "$MYSQL_CNF" ] || rm -f -- "$MYSQL_CNF" || true
 }
 
-reload_php_fpm() {
+restart_php_fpm() {
     if [ -n "$PHP_FPM_RELOAD_COMMAND" ]; then
-        echo "PHP_FPM_RELOAD=custom"
+        echo "PHP_FPM_RESTART=custom"
         bash -lc "$PHP_FPM_RELOAD_COMMAND"
         return 0
     fi
 
-    # aaPanel commonly exposes the PHP-FPM init script under this name. Only
-    # touch a service when it is present; otherwise the public smoke check is
-    # the gate and no guessed service is restarted.
+    # aaPanel commonly exposes the PHP-FPM init script under this name. A hard
+    # restart is intentional: a reload can leave OPcache and Laravel's cached
+    # provider manifest serving the previous source tree after a sync or
+    # rollback.
     local init_script
     for init_script in /etc/init.d/php-fpm-83 /etc/init.d/php83-php-fpm; do
         if [ -x "$init_script" ]; then
-            echo "PHP_FPM_RELOAD=$init_script"
-            "$init_script" reload 2>/dev/null || "$init_script" restart
+            echo "PHP_FPM_RESTART=$init_script"
+            "$init_script" restart
             return 0
         fi
     done
@@ -214,14 +215,14 @@ reload_php_fpm() {
         local unit
         for unit in php8.3-fpm php-fpm-83 php83-php-fpm; do
             if systemctl is-active --quiet "$unit" 2>/dev/null; then
-                echo "PHP_FPM_RELOAD=$unit"
-                systemctl reload "$unit"
+                echo "PHP_FPM_RESTART=$unit"
+                systemctl restart "$unit"
                 return 0
             fi
         done
     fi
 
-    echo "PHP_FPM_RELOAD=NOT_FOUND"
+    echo "PHP_FPM_RESTART=NOT_FOUND"
 }
 
 rollback() {
@@ -238,6 +239,10 @@ rollback() {
         "$RSYNC_BIN" -a --delete "${BACKEND_EXCLUDES[@]}" \
             "$BACKEND_BEFORE_DIR/" "$BACKEND_DIR/" || true
         echo "ROLLBACK_BACKEND=RESTORED" >&2
+        # Recycle PHP-FPM after restoring code. Without this, a failed deploy
+        # can leave the web process running a mixed source/provider state.
+        restart_php_fpm || true
+        echo "ROLLBACK_BACKEND_FPM=RESTARTED" >&2
     fi
 
     if [ "$FRONTEND_OUTPUT_OLD_MOVED" -eq 1 ] && [ -n "$FRONTEND_OUTPUT_BACKUP" ] && [ -e "$FRONTEND_OUTPUT_BACKUP" ]; then
@@ -507,8 +512,8 @@ step "Clearing only Laravel runtime caches"
 )
 
 CURRENT_STEP=backend_reload
-step "Reloading PHP-FPM when aaPanel exposes a known service"
-reload_php_fpm
+step "Restarting PHP-FPM to activate the backend source"
+restart_php_fpm
 
 check_http() {
     local label="$1"
@@ -524,8 +529,9 @@ read_province_code() {
     "$PHP_BIN" -r '
         $raw = stream_get_contents(STDIN);
         $data = json_decode(ltrim((string)$raw, "\xEF\xBB\xBF"), true);
-        $items = is_array($data) ? ($data["data"] ?? $data) : [];
-        $first = is_array($items) ? reset($items) : [];
+        $items = is_array($data) ? ($data["data"] ?? $data["provinces"] ?? $data) : [];
+        $items = is_array($items) ? array_values($items) : [];
+        $first = $items[0] ?? [];
         if (is_array($first)) {
             echo (string)($first["code"] ?? $first["id"] ?? "");
         }
