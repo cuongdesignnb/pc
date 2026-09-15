@@ -28,6 +28,29 @@ return [
         'enabled' => env('META_CATALOG_ENABLED', false),
         'artifact' => 'meta-products.csv',
         'test_mode' => env('META_CATALOG_TEST_MODE', true),
+        // LaptopPlus' legacy KIOT contract does not currently provide a
+        // separate brand field. These reviewed aliases allow Meta-only
+        // projection to recover an actual manufacturer from the product
+        // title without mutating catalog data or inventing a default brand.
+        // The earliest whole-word match wins. Operators may replace this map
+        // with a JSON object whose keys are canonical brands and values are
+        // aliases.
+        'derive_brand_from_title' => env('META_DERIVE_BRAND_FROM_TITLE', true),
+        'brand_aliases' => json_decode((string) env('META_BRAND_ALIAS_MAP', ''), true) ?: [
+            'Acer' => ['acer', 'aspire', 'predator'],
+            'Apple' => ['apple', 'macbook'],
+            'ASUS' => ['asus', 'vivobook', 'zenbook', 'expertbook', 'rog', 'tuf'],
+            'Dell' => ['dell', 'latitude', 'inspiron', 'precision', 'vostro', 'xps'],
+            'Fuhlen' => ['fuhlen'],
+            'HP' => ['hp', 'hewlett packard', 'elitebook', 'probook', 'pavilion', 'spectre', 'zbook', 'victus'],
+            'Lenovo' => ['lenovo', 'thinkpad', 'ideapad', 'legion'],
+            'Microsoft' => ['microsoft', 'surface'],
+            'MSI' => ['msi'],
+        ],
+        // When the source has no editorial description, compose a factual
+        // Meta-only description from the title, category and SKU. No product
+        // claim or specification is fabricated.
+        'derive_description_from_catalog_facts' => env('META_DERIVE_DESCRIPTION_FROM_CATALOG_FACTS', true),
         // Taxonomies stay empty unless an operator provides reviewed numeric
         // Meta/Google taxonomy IDs keyed by local category ID or category path.
         'google_product_category_map' => json_decode((string) env('META_GOOGLE_CATEGORY_MAP', '[]'), true) ?: [],

@@ -15,6 +15,8 @@ final readonly class MetaCatalogItem
         array $values,
         public bool $approvedUnbranded = false,
         public bool $variant = false,
+        public bool $brandDerivedFromTitle = false,
+        public bool $descriptionDerivedFromFacts = false,
     ) {
         $normalized = [];
         foreach (MetaCatalogSchema::HEADERS as $header) {

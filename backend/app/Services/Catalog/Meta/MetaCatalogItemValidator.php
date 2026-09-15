@@ -31,10 +31,18 @@ class MetaCatalogItemValidator
 
         $errors = array_values(array_unique($errors));
 
+        $warnings = $sourceValidation->warnings;
+        if ($item->brandDerivedFromTitle) {
+            $warnings[] = 'BRAND_DERIVED_FROM_TITLE';
+        }
+        if ($item->descriptionDerivedFromFacts) {
+            $warnings[] = 'DESCRIPTION_DERIVED_FROM_CATALOG_FACTS';
+        }
+
         return new CatalogValidationResult(
             valid: $errors === [],
             errors: $errors,
-            warnings: $sourceValidation->warnings,
+            warnings: array_values(array_unique($warnings)),
         );
     }
 

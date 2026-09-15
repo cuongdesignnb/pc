@@ -67,6 +67,7 @@ class CatalogCommerceFeedBuilder
             'UNCHANGED' => 0,
             'SKIPPED' => 0,
             'WARNING_COUNT' => 0,
+            'WARNINGS_BY_CODE' => [],
             'ERROR_COUNT' => 0,
             'ERRORS_BY_CODE' => [],
             'PRODUCTS_MISSING_BRAND' => 0,
@@ -137,6 +138,9 @@ class CatalogCommerceFeedBuilder
                             $summary['ERRORS_BY_CODE'][$error] = ($summary['ERRORS_BY_CODE'][$error] ?? 0) + 1;
                         }
                         $summary['ERROR_COUNT'] += count($errors);
+                        foreach ($validation->warnings as $warning) {
+                            $summary['WARNINGS_BY_CODE'][$warning] = ($summary['WARNINGS_BY_CODE'][$warning] ?? 0) + 1;
+                        }
                         $summary['WARNING_COUNT'] += count($validation->warnings);
                         $productErrors = array_merge($productErrors, $errors);
 

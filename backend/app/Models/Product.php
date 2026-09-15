@@ -96,7 +96,7 @@ class Product extends Model
 
     public function getQuantityAttribute(): int
     {
-        return $this->stock_quantity;
+        return max(0, (int) ($this->stock_quantity ?? 0));
     }
 
     public function scopeSellableOnline(Builder $query): Builder
