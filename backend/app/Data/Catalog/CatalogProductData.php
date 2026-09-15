@@ -37,6 +37,11 @@ final readonly class CatalogProductData
         public array $priceIssues = [],
         public ?int $selectedPrice = null,
         public string $imageStatus = 'missing',
+        public array $variants = [],
+        public array $attributes = [],
+        public ?int $weightGrams = null,
+        public string $barcode = '',
+        public bool $isSellable = true,
     ) {}
 
     public function toArray(): array
@@ -73,6 +78,11 @@ final readonly class CatalogProductData
             'price_issues' => $this->priceIssues,
             'selected_price' => $this->selectedPrice,
             'image_status' => $this->imageStatus,
+            'variants' => $this->variants,
+            'attributes' => $this->attributes,
+            'weight_grams' => $this->weightGrams,
+            'barcode' => $this->barcode,
+            'is_sellable' => $this->isSellable,
         ];
     }
 
@@ -114,6 +124,11 @@ final readonly class CatalogProductData
             priceIssues: $this->priceIssues,
             selectedPrice: $this->selectedPrice,
             imageStatus: $this->imageStatus,
+            variants: $this->variants,
+            attributes: $this->attributes,
+            weightGrams: $this->weightGrams,
+            barcode: $this->barcode,
+            isSellable: $this->isSellable,
         );
     }
 }

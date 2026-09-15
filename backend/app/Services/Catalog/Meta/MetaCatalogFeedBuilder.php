@@ -11,6 +11,7 @@ class MetaCatalogFeedBuilder
         private readonly CatalogCommerceFeedBuilder $builder,
         private readonly MetaCatalogCsvRenderer $renderer,
         private readonly MetaCatalogFeedValidator $validator,
+        private readonly MetaCatalogItemStrategy $items,
     ) {}
 
     public function build(bool $dryRun = false, ?int $requestedBy = null): array
@@ -22,6 +23,7 @@ class MetaCatalogFeedBuilder
             $this->validator,
             $dryRun,
             $requestedBy,
+            $this->items,
         );
     }
 

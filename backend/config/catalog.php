@@ -28,5 +28,17 @@ return [
         'enabled' => env('META_CATALOG_ENABLED', false),
         'artifact' => 'meta-products.csv',
         'test_mode' => env('META_CATALOG_TEST_MODE', true),
+        // Taxonomies stay empty unless an operator provides reviewed numeric
+        // Meta/Google taxonomy IDs keyed by local category ID or category path.
+        'google_product_category_map' => json_decode((string) env('META_GOOGLE_CATEGORY_MAP', '[]'), true) ?: [],
+        'fb_product_category_map' => json_decode((string) env('META_FACEBOOK_CATEGORY_MAP', '[]'), true) ?: [],
+        // Generic/Unbranded is only allowed for explicitly approved SKUs.
+        'unbranded_skus' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('META_UNBRANDED_SKUS', '')),
+        ))),
+        'unbranded_label' => env('META_UNBRANDED_LABEL', 'Unbranded'),
+        'use_confirmed_barcodes_as_gtin' => env('META_USE_CONFIRMED_BARCODES_AS_GTIN', false),
+        'shipping' => env('META_CATALOG_SHIPPING', ''),
     ],
 ];
