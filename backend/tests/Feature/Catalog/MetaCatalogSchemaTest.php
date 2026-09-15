@@ -42,6 +42,13 @@ class MetaCatalogSchemaTest extends TestCase
             'catalog.meta_catalog.fb_product_category_map' => [],
             'catalog.meta_catalog.unbranded_skus' => [],
             'catalog.meta_catalog.unbranded_label' => 'Unbranded',
+            'catalog.meta_catalog.derive_brand_from_title' => true,
+            'catalog.meta_catalog.brand_aliases' => [
+                'ASUS' => ['asus', 'expertbook'],
+                'Dell' => ['dell', 'latitude'],
+                'HP' => ['hp'],
+            ],
+            'catalog.meta_catalog.derive_description_from_catalog_facts' => true,
             'catalog.meta_catalog.use_confirmed_barcodes_as_gtin' => false,
             'catalog.meta_catalog.shipping' => '',
         ]);
@@ -274,8 +281,117 @@ class MetaCatalogSchemaTest extends TestCase
         $this->assertNotContains('BRAND_MISSING', $strategy->validate($approved, $projection)->errors);
     }
 
+    public function test_meta_derives_reviewed_brand_and_factual_description_without_mutating_catalog_data(): void
+    {
+        $category = $this->category();
+        $product = $this->product($category, 405, [
+            'brand_id' => null,
+            'name' => 'ASUS ExpertBook B1 Intel Core i5',
+            'description' => null,
+            'short_description' => null,
+        ]);
+        $this->image($product);
+
+        $projection = app(CatalogProductProjectionService::class)->project($product);
+        $strategy = app(MetaCatalogItemStrategy::class);
+        $item = $strategy->items($projection)[0];
+        $validation = $strategy->validate($item, $projection);
+
+        $this->assertSame('ASUS', $item->value('brand'));
+        $this->assertSame(
+            'ASUS ExpertBook B1 Intel Core i5. Danh mục: Laptop nội bộ. Mã sản phẩm: SKU-405.',
+            $item->value('description'),
+        );
+        $this->assertNotContains('BRAND_MISSING', $validation->errors);
+        $this->assertNotContains('DESCRIPTION_MISSING', $validation->errors);
+        $this->assertContains('BRAND_DERIVED_FROM_TITLE', $validation->warnings);
+        $this->assertContains('DESCRIPTION_DERIVED_FROM_CATALOG_FACTS', $validation->warnings);
+        $this->assertNull($product->fresh()->brand_id);
+        $this->assertNull($product->fresh()->description);
+
+        $summary = app(MetaCatalogFeedBuilder::class)->build();
+        $this->assertSame(1, $summary['WARNINGS_BY_CODE']['BRAND_DERIVED_FROM_TITLE']);
+        $this->assertSame(1, $summary['WARNINGS_BY_CODE']['DESCRIPTION_DERIVED_FROM_CATALOG_FACTS']);
+    }
+
+    public function test_meta_brand_derivation_uses_whole_words_and_keeps_unknown_brand_invalid(): void
+    {
+        $category = $this->category();
+        $product = $this->product($category, 406, [
+            'brand_id' => null,
+            'name' => 'GraphPro Notebook 14',
+            'description' => null,
+            'short_description' => null,
+        ]);
+        $this->image($product);
+
+        $projection = app(CatalogProductProjectionService::class)->project($product);
+        $strategy = app(MetaCatalogItemStrategy::class);
+        $item = $strategy->items($projection)[0];
+        $validation = $strategy->validate($item, $projection);
+
+        $this->assertSame('', $item->value('brand'));
+        $this->assertContains('BRAND_MISSING', $validation->errors);
+        $this->assertNotContains('DESCRIPTION_MISSING', $validation->errors);
+    }
+
+    public function test_meta_catalog_source_derivation_can_be_disabled(): void
+    {
+        config([
+            'catalog.meta_catalog.derive_brand_from_title' => false,
+            'catalog.meta_catalog.derive_description_from_catalog_facts' => false,
+        ]);
+        $category = $this->category();
+        $product = $this->product($category, 407, [
+            'brand_id' => null,
+            'name' => 'Dell Latitude 5450',
+            'description' => null,
+            'short_description' => null,
+        ]);
+        $this->image($product);
+
+        $projection = app(CatalogProductProjectionService::class)->project($product);
+        $strategy = app(MetaCatalogItemStrategy::class);
+        $item = $strategy->items($projection)[0];
+        $validation = $strategy->validate($item, $projection);
+
+        $this->assertSame('', $item->value('brand'));
+        $this->assertSame('', $item->value('description'));
+        $this->assertContains('BRAND_MISSING', $validation->errors);
+        $this->assertContains('DESCRIPTION_MISSING', $validation->errors);
+    }
+
+    public function test_existing_brand_and_description_take_precedence_over_derived_values(): void
+    {
+        $category = $this->category();
+        $product = $this->product($category, 408, [
+            'name' => 'Dell Latitude custom build',
+            'description' => '<p>Mô tả biên tập đã được duyệt.</p>',
+        ]);
+        $this->image($product);
+
+        $projection = app(CatalogProductProjectionService::class)->project($product);
+        $strategy = app(MetaCatalogItemStrategy::class);
+        $item = $strategy->items($projection)[0];
+        $validation = $strategy->validate($item, $projection);
+
+        $this->assertSame('Thương hiệu Việt', $item->value('brand'));
+        $this->assertSame('Mô tả biên tập đã được duyệt.', $item->value('description'));
+        $this->assertNotContains('BRAND_DERIVED_FROM_TITLE', $validation->warnings);
+        $this->assertNotContains('DESCRIPTION_DERIVED_FROM_CATALOG_FACTS', $validation->warnings);
+    }
+
+    public function test_legacy_null_stock_quantity_is_normalized_to_zero(): void
+    {
+        $product = new Product;
+        $product->setRawAttributes(['stock_quantity' => null]);
+
+        $this->assertSame(0, $product->quantity);
+    }
+
     public function test_build_summary_and_run_items_explain_invalid_products_without_double_counting_products(): void
     {
+        config(['catalog.meta_catalog.derive_description_from_catalog_facts' => false]);
         $category = $this->category();
         $valid = $this->product($category, 501);
         $this->image($valid);

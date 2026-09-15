@@ -99,7 +99,8 @@ class MetaCatalogItemStrategy implements CatalogFeedItemStrategy
         $inventory = $product->isSellable
             ? ($isVariant ? max(0, (int) ($variant['inventory'] ?? 0)) : max(0, $product->inventory))
             : 0;
-        [$brand, $approvedUnbranded] = $this->brand($product, $variantSku);
+        [$brand, $approvedUnbranded, $brandDerivedFromTitle] = $this->brand($product, $variantSku);
+        [$description, $descriptionDerivedFromFacts] = $this->description($product);
 
         $title = $product->title;
         if ($isVariant && $variantName !== '' && ! str_contains(Str::lower($title), Str::lower($variantName))) {
@@ -109,7 +110,7 @@ class MetaCatalogItemStrategy implements CatalogFeedItemStrategy
         $values = [
             'id' => $id,
             'title' => $title,
-            'description' => $product->description,
+            'description' => $description,
             'availability' => $inventory > 0 ? 'in stock' : 'out of stock',
             'condition' => $product->condition,
             'link' => $product->productUrl,
@@ -157,14 +158,23 @@ class MetaCatalogItemStrategy implements CatalogFeedItemStrategy
             values: $values,
             approvedUnbranded: $approvedUnbranded,
             variant: $isVariant,
+            brandDerivedFromTitle: $brandDerivedFromTitle,
+            descriptionDerivedFromFacts: $descriptionDerivedFromFacts,
         );
     }
 
-    /** @return array{string,bool} */
+    /** @return array{string,bool,bool} */
     private function brand(CatalogProductData $product, string $variantSku): array
     {
         if ($product->brand !== '') {
-            return [$product->brand, false];
+            return [$product->brand, false, false];
+        }
+
+        if ((bool) config('catalog.meta_catalog.derive_brand_from_title', true)) {
+            $derived = $this->brandFromTitle($product->title);
+            if ($derived !== '') {
+                return [$derived, false, true];
+            }
         }
 
         $approvedSkus = array_map(
@@ -176,12 +186,90 @@ class MetaCatalogItemStrategy implements CatalogFeedItemStrategy
             Str::lower($product->sku),
         ]);
         if (array_intersect($candidateSkus, $approvedSkus) === []) {
-            return ['', false];
+            return ['', false, false];
         }
 
         $label = trim((string) config('catalog.meta_catalog.unbranded_label', 'Unbranded'));
 
-        return [in_array($label, ['Generic', 'Unbranded'], true) ? $label : 'Unbranded', true];
+        return [in_array($label, ['Generic', 'Unbranded'], true) ? $label : 'Unbranded', true, false];
+    }
+
+    private function brandFromTitle(string $title): string
+    {
+        $title = $this->plainText($title);
+        if ($title === '') {
+            return '';
+        }
+
+        $bestBrand = '';
+        $bestOffset = PHP_INT_MAX;
+        $bestLength = -1;
+        foreach ((array) config('catalog.meta_catalog.brand_aliases', []) as $brand => $aliases) {
+            $brand = trim((string) $brand);
+            if ($brand === '') {
+                continue;
+            }
+
+            $aliases = is_array($aliases) ? $aliases : [$aliases];
+            foreach (array_unique(array_merge([$brand], $aliases)) as $alias) {
+                $alias = trim((string) $alias);
+                if ($alias === '') {
+                    continue;
+                }
+
+                $pattern = '/(?<![\\pL\\pN])'.preg_quote($alias, '/').'(?![\\pL\\pN])/iu';
+                if (preg_match($pattern, $title, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+                    continue;
+                }
+
+                $offset = (int) $matches[0][1];
+                $length = strlen($alias);
+                if ($offset < $bestOffset || ($offset === $bestOffset && $length > $bestLength)) {
+                    $bestBrand = $brand;
+                    $bestOffset = $offset;
+                    $bestLength = $length;
+                }
+            }
+        }
+
+        return $bestBrand;
+    }
+
+    /** @return array{string,bool} */
+    private function description(CatalogProductData $product): array
+    {
+        $description = $this->plainText($product->description);
+        if ($description !== '') {
+            return [$description, false];
+        }
+        if (! (bool) config('catalog.meta_catalog.derive_description_from_catalog_facts', true)) {
+            return ['', false];
+        }
+
+        $title = $this->plainText($product->title);
+        $category = $this->plainText($product->categoryPath ?: $product->categoryName);
+        $sku = $this->plainText($product->sku);
+        if ($title === '' || ($category === '' && $sku === '')) {
+            return ['', false];
+        }
+
+        $facts = [$title];
+        if ($category !== '') {
+            $facts[] = 'Danh mục: '.$category;
+        }
+        if ($sku !== '') {
+            $facts[] = 'Mã sản phẩm: '.$sku;
+        }
+
+        return [implode('. ', array_map(fn (string $fact): string => rtrim($fact, " .\t\n\r\0\x0B"), $facts)).'.', true];
+    }
+
+    private function plainText(string $value): string
+    {
+        $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = preg_replace('/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/u', '', $value) ?? '';
+
+        return trim(preg_replace('/\\s+/u', ' ', $value) ?? '');
     }
 
     private function taxonomy(CatalogProductData $product, string $configKey): string
