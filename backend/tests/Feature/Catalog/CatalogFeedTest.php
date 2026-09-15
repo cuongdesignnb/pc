@@ -3,6 +3,7 @@
 namespace Tests\Feature\Catalog;
 
 use App\Exceptions\CatalogChannelException;
+use App\Models\Brand;
 use App\Models\CatalogChannelConnection;
 use App\Models\Category;
 use App\Models\Product;
@@ -90,7 +91,7 @@ XML);
         $csvPath = Storage::disk('local')->path('duplicate.csv');
         $handle = fopen($csvPath, 'wb');
         fputcsv($handle, MetaCatalogCsvRenderer::HEADERS, ',', '"', '');
-        $row = ['x', 'A', 'A', 'in stock', 'new', '1 VND', 'https://example.com/a', 'https://example.com/a.jpg', '', '', 1, '', '', 'active', 'KIOT', ''];
+        $row = $this->metaRow(['id' => 'x']);
         fputcsv($handle, $row, ',', '"', '');
         fputcsv($handle, $row, ',', '"', '');
         fclose($handle);
@@ -137,11 +138,16 @@ XML);
     {
         return Product::create($overrides + [
             'category_id' => $category->id,
+            'brand_id' => Brand::firstOrCreate(
+                ['slug' => 'thuong-hieu-viet'],
+                ['name' => 'Thương hiệu Việt', 'is_active' => true],
+            )->id,
             'provider' => 'kiot',
             'remote_product_id' => $remoteId,
             'name' => 'Laptop '.$remoteId,
             'slug' => 'laptop-'.$remoteId,
             'sku' => 'SKU-'.$remoteId,
+            'description' => 'Mô tả sản phẩm chính hãng dành cho khách hàng Việt Nam.',
             'price' => 10000000,
             'stock_quantity' => 2,
             'inventory_source' => 'kiot',
@@ -152,5 +158,26 @@ XML);
             'is_active' => true,
             'show_on_pc_website' => true,
         ]);
+    }
+
+    private function metaRow(array $overrides = []): array
+    {
+        $values = $overrides + [
+            'id' => 'meta-item-1',
+            'title' => 'Laptop chính hãng',
+            'description' => 'Mô tả sản phẩm đầy đủ.',
+            'availability' => 'in stock',
+            'condition' => 'new',
+            'link' => 'https://example.com/products/laptop',
+            'image_link' => 'https://cdn.example.com/laptop.jpg',
+            'brand' => 'Thương hiệu Việt',
+            'price' => '10000000 VND',
+            'quantity_to_sell_on_facebook' => '2',
+        ];
+
+        return array_map(
+            fn (string $header): string => (string) ($values[$header] ?? ''),
+            MetaCatalogCsvRenderer::HEADERS,
+        );
     }
 }

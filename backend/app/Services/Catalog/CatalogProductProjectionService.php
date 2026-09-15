@@ -32,6 +32,8 @@ class CatalogProductProjectionService
                 'brand:id,name',
                 'images' => fn ($query) => $query->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
                 'catalogPrices',
+                'variants',
+                'specifications.specificationKey:id,key,label',
             ]);
     }
 
@@ -56,7 +58,14 @@ class CatalogProductProjectionService
 
     public function project(Product $product, ?Collection $categories = null): CatalogProductData
     {
-        $product->loadMissing(['category', 'brand', 'images', 'catalogPrices']);
+        $product->loadMissing([
+            'category',
+            'brand',
+            'images',
+            'catalogPrices',
+            'variants',
+            'specifications.specificationKey',
+        ]);
         $categories ??= Category::query()->get()->keyBy('id');
         $category = $product->category;
         $categoryVisible = $category?->isVisibleOnStorefront() === true;
@@ -69,6 +78,7 @@ class CatalogProductProjectionService
         // "Đang sửa chữa" from KIOT is operational metadata. It must not
         // suppress the retail price, inventory, or sales eligibility.
         $underRepair = false;
+        $isSellable = (bool) $product->kiot_sellable;
         $inventory = max(0, (int) ($product->kiot_available_quantity ?? 0));
         $images = $product->images
             ->pluck('url')
@@ -92,6 +102,30 @@ class CatalogProductProjectionService
                 $priceIssues[$channel] = $resolved['issue'];
             }
         }
+        $attributes = $product->specifications
+            ->filter(fn ($specification): bool => $specification->specificationKey !== null)
+            ->mapWithKeys(function ($specification): array {
+                $key = trim((string) ($specification->specificationKey->key
+                    ?: $specification->specificationKey->label));
+
+                return $key === '' || $specification->value === null
+                    ? []
+                    : [$key => (string) $specification->value];
+            })
+            ->all();
+        $variants = $product->variants
+            ->map(fn ($variant): array => [
+                'id' => (int) $variant->id,
+                'name' => trim((string) $variant->name),
+                'sku' => trim((string) $variant->sku),
+                'price' => max(0, (int) $variant->price),
+                'sale_price' => $variant->sale_price === null ? null : max(0, (int) $variant->sale_price),
+                'inventory' => max(0, (int) $variant->stock_quantity),
+                'is_active' => (bool) $variant->is_active,
+                'attributes' => (array) $variant->attributes,
+            ])
+            ->values()
+            ->all();
         $payload = [
             'id' => (int) $product->id,
             'external_id' => $this->externalId($product),
@@ -153,6 +187,11 @@ class CatalogProductProjectionService
             priceIssues: $payload['price_issues'],
             selectedPrice: $priceData['selected_price'],
             imageStatus: $imageStatus,
+            variants: $variants,
+            attributes: $attributes,
+            weightGrams: $product->weight === null ? null : max(0, (int) $product->weight),
+            barcode: trim((string) $product->barcode),
+            isSellable: $isSellable,
         );
     }
 
@@ -162,7 +201,9 @@ class CatalogProductProjectionService
             return 'kiot:'.(int) $product->remote_product_id;
         }
 
-        return 'sku:'.Str::lower(trim((string) $product->sku));
+        $sku = Str::lower(trim((string) $product->sku));
+
+        return $sku === '' ? '' : 'sku:'.$sku;
     }
 
     private function productUrl(Product $product): string

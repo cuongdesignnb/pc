@@ -2,17 +2,13 @@
 
 namespace App\Services\Catalog\Meta;
 
-use App\Data\Catalog\CatalogProductData;
 use App\Exceptions\CatalogChannelException;
 use App\Services\Catalog\Feeds\CatalogFeedRenderer;
+use InvalidArgumentException;
 
 class MetaCatalogCsvRenderer implements CatalogFeedRenderer
 {
-    public const HEADERS = [
-        'id', 'title', 'description', 'availability', 'condition', 'price', 'link', 'image_link',
-        'brand', 'product_type', 'inventory', 'additional_image_link', 'sale_price', 'status',
-        'custom_label_0', 'custom_label_1',
-    ];
+    public const HEADERS = MetaCatalogSchema::HEADERS;
 
     public function render(iterable $products, string $path): void
     {
@@ -31,28 +27,13 @@ class MetaCatalogCsvRenderer implements CatalogFeedRenderer
         }
     }
 
-    private function row(CatalogProductData $product): array
+    private function row(object $product): array
     {
-        return [
-            $this->safeText($product->externalId),
-            $this->safeText($product->title),
-            $this->safeText($product->description ?: $product->title),
-            $product->availability,
-            $product->condition,
-            $product->price.' '.$product->currency,
-            $this->safeText($product->productUrl),
-            $this->safeText($product->imageUrl),
-            $this->safeText($product->brand),
-            $this->safeText($product->categoryPath),
-            $product->inventory,
-            $this->safeText(implode(',', $product->additionalImageUrls)),
-            $product->salePrice && $product->salePrice < $product->price
-                ? $product->salePrice.' '.$product->currency
-                : '',
-            'active',
-            'KIOT',
-            $product->isUnderRepair ? 'UNDER_REPAIR' : '',
-        ];
+        if (! $product instanceof MetaCatalogItem) {
+            throw new InvalidArgumentException('Meta Catalog renderer received an unsupported item.');
+        }
+
+        return array_map(fn (string $value): string => $this->safeText($value), $product->row());
     }
 
     private function safeText(string $value): string
