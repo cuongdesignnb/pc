@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import { Link, usePage, router } from '@inertiajs/vue3';
 import ToastNotification from '@/Components/ToastNotification.vue';
 
@@ -10,6 +10,8 @@ const props = defineProps({
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
 const siteName = computed(() => page.props.siteName || '');
+const siteLogo = computed(() => page.props.siteLogo || '');
+const logoFailed = ref(false);
 const currentUrl = computed(() => page.props.ziggy?.location || page.url);
 const pendingOrderCount = computed(() => Number(page.props.admin?.pending_orders_count || 0));
 
@@ -23,6 +25,10 @@ const can = (perm) => {
 const sidebarOpen = ref(true);
 const sidebarCollapsed = ref(false);
 const searchQuery = ref('');
+
+watch(siteLogo, () => {
+    logoFailed.value = false;
+});
 
 // Grouped navigation
 const navGroups = [
@@ -152,13 +158,24 @@ const icons = {
             style="background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%)"
         >
             <!-- Logo -->
-            <div class="flex items-center h-14 px-4 border-b border-slate-800/80 flex-shrink-0">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/20">
-                    <svg class="w-4.5 h-4.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            <div class="flex h-14 min-w-0 flex-shrink-0 items-center border-b border-slate-800/80 px-3">
+                <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/20">
+                    <img
+                        v-if="siteLogo && !logoFailed"
+                        :src="siteLogo"
+                        :alt="siteName || 'Logo website'"
+                        class="h-full w-full bg-white/95 object-contain p-1"
+                        @error="logoFailed = true"
+                    >
+                    <svg v-else class="w-4.5 h-4.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                 </div>
                 <template v-if="!sidebarCollapsed">
-                    <span class="ml-3 text-sm font-bold text-white tracking-wide">{{ siteName }}</span>
-                    <span class="ml-auto text-[9px] font-semibold text-cyan-400 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">ADMIN</span>
+                    <div class="ml-2.5 min-w-0 flex-1">
+                        <p class="truncate text-sm font-bold tracking-wide text-white" :title="siteName || 'Quản trị website'">
+                            {{ siteName || 'Quản trị website' }}
+                        </p>
+                    </div>
+                    <span class="ml-2 flex-shrink-0 rounded border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-400">ADMIN</span>
                 </template>
             </div>
 

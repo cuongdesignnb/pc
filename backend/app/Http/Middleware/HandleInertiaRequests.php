@@ -54,6 +54,7 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
             ],
             'siteName' => fn (): string => $this->siteName(),
+            'siteLogo' => fn (): string => $this->siteLogo(),
             'admin' => [
                 'pending_orders_count' => fn (): int => $this->pendingOrdersCount($request),
             ],
@@ -79,6 +80,21 @@ class HandleInertiaRequests extends Middleware
             // being migrated or when the settings table is temporarily
             // unavailable.
             return (string) config('app.name', '');
+        }
+    }
+
+    private function siteLogo(): string
+    {
+        try {
+            if (! Schema::hasTable('settings')) {
+                return '';
+            }
+
+            $settings = Setting::publicSettings();
+
+            return trim((string) (($settings['site_logo_white'] ?? '') ?: ($settings['site_logo'] ?? '')));
+        } catch (\Throwable) {
+            return '';
         }
     }
 

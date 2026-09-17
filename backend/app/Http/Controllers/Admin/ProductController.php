@@ -73,6 +73,8 @@ class ProductController extends Controller
 
     public function store(Request $request, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
+        $this->normalizeOptionalProductInputs($request);
+
         $validated = $request->validate(array_merge([
             'name' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products',
@@ -127,7 +129,7 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, false)));
+        ], $this->variantSkuRules($request, false)), $this->productValidationMessages(), $this->productValidationAttributes());
 
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
@@ -221,6 +223,8 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product, VietnameseSlugNormalizer $slugs, SlugRedirectService $redirects)
     {
+        $this->normalizeOptionalProductInputs($request);
+
         $validated = $request->validate(array_merge([
             'name' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products,slug,'.$product->id,
@@ -275,7 +279,7 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, true)));
+        ], $this->variantSkuRules($request, true)), $this->productValidationMessages(), $this->productValidationAttributes());
 
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
@@ -392,6 +396,135 @@ class ProductController extends Controller
         }
 
         return $rules;
+    }
+
+    /**
+     * Ignore untouched placeholder rows from optional repeaters. These rows are
+     * convenient in the admin UI, but they must not turn an otherwise valid
+     * product into a failed request because a nested required rule sees an
+     * empty draft row.
+     */
+    private function normalizeOptionalProductInputs(Request $request): void
+    {
+        $normalized = [];
+
+        if ($request->exists('gallery')) {
+            $normalized['gallery'] = array_values(array_filter(
+                (array) $request->input('gallery', []),
+                fn (mixed $url): bool => filled($url),
+            ));
+        }
+
+        if ($request->exists('compatibility_specs')) {
+            $normalized['compatibility_specs'] = array_values(array_filter(
+                (array) $request->input('compatibility_specs', []),
+                fn (mixed $spec): bool => is_array($spec) && filled($spec['value'] ?? null),
+            ));
+        }
+
+        if ($request->exists('variants')) {
+            $normalized['variants'] = array_values(array_filter(
+                (array) $request->input('variants', []),
+                function (mixed $variant): bool {
+                    if (! is_array($variant)) {
+                        return false;
+                    }
+
+                    return filled($variant['name'] ?? null)
+                        || filled($variant['sku'] ?? null)
+                        || filled($variant['sale_price'] ?? null)
+                        || filled($variant['attributes'] ?? null)
+                        || filled($variant['attributes_json'] ?? null)
+                        || (filled($variant['price'] ?? null) && (float) $variant['price'] !== 0.0)
+                        || (filled($variant['stock_quantity'] ?? null) && (int) $variant['stock_quantity'] !== 0);
+                },
+            ));
+        }
+
+        if ($request->exists('highlights')) {
+            $normalized['highlights'] = array_values(array_filter(
+                (array) $request->input('highlights', []),
+                fn (mixed $highlight): bool => is_array($highlight)
+                    && (filled($highlight['title'] ?? null) || filled($highlight['icon'] ?? null)),
+            ));
+        }
+
+        if ($request->exists('detail_blocks')) {
+            $normalized['detail_blocks'] = array_values(array_filter(
+                (array) $request->input('detail_blocks', []),
+                function (mixed $block): bool {
+                    if (! is_array($block)) {
+                        return false;
+                    }
+
+                    $payloadValues = collect($block['payload'] ?? [])->flatten();
+
+                    return filled($block['title'] ?? null)
+                        || $payloadValues->contains(fn (mixed $value): bool => filled($value));
+                },
+            ));
+        }
+
+        if ($request->exists('relations')) {
+            $normalized['relations'] = array_values(array_filter(
+                (array) $request->input('relations', []),
+                fn (mixed $relation): bool => is_array($relation)
+                    && filled($relation['related_product_id'] ?? null),
+            ));
+        }
+
+        if ($normalized !== []) {
+            $request->merge($normalized);
+        }
+    }
+
+    private function productValidationMessages(): array
+    {
+        return [
+            'required' => ':attribute là trường bắt buộc.',
+            'string' => ':attribute phải là văn bản.',
+            'numeric' => ':attribute phải là số.',
+            'integer' => ':attribute phải là số nguyên.',
+            'boolean' => ':attribute có giá trị không hợp lệ.',
+            'array' => ':attribute có cấu trúc không hợp lệ.',
+            'exists' => ':attribute đã chọn không tồn tại.',
+            'unique' => ':attribute đã được sử dụng.',
+            'min.numeric' => ':attribute không được nhỏ hơn :min.',
+            'max.string' => ':attribute không được vượt quá :max ký tự.',
+            'max.array' => ':attribute không được có quá :max mục.',
+        ];
+    }
+
+    private function productValidationAttributes(): array
+    {
+        return [
+            'name' => 'Tên sản phẩm',
+            'slug' => 'Slug',
+            'sku' => 'SKU',
+            'category_id' => 'Danh mục',
+            'brand_id' => 'Thương hiệu',
+            'component_type_id' => 'Loại linh kiện',
+            'description' => 'Mô tả chi tiết',
+            'short_description' => 'Mô tả ngắn',
+            'price' => 'Giá gốc',
+            'sale_price' => 'Giá sale',
+            'stock_quantity' => 'Tồn kho',
+            'warranty_months' => 'Thời hạn bảo hành',
+            'thumbnail' => 'Ảnh đại diện',
+            'gallery' => 'Thư viện ảnh',
+            'variants.*.name' => 'Tên biến thể',
+            'variants.*.sku' => 'SKU biến thể',
+            'variants.*.price' => 'Giá biến thể',
+            'variants.*.sale_price' => 'Giá sale biến thể',
+            'variants.*.stock_quantity' => 'Tồn kho biến thể',
+            'highlights.*.title' => 'Tiêu đề điểm nổi bật',
+            'detail_blocks.*.type' => 'Loại khối nội dung',
+            'detail_blocks.*.payload' => 'Nội dung khối',
+            'relations.*.related_product_id' => 'Sản phẩm liên quan',
+            'relations.*.relation_type' => 'Loại liên kết sản phẩm',
+            'compatibility_specs.*.specification_key_id' => 'Thông số tương thích',
+            'compatibility_specs.*.value' => 'Giá trị thông số tương thích',
+        ];
     }
 
     private function syncVariants(Product $product, array $variants): void

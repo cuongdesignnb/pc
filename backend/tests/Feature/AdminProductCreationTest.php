@@ -62,6 +62,61 @@ class AdminProductCreationTest extends TestCase
         $this->assertDatabaseMissing('products', ['sku' => 'SKU0001']);
     }
 
+    public function test_admin_product_creation_ignores_blank_optional_repeater_rows(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $category = Category::create([
+            'name' => 'PC đồng bộ',
+            'slug' => 'pc-dong-bo',
+            'is_active' => true,
+            'show_on_pc_website' => true,
+        ]);
+
+        $response = $this->actingAs($admin)->post('/admin/products', $this->validPayload($category, [
+            'gallery' => ['', '   '],
+            'compatibility_specs' => [[
+                'specification_key_id' => '',
+                'value' => '',
+            ]],
+            'variants' => [[
+                'name' => '',
+                'sku' => '',
+                'price' => 0,
+                'sale_price' => '',
+                'stock_quantity' => 0,
+                'is_active' => true,
+                'attributes' => [],
+            ]],
+            'highlights' => [[
+                'title' => '',
+                'icon' => '',
+                'is_active' => true,
+            ]],
+            'detail_blocks' => [[
+                'type' => 'feature_cards',
+                'title' => '',
+                'payload' => ['cards' => []],
+                'is_active' => true,
+            ]],
+            'relations' => [[
+                'related_product_id' => '',
+                'relation_type' => 'related',
+            ]],
+        ]));
+
+        $response->assertRedirect(route('admin.products.index'))
+            ->assertSessionHasNoErrors();
+
+        $product = Product::where('sku', 'SKU0001')->firstOrFail();
+
+        $this->assertCount(0, $product->images);
+        $this->assertCount(0, $product->variants);
+        $this->assertCount(0, $product->specifications);
+        $this->assertCount(0, $product->highlights);
+        $this->assertCount(0, $product->detailBlocks);
+        $this->assertCount(0, $product->relations);
+    }
+
     private function validPayload(Category $category, array $overrides = []): array
     {
         return array_replace([
