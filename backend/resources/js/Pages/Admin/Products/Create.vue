@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
@@ -16,7 +16,7 @@ const props = defineProps({
 
 const form = useForm({
     name: '', slug: '', sku: '', category_id: '', brand_id: '', component_type_id: '',
-    description: '', short_description: '', price: '', sale_price: '', stock_quantity: 0,
+    description: '', short_description: '', price: 0, sale_price: '', stock_quantity: 0,
     is_active: true, is_featured: false, show_on_pc_website: true, warranty_months: 12,
     meta_title: '', meta_description: '',
     thumbnail: '',
@@ -28,6 +28,9 @@ const form = useForm({
     specifications_text: '',
     compatibility_specs: [],
 });
+
+const validationSummary = ref(null);
+const validationErrors = computed(() => Object.values(form.errors));
 
 function genSlug() {
     form.slug = form.name.toLowerCase().normalize('NFD')
@@ -74,7 +77,14 @@ function normalizeVariantAttributes() {
 
 function submit() {
     normalizeVariantAttributes();
-    form.post('/admin/products');
+    form.post('/admin/products', {
+        preserveScroll: true,
+        onError: async () => {
+            await nextTick();
+            validationSummary.value?.focus();
+            validationSummary.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        },
+    });
 }
 
 function applyAi(data) {
@@ -110,6 +120,19 @@ function removeVariant(index) {
             <Link href="/admin/products" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link>
         </div>
         <form @submit.prevent="submit" class="space-y-6">
+            <div
+                v-if="validationErrors.length"
+                ref="validationSummary"
+                tabindex="-1"
+                role="alert"
+                class="rounded-lg border border-red-500/40 bg-red-500/10 px-5 py-4 text-red-100 outline-none focus:ring-2 focus:ring-red-400/70"
+            >
+                <p class="font-semibold">Không thể tạo sản phẩm — vui lòng kiểm tra {{ validationErrors.length }} lỗi sau:</p>
+                <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-red-200">
+                    <li v-for="(message, index) in validationErrors" :key="index">{{ message }}</li>
+                </ul>
+            </div>
+
             <!-- Thông tin cơ bản -->
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Thông tin cơ bản</h4>
@@ -187,10 +210,27 @@ function removeVariant(index) {
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Giá & Kho</h4>
                 <div class="grid grid-cols-4 gap-4">
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá gốc *</label><input v-model="form.price" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.price" class="text-red-400 text-xs mt-1">{{ form.errors.price }}</div></div>
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá sale</label><input v-model="form.sale_price" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label><input v-model="form.stock_quantity" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Giá gốc *</label>
+                        <input v-model="form.price" required min="0" step="1" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <p class="mt-1 text-xs text-slate-500">Nhập 0 để hiển thị “Liên hệ” ngoài website.</p>
+                        <div v-if="form.errors.price" class="text-red-400 text-xs mt-1">{{ form.errors.price }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Giá sale</label>
+                        <input v-model="form.sale_price" min="0" step="1" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <div v-if="form.errors.sale_price" class="text-red-400 text-xs mt-1">{{ form.errors.sale_price }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label>
+                        <input v-model="form.stock_quantity" required min="0" step="1" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <div v-if="form.errors.stock_quantity" class="text-red-400 text-xs mt-1">{{ form.errors.stock_quantity }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label>
+                        <input v-model="form.warranty_months" min="0" step="1" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <div v-if="form.errors.warranty_months" class="text-red-400 text-xs mt-1">{{ form.errors.warranty_months }}</div>
+                    </div>
                 </div>
             </div>
 
