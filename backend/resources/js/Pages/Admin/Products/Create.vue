@@ -30,7 +30,31 @@ const form = useForm({
 });
 
 const validationSummary = ref(null);
-const validationErrors = computed(() => Object.values(form.errors));
+const validationLabels = {
+    name: 'Tên sản phẩm',
+    slug: 'Slug',
+    sku: 'SKU',
+    category_id: 'Danh mục',
+    brand_id: 'Thương hiệu',
+    component_type_id: 'Loại linh kiện',
+    price: 'Giá gốc',
+    sale_price: 'Giá sale',
+    stock_quantity: 'Tồn kho',
+    warranty_months: 'Thời hạn bảo hành',
+    thumbnail: 'Ảnh đại diện',
+    gallery: 'Thư viện ảnh',
+};
+const validationErrors = computed(() => Object.entries(form.errors).map(([field, message]) => ({
+    field,
+    label: validationLabels[field]
+        || (field.startsWith('variants.') ? 'Biến thể sản phẩm' : null)
+        || (field.startsWith('highlights.') ? 'Điểm nổi bật' : null)
+        || (field.startsWith('detail_blocks.') ? 'Khối nội dung' : null)
+        || (field.startsWith('relations.') ? 'Sản phẩm liên quan' : null)
+        || (field.startsWith('compatibility_specs.') ? 'Thông số tương thích' : null)
+        || field,
+    message,
+})));
 
 function genSlug() {
     form.slug = form.name.toLowerCase().normalize('NFD')
@@ -129,8 +153,15 @@ function removeVariant(index) {
             >
                 <p class="font-semibold">Không thể tạo sản phẩm — vui lòng kiểm tra {{ validationErrors.length }} lỗi sau:</p>
                 <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-red-200">
-                    <li v-for="(message, index) in validationErrors" :key="index">{{ message }}</li>
+                    <li v-for="error in validationErrors" :key="error.field">
+                        <strong>{{ error.label }}:</strong> {{ error.message }}
+                    </li>
                 </ul>
+            </div>
+
+            <div class="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-5 py-3 text-sm text-slate-300">
+                <strong class="text-cyan-300">Trường bắt buộc:</strong>
+                Tên sản phẩm, slug, SKU, danh mục, giá gốc và tồn kho. Các phần biến thể, điểm nổi bật, khối nội dung và sản phẩm liên quan có thể để trống.
             </div>
 
             <!-- Thông tin cơ bản -->
@@ -138,15 +169,15 @@ function removeVariant(index) {
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Thông tin cơ bản</h4>
                 <div class="grid grid-cols-2 gap-4">
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Tên sản phẩm *</label>
-                        <input v-model="form.name" @blur="!form.slug && genSlug()" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50">
+                        <input v-model="form.name" required :aria-invalid="Boolean(form.errors.name)" @blur="!form.slug && genSlug()" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50">
                         <div v-if="form.errors.name" class="text-red-400 text-xs mt-1">{{ form.errors.name }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Slug *</label>
-                        <input v-model="form.slug" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50">
+                        <input v-model="form.slug" required :aria-invalid="Boolean(form.errors.slug)" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50">
                         <div v-if="form.errors.slug" class="text-red-400 text-xs mt-1">{{ form.errors.slug }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">SKU *</label>
-                        <input v-model="form.sku" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50">
+                        <input v-model="form.sku" required :aria-invalid="Boolean(form.errors.sku)" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50">
                         <div v-if="form.errors.sku" class="text-red-400 text-xs mt-1">{{ form.errors.sku }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Trạng thái</label>
@@ -159,7 +190,7 @@ function removeVariant(index) {
                 </div>
                 <div class="grid grid-cols-3 gap-4">
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Danh mục *</label>
-                        <select v-model="form.category_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="c in categories" :value="c.id">{{ c.name }}</option></select>
+                        <select v-model="form.category_id" required :aria-invalid="Boolean(form.errors.category_id)" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="c in categories" :value="c.id">{{ c.name }}</option></select>
                         <div v-if="form.errors.category_id" class="text-red-400 text-xs mt-1">{{ form.errors.category_id }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Thương hiệu</label>
@@ -195,7 +226,7 @@ function removeVariant(index) {
                     Hình ảnh sản phẩm
                 </h4>
                 <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-2">Ảnh đại diện (Thumbnail) *</label>
+                    <label class="block text-sm font-medium text-slate-300 mb-2">Ảnh đại diện (Thumbnail)</label>
                     <MediaPicker v-model="form.thumbnail" label="Chọn ảnh đại diện" />
                     <div v-if="form.errors.thumbnail" class="text-red-400 text-xs mt-1">{{ form.errors.thumbnail }}</div>
                 </div>
