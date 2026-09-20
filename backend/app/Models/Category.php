@@ -30,6 +30,7 @@ class Category extends Model
         'provider_synced_at',
         'meta_title',
         'meta_description',
+        'technical_heading',
         'slug_source',
         'slug_policy_version',
         'slug_locked_at',
@@ -43,6 +44,7 @@ class Category extends Model
         'provider_synced_at' => 'datetime',
         'sort_order' => 'integer',
         'slug_locked_at' => 'datetime',
+        'technical_heading' => 'string',
     ];
 
     /**

@@ -9,7 +9,7 @@ const form = useForm({
     name: props.category.name, slug: props.category.slug, parent_id: props.category.parent_id || '',
     component_type_id: props.category.component_type_id || '', description: props.category.description || '',
     image: props.category.image || '', icon: props.category.icon || '', sort_order: props.category.sort_order || 0,
-    is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '',
+    is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '', technical_heading: props.category.technical_heading || 'auto',
 });
 function submit() { form.put(`/admin/categories/${props.category.id}`); }
 </script>
@@ -38,6 +38,7 @@ function submit() { form.put(`/admin/categories/${props.category.id}`); }
                     <label class="flex items-center gap-2 text-sm pb-2"><input v-model="form.show_on_pc_website" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiển thị trên website</label>
                 </div>
             </div>
+            <div><label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề phần thông tin kỹ thuật</label><select v-model="form.technical_heading" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="auto">Tự động</option><option value="configuration">Cấu hình chi tiết</option><option value="specifications">Thông số kỹ thuật</option></select><p class="mt-1 text-xs text-slate-500">Dùng cho phần thông tin kỹ thuật trên trang sản phẩm thuộc danh mục này.</p></div>
             <div class="flex justify-end gap-3 pt-2">
                 <Link href="/admin/categories" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>
                 <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium disabled:opacity-50">Lưu thay đổi</button>

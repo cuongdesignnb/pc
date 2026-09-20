@@ -68,8 +68,10 @@ class CategoryController extends Controller
             'show_on_pc_website' => 'boolean',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
+            'technical_heading' => 'nullable|in:auto,configuration,specifications',
         ]);
 
+        $validated['technical_heading'] = $validated['technical_heading'] ?? 'auto';
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
         } catch (\InvalidArgumentException $exception) {
@@ -133,8 +135,10 @@ class CategoryController extends Controller
             'show_on_pc_website' => 'boolean',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
+            'technical_heading' => 'nullable|in:auto,configuration,specifications',
         ]);
 
+        $validated['technical_heading'] = $validated['technical_heading'] ?? $category->technical_heading ?? 'auto';
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
         } catch (\InvalidArgumentException $exception) {

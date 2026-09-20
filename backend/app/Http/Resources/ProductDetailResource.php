@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Ai\ProductContentHeadingResolver;
 use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -31,12 +32,17 @@ class ProductDetailResource extends JsonResource
         ])->filter(fn (array $spec) => filled($spec['label']) && $spec['value'] !== null)->values();
         $specifications = $structuredSpecs->isNotEmpty()
             ? $structuredSpecs
-            : collect($this->parsed_specifications)->map(fn (array $spec) => [
-                'key' => null,
-                'label' => $spec['label'],
-                'value' => $spec['value'],
-                'unit' => null,
-            ])->values();
+            : collect($this->parsed_specifications)
+                ->filter(fn (array $spec) => filled($spec['label'] ?? null) && filled($spec['value'] ?? null))
+                ->map(fn (array $spec) => [
+                    'key' => null,
+                    'label' => $spec['label'],
+                    'value' => $spec['value'],
+                    'unit' => null,
+                ])->values();
+        $hasSpecifications = $specifications->isNotEmpty();
+        $headingResolver = app(ProductContentHeadingResolver::class);
+        $technicalSectionTitle = $headingResolver->resolve($this->resource, $this->category?->technical_heading ?? 'auto');
         $images = ProductImageResource::usable($this->images);
 
         return [
@@ -102,6 +108,9 @@ class ProductDetailResource extends JsonResource
                 'payload' => $block->payload,
             ]),
             'specifications' => $specifications,
+            'has_specifications' => $hasSpecifications,
+            'technical_section_title' => $technicalSectionTitle,
+            'description_heading' => $headingResolver->contentHeading($hasSpecifications),
             'short_description' => $this->short_description,
             // Legacy rich-editor HTML is intentionally reduced to text. New richer
             // content is rendered only from the typed detail_blocks payload above.

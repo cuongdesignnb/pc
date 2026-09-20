@@ -18,6 +18,12 @@ return [
         'timeout' => (int) env('OPENAI_IMAGE_TIMEOUT_SECONDS', 120),
         'max_bytes' => (int) env('OPENAI_IMAGE_MAX_BYTES', 8388608),
     ],
+    'research' => [
+        'api_key' => env('OPENAI_RESEARCH_API_KEY', env('OPENAI_API_KEY')),
+        'base_url' => env('OPENAI_RESEARCH_BASE_URL', 'https://api.openai.com/v1'),
+        'model' => env('OPENAI_RESEARCH_MODEL', env('OPENAI_MODEL', 'gpt-5.5')),
+        'timeout' => (int) env('OPENAI_RESEARCH_TIMEOUT_SECONDS', 120),
+    ],
     'limits' => [
         'topic' => 500,
         'keywords' => 1000,

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Services\Mail\StorefrontSmtpMailer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use Throwable;
 
@@ -40,6 +41,17 @@ class SettingController extends Controller
 
         foreach ($request->input('settings') as $item) {
             $setting = Setting::where('key', $item['key'])->first();
+            if ($setting && in_array($setting->key, [
+                'storefront_product_contact_footer_website_url',
+                'storefront_product_contact_footer_maps_url',
+            ], true) && filled($item['value'] ?? null)) {
+                Validator::make(['value' => trim((string) $item['value'])], [
+                    'value' => ['url', 'starts_with:https://'],
+                ], [
+                    'value.url' => 'Website và Maps phải là URL hợp lệ.',
+                    'value.starts_with' => 'Website và Maps phải dùng HTTPS.',
+                ])->validate();
+            }
             if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'], ['', '********'], true))) {
                 Setting::set($setting->key, $item['value']);
             }
