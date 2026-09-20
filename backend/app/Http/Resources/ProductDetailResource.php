@@ -2,8 +2,8 @@
 
 namespace App\Http\Resources;
 
-use App\Services\Seo\PublicUrlResolver;
 use App\Services\Ai\ProductContentHeadingResolver;
+use App\Services\Seo\PublicUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 

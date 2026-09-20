@@ -78,7 +78,7 @@ class ProductContentCampaignService
             "Tên sản phẩm: {$product->name}",
             "SKU: {$product->sku}",
             'Thương hiệu: '.($product->brand?->name ?: 'không có'),
-            "Mô tả hiện có: ".($product->description ?: 'không có'),
+            'Mô tả hiện có: '.($product->description ?: 'không có'),
             "Thông số structured:\n".($structured ?: 'không có'),
             "Thông số văn bản:\n".($text ?: 'không có'),
         ])));
@@ -163,6 +163,7 @@ class ProductContentCampaignService
             }
             if ($this->canonicalSnapshot($this->snapshot($product)) !== $this->canonicalSnapshot($item->source_snapshot)) {
                 $snapshotConflict = true;
+
                 return;
             }
 

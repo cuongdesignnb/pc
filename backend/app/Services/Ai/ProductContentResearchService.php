@@ -49,7 +49,7 @@ class ProductContentResearchService
                 ]],
                 'tool_choice' => 'required',
                 'instructions' => 'Bạn là bộ phận kiểm chứng thông số sản phẩm. Chỉ chấp nhận thông tin từ nguồn chính hãng trong domain được phép. Chỉ đánh dấu model_match=true khi trang nguồn nói đúng model hoặc SKU được cung cấp. Không suy đoán, không dùng nguồn bán lẻ hoặc diễn đàn. Trả JSON thuần.',
-                'input' => "Tra cứu tài liệu thông số chính hãng cho sản phẩm: {$product->name}; SKU: {$product->sku}; thương hiệu: ".($product->brand?->name ?: 'không rõ').". Trả đúng JSON: {\"model_match\":true|false,\"specifications\":[{\"label\":\"\",\"value\":\"\",\"unit\":null}],\"summary\":\"\"}",
+                'input' => "Tra cứu tài liệu thông số chính hãng cho sản phẩm: {$product->name}; SKU: {$product->sku}; thương hiệu: ".($product->brand?->name ?: 'không rõ').'. Trả đúng JSON: {"model_match":true|false,"specifications":[{"label":"","value":"","unit":null}],"summary":""}',
                 'max_output_tokens' => 2500,
                 'store' => false,
                 'include' => ['web_search_call.action.sources'],
