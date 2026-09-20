@@ -161,7 +161,7 @@ class ProductContentCampaignService
             if (! is_array($payload) || ! in_array($item->status, ['draft', 'needs_review'], true)) {
                 throw new \RuntimeException('Item chưa có bản nháp để áp dụng.');
             }
-            if ($this->snapshot($product) !== $item->source_snapshot) {
+            if ($this->canonicalSnapshot($this->snapshot($product)) !== $this->canonicalSnapshot($item->source_snapshot)) {
                 $snapshotConflict = true;
                 return;
             }
@@ -214,5 +214,20 @@ class ProductContentCampaignService
         }
 
         return $items->count();
+    }
+
+    private function canonicalSnapshot(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        $value = array_map(fn (mixed $item): mixed => $this->canonicalSnapshot($item), $value);
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return $value;
     }
 }
