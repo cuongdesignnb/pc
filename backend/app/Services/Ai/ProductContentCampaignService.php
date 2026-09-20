@@ -153,7 +153,8 @@ class ProductContentCampaignService
 
     public function applyItem(AiProductContentCampaignItem $item): void
     {
-        DB::transaction(function () use ($item) {
+        $snapshotConflict = false;
+        DB::transaction(function () use ($item, &$snapshotConflict) {
             $item = AiProductContentCampaignItem::query()->lockForUpdate()->with('campaign')->findOrFail($item->id);
             $product = Product::query()->lockForUpdate()->with(['specifications.specificationKey'])->findOrFail($item->product_id);
             $payload = $item->generated_payload;
@@ -161,8 +162,8 @@ class ProductContentCampaignService
                 throw new \RuntimeException('Item chưa có bản nháp để áp dụng.');
             }
             if ($this->snapshot($product) !== $item->source_snapshot) {
-                $item->update(['status' => 'needs_review', 'error_message' => 'Sản phẩm đã thay đổi sau khi tạo bản nháp.']);
-                throw new \RuntimeException('Sản phẩm đã thay đổi sau khi tạo bản nháp. Hãy tạo lại nội dung.');
+                $snapshotConflict = true;
+                return;
             }
 
             $product->update([
@@ -183,6 +184,18 @@ class ProductContentCampaignService
             $item->update(['status' => 'applied', 'applied_at' => now(), 'error_message' => null]);
             $item->campaign->refreshProgress();
         });
+
+        if ($snapshotConflict) {
+            $message = 'Sản phẩm đã thay đổi sau khi tạo bản nháp. Hãy tạo lại nội dung.';
+            $conflictItem = AiProductContentCampaignItem::query()->with('campaign')->findOrFail($item->id);
+            $conflictItem->update([
+                'status' => 'needs_review',
+                'error_message' => 'Sản phẩm đã thay đổi sau khi tạo bản nháp.',
+            ]);
+            $conflictItem->campaign->refreshProgress();
+
+            throw new \RuntimeException($message);
+        }
     }
 
     public function dispatch(AiProductContentCampaign $campaign): int

@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Support\Str;
 
@@ -16,17 +17,30 @@ class ProductContentHeadingResolver
             return 'Thông số kỹ thuật';
         }
 
-        $category = $product->category;
+        $category = $product->relationLoaded('category')
+            ? $product->getRelation('category')
+            : $product->category;
         $names = [];
-        while ($category) {
-            $names[] = Str::lower(Str::ascii($category->name.' '.$category->slug));
-            $category = $category->parent;
+        while ($category instanceof Category) {
+            $configuredHeading = $category->getAttribute('technical_heading');
+            if ($configuredHeading === 'configuration') {
+                return 'Cấu hình chi tiết';
+            }
+            if ($configuredHeading === 'specifications') {
+                return 'Thông số kỹ thuật';
+            }
+
+            $names[] = Str::lower(Str::ascii(trim((string) $category->getAttribute('name').' '.(string) $category->getAttribute('slug'))));
+            $category = $category->relationLoaded('parent')
+                ? $category->getRelation('parent')
+                : null;
         }
-        $haystack = implode(' ', $names);
-        $configurationTerms = ['pc ', 'pc-', 'laptop', 'may tinh de ban', 'may dong bo', 'desktop', 'workstation', 'all in one'];
+        $haystack = trim((string) preg_replace('/[^a-z0-9]+/i', ' ', implode(' ', $names)));
+        $haystack = ' '.$haystack.' ';
+        $configurationTerms = ['pc', 'laptop', 'may tinh de ban', 'may dong bo', 'desktop', 'workstation', 'all in one'];
 
         foreach ($configurationTerms as $term) {
-            if (str_contains($haystack, $term)) {
+            if (str_contains($haystack, ' '.$term.' ')) {
                 return 'Cấu hình chi tiết';
             }
         }
