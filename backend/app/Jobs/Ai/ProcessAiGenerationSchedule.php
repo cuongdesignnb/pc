@@ -3,8 +3,10 @@
 namespace App\Jobs\Ai;
 
 use App\Models\AiGenerationSchedule;
+use App\Models\AiProductContentCampaign;
 use App\Models\Post;
 use App\Services\Ai\AiGenerationService;
+use App\Services\Ai\ProductContentCampaignService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,7 +25,7 @@ class ProcessAiGenerationSchedule implements ShouldQueue
 
     public function __construct(public readonly int $scheduleId) {}
 
-    public function handle(AiGenerationService $generation, VietnameseSlugNormalizer $slugs): void
+    public function handle(AiGenerationService $generation, VietnameseSlugNormalizer $slugs, ProductContentCampaignService $campaigns): void
     {
         $schedule = AiGenerationSchedule::find($this->scheduleId);
         if (! $schedule || $schedule->status !== 'processing') {
@@ -31,6 +33,37 @@ class ProcessAiGenerationSchedule implements ShouldQueue
         }
 
         try {
+            if ($schedule->type === 'product_description' && $schedule->product) {
+                $campaign = AiProductContentCampaign::create([
+                    'name' => 'Chuyển lịch AI cũ #'.$schedule->id,
+                    'filters' => ['legacy_schedule_id' => $schedule->id],
+                    'mode' => 'draft',
+                    'technical_heading' => 'auto',
+                    'use_web_research' => false,
+                    'append_contact_footer' => false,
+                    'max_items' => 1,
+                    'status' => 'pending',
+                    'scheduled_at' => now(),
+                    'created_by' => $schedule->created_by,
+                ]);
+                $campaign->items()->create([
+                    'product_id' => $schedule->product_id,
+                    'source_snapshot' => $campaigns->snapshot($schedule->product()->with(['specifications.specificationKey'])->firstOrFail()),
+                    'status' => 'pending',
+                ]);
+                $campaign->refreshProgress();
+                $campaigns->dispatch($campaign);
+                $schedule->update([
+                    'status' => 'done',
+                    'warnings' => ['Đã chuyển sang campaign nội dung sản phẩm ở chế độ nháp. Sản phẩm chưa bị thay đổi.'],
+                    'processed_at' => now(),
+                    'completed_at' => now(),
+                    'error_message' => null,
+                ]);
+
+                return;
+            }
+
             $result = $generation->generate([
                 'topic' => $schedule->topic,
                 'keywords' => $schedule->keywords,
@@ -75,13 +108,6 @@ class ProcessAiGenerationSchedule implements ShouldQueue
                     'slug_locked_at' => now(),
                 ]);
                 $articleId = $post->id;
-            } elseif ($schedule->type === 'product_description' && $schedule->product) {
-                $schedule->product->update([
-                    'description' => $result['content'],
-                    'short_description' => Str::limit(strip_tags($result['short_description'] ?: $result['excerpt']), 500, ''),
-                    'meta_title' => $result['meta_title'],
-                    'meta_description' => $result['meta_description'],
-                ]);
             }
 
             $schedule->update([

@@ -117,6 +117,46 @@ class SettingSeeder extends Seeder
                 'label' => 'Google Maps embed URL',
                 'is_public' => true,
             ],
+            [
+                'key' => 'storefront_product_contact_footer_enabled',
+                'value' => '0',
+                'group' => 'contact',
+                'type' => 'boolean',
+                'label' => 'Footer liên hệ cuối nội dung sản phẩm',
+                'is_public' => true,
+            ],
+            [
+                'key' => 'storefront_product_contact_footer_title',
+                'value' => '',
+                'group' => 'contact',
+                'type' => 'text',
+                'label' => 'Tiêu đề footer liên hệ sản phẩm',
+                'is_public' => true,
+            ],
+            [
+                'key' => 'storefront_product_contact_footer_landmark',
+                'value' => '',
+                'group' => 'contact',
+                'type' => 'textarea',
+                'label' => 'Ghi chú vị trí cửa hàng',
+                'is_public' => true,
+            ],
+            [
+                'key' => 'storefront_product_contact_footer_website_url',
+                'value' => '',
+                'group' => 'contact',
+                'type' => 'text',
+                'label' => 'Website trong footer sản phẩm',
+                'is_public' => true,
+            ],
+            [
+                'key' => 'storefront_product_contact_footer_maps_url',
+                'value' => '',
+                'group' => 'contact',
+                'type' => 'text',
+                'label' => 'Google Maps trong footer sản phẩm',
+                'is_public' => true,
+            ],
 
             // ─── Social ─────────────────────────────────────────
             [

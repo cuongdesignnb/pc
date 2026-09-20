@@ -65,3 +65,8 @@ Schedule::command('ai:process-schedules')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer();
+
+Schedule::command('ai:process-product-content-campaigns')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();

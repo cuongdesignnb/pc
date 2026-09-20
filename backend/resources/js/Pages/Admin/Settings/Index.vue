@@ -215,6 +215,8 @@ function sendSmtpTest() {
                                     />
                                     <p v-if="item.key === 'storefront_warehouse_addresses'" class="text-xs text-slate-500 mt-1">Mỗi kho một nhóm dòng; có thể dùng ký hiệu 📍 và ☎, xuống dòng sẽ được giữ nguyên ngoài trang sản phẩm.</p>
                                     <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
+                                    <p v-else-if="item.key === 'ai_product_research_official_domains'" class="text-xs text-slate-500 mt-1">Mỗi dòng một thương hiệu: <code class="text-slate-300">NVIDIA=nvidia.com</code>. Chỉ URL thuộc domain này mới được lưu làm nguồn kiểm chứng.</p>
+                                    <p v-else-if="item.key === 'storefront_product_contact_footer_website_url' || item.key === 'storefront_product_contact_footer_maps_url'" class="text-xs text-slate-500 mt-1">Dùng URL HTTPS đầy đủ. Footer mặc định tắt và chỉ được thêm vào sản phẩm khi campaign bật lựa chọn này.</p>
 
                                     <!-- Boolean toggle -->
                                     <label v-else-if="item.type === 'boolean'" class="relative inline-flex items-center cursor-pointer mt-1">

@@ -24,7 +24,7 @@ async function cancel(id) { if (!confirm('Hủy lịch này?')) return; await wi
 <template>
 <AdminLayout title="Lịch viết AI">
     <div class="max-w-6xl space-y-6">
-        <div><h3 class="text-xl font-bold text-slate-200">AI viết bài & mô tả</h3><p class="mt-1 text-sm text-slate-400">Đặt lịch để hệ thống tự tạo bài tin tức hoặc cập nhật mô tả sản phẩm. Bài tự động luôn lưu nháp nếu không bật xuất bản.</p></div>
+        <div class="flex flex-wrap items-start justify-between gap-4"><div><h3 class="text-xl font-bold text-slate-200">AI viết bài & mô tả</h3><p class="mt-1 text-sm text-slate-400">Đặt lịch để hệ thống tự tạo bài tin tức hoặc cập nhật mô tả sản phẩm. Bài tự động luôn lưu nháp nếu không bật xuất bản.</p></div><a href="/admin/ai-product-campaigns" class="rounded-lg border border-cyan-500/50 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-500/10">Viết lại sản phẩm hàng loạt →</a></div>
         <div v-if="!configured" class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">Chưa cấu hình API key AI nội dung. Hãy nhập trong Cài đặt hoặc biến môi trường máy chủ.</div>
         <form @submit.prevent="save" class="grid gap-4 rounded-xl border border-slate-800 bg-slate-900 p-6 md:grid-cols-2">
             <label class="text-sm text-slate-300 md:col-span-2">Chủ đề / tên sản phẩm *<input v-model="form.topic" required class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2" /></label>

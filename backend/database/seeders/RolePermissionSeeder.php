@@ -86,6 +86,9 @@ class RolePermissionSeeder extends Seeder
             'ai-articles.view',
             'ai-articles.create',
             'ai-articles.delete',
+            'ai-product-content.view',
+            'ai-product-content.create',
+            'ai-product-content.apply',
 
             // Pages
             'pages.view',

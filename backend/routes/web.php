@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\Admin\AiGenerationController;
+use App\Http\Controllers\Admin\AiProductContentCampaignController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BannerController;
 use App\Http\Controllers\Admin\BrandController;
@@ -267,6 +268,22 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::post('ai-articles/{aiArticle}/run', [AiArticleController::class, 'run'])->name('ai-articles.run');
     Route::delete('ai-articles/{aiArticle}', [AiArticleController::class, 'destroy'])->name('ai-articles.destroy');
     Route::post('ai-articles/generate-single', [AiArticleController::class, 'generateSingle'])->name('ai-articles.generate-single');
+
+    Route::middleware('permission:ai-product-content.view')->group(function () {
+        Route::get('ai-product-campaigns', [AiProductContentCampaignController::class, 'index'])->name('ai-product-campaigns.index');
+        Route::get('ai-product-campaigns/products', [AiProductContentCampaignController::class, 'products'])->name('ai-product-campaigns.products');
+        Route::get('ai-product-campaigns/{campaign}', [AiProductContentCampaignController::class, 'show'])->name('ai-product-campaigns.show');
+    });
+    Route::middleware('permission:ai-product-content.create')->group(function () {
+        Route::post('ai-product-campaigns', [AiProductContentCampaignController::class, 'store'])->name('ai-product-campaigns.store');
+        Route::post('ai-product-campaigns/{campaign}/run', [AiProductContentCampaignController::class, 'run'])->name('ai-product-campaigns.run');
+        Route::post('ai-product-campaigns/{campaign}/cancel', [AiProductContentCampaignController::class, 'cancel'])->name('ai-product-campaigns.cancel');
+        Route::post('ai-product-campaign-items/{item}/retry', [AiProductContentCampaignController::class, 'retry'])->name('ai-product-campaign-items.retry');
+    });
+    Route::middleware('permission:ai-product-content.apply')->group(function () {
+        Route::post('ai-product-campaign-items/{item}/apply', [AiProductContentCampaignController::class, 'apply'])->name('ai-product-campaign-items.apply');
+        Route::post('ai-product-campaigns/{campaign}/apply', [AiProductContentCampaignController::class, 'applyMany'])->name('ai-product-campaigns.apply');
+    });
 
     // ─── User & Role Management (restricted to users with permission) ────
     Route::middleware('permission:users.view')->group(function () {
