@@ -12,7 +12,7 @@ class AiProductContentCampaign extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name', 'filters', 'mode', 'technical_heading', 'use_web_research', 'append_contact_footer',
+        'name', 'filters', 'mode', 'technical_heading', 'use_web_research', 'append_contact_footer', 'include_product_images',
         'max_items', 'status', 'total_items', 'pending_items', 'draft_items', 'applied_items',
         'failed_items', 'review_items', 'scheduled_at', 'started_at', 'completed_at', 'created_by',
     ];
@@ -21,6 +21,7 @@ class AiProductContentCampaign extends Model
         'filters' => 'array',
         'use_web_research' => 'boolean',
         'append_contact_footer' => 'boolean',
+        'include_product_images' => 'boolean',
         'scheduled_at' => 'datetime',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',

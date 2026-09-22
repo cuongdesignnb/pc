@@ -59,6 +59,7 @@ class AiProductContentCampaignController extends Controller
             'technical_heading' => ['required', Rule::in(['auto', 'configuration', 'specifications'])],
             'use_web_research' => 'boolean',
             'append_contact_footer' => 'boolean',
+            'include_product_images' => 'boolean',
             'scheduled_at' => 'required|date',
         ]);
         if (($data['append_contact_footer'] ?? false) && ! $this->footer->isConfigured()) {
@@ -66,7 +67,7 @@ class AiProductContentCampaignController extends Controller
         }
 
         $productIds = array_values(array_unique(array_map('intval', $data['selected_product_ids'])));
-        $products = Product::with(['category.parent', 'brand', 'specifications.specificationKey'])->whereIn('id', $productIds)->get()->keyBy('id');
+        $products = Product::with(['category.parent', 'brand', 'images', 'specifications.specificationKey'])->whereIn('id', $productIds)->get()->keyBy('id');
         if ($products->count() !== count($productIds)) {
             return response()->json(['message' => 'Một số sản phẩm không còn tồn tại. Hãy tải lại danh sách.'], 422);
         }
@@ -79,6 +80,7 @@ class AiProductContentCampaignController extends Controller
                 'technical_heading' => $data['technical_heading'],
                 'use_web_research' => (bool) ($data['use_web_research'] ?? false),
                 'append_contact_footer' => (bool) ($data['append_contact_footer'] ?? false),
+                'include_product_images' => (bool) ($data['include_product_images'] ?? true),
                 'max_items' => count($productIds),
                 'status' => 'pending',
                 'scheduled_at' => Carbon::parse($data['scheduled_at']),
@@ -87,7 +89,7 @@ class AiProductContentCampaignController extends Controller
             foreach ($productIds as $productId) {
                 $campaign->items()->create([
                     'product_id' => $productId,
-                    'source_snapshot' => $this->campaigns->snapshot($products->get($productId)),
+                    'source_snapshot' => $this->campaigns->snapshot($products->get($productId), (bool) $campaign->include_product_images),
                     'status' => 'pending',
                 ]);
             }
