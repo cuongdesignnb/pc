@@ -2,6 +2,7 @@
 
 namespace App\Services\Ai;
 
+use App\Http\Resources\ProductImageResource;
 use App\Jobs\Ai\ProcessAiProductContentCampaignItem;
 use App\Models\AiProductContentCampaign;
 use App\Models\AiProductContentCampaignItem;
@@ -49,7 +50,7 @@ class ProductContentCampaignService
         return $query->orderBy('name');
     }
 
-    public function snapshot(Product $product): array
+    public function snapshot(Product $product, bool $includeProductImages = false): array
     {
         $structured = $product->specifications->map(fn ($spec) => [
             'key' => $spec->specificationKey?->key,
@@ -58,7 +59,7 @@ class ProductContentCampaignService
             'unit' => $spec->specificationKey?->unit,
         ])->values()->all();
 
-        return [
+        $snapshot = [
             'description' => $product->description,
             'short_description' => $product->short_description,
             'meta_title' => $product->meta_title,
@@ -66,6 +67,44 @@ class ProductContentCampaignService
             'specifications_text' => $product->specifications_text,
             'structured_specifications' => $structured,
         ];
+
+        if ($includeProductImages) {
+            $snapshot['article_images'] = $this->articleImages($product);
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * Return only product images that are already safe for the public
+     * storefront. Provider/source URLs and unmirrored KIOT images are
+     * deliberately excluded by ProductImageResource::usable().
+     *
+     * @return array<int,array{id:int,url:string,alt:string,title:string,caption:string,position:int}>
+     */
+    public function articleImages(Product $product): array
+    {
+        $productName = trim((string) $product->name) ?: 'Sản phẩm';
+
+        return ProductImageResource::usable($product->images)
+            ->take(4)
+            ->values()
+            ->map(function ($image, int $index) use ($productName): array {
+                $alt = trim((string) $image->alt);
+                if ($alt === '') {
+                    $alt = $productName.' - hình ảnh sản phẩm '.($index + 1);
+                }
+
+                return [
+                    'id' => (int) $image->id,
+                    'url' => trim((string) $image->url),
+                    'alt' => Str::limit($alt, 180, ''),
+                    'title' => $productName,
+                    'caption' => 'Hình ảnh sản phẩm: '.$productName,
+                    'position' => $index + 1,
+                ];
+            })
+            ->all();
     }
 
     public function facts(Product $product): string
@@ -87,8 +126,9 @@ class ProductContentCampaignService
     public function generateItem(AiProductContentCampaignItem $item): array
     {
         $campaign = $item->campaign;
-        $product = $item->product()->with(['category.parent', 'brand', 'specifications.specificationKey'])->firstOrFail();
+        $product = $item->product()->with(['category.parent', 'brand', 'images', 'specifications.specificationKey'])->firstOrFail();
         $existingSpecs = $this->snapshot($product)['structured_specifications'];
+        $articleImages = $campaign->include_product_images ? $this->articleImages($product) : [];
         $research = [
             'requested' => false,
             'verified' => false,
@@ -120,6 +160,11 @@ class ProductContentCampaignService
         ], $campaign->created_by);
 
         $hasVerifiedFacts = $existingSpecs !== [] || $product->parsed_specifications !== [] || ($research['verified'] && $research['specifications'] !== []);
+        $warnings = array_values(array_unique(array_merge($result['warnings'] ?? [], $research['warnings'] ?? [])));
+        if ($campaign->include_product_images && $articleImages === []) {
+            $warnings[] = 'Sản phẩm chưa có ảnh public hợp lệ để chèn vào nội dung.';
+        }
+
         $payload = [
             'content' => $result['content'],
             'short_description' => Str::limit(strip_tags($result['short_description'] ?: $result['excerpt']), 500, ''),
@@ -128,6 +173,8 @@ class ProductContentCampaignService
             'content_heading' => $this->headings->contentHeading($hasVerifiedFacts),
             'technical_heading' => $this->headings->resolve($product, $campaign->technical_heading),
             'proposed_specifications' => $research['verified'] ? $research['specifications'] : [],
+            'include_product_images' => (bool) $campaign->include_product_images,
+            'article_images' => $articleImages,
             'research' => [
                 'requested' => (bool) ($research['requested'] ?? false),
                 'verified' => (bool) ($research['verified'] ?? false),
@@ -135,7 +182,7 @@ class ProductContentCampaignService
                 'source_count' => count($research['sources'] ?? []),
             ],
             'can_auto_apply' => ! $research['requested'] || $research['verified'],
-            'warnings' => array_values(array_unique(array_merge($result['warnings'] ?? [], $research['warnings'] ?? []))),
+            'warnings' => array_values(array_unique($warnings)),
         ];
 
         $item->update([
@@ -156,12 +203,20 @@ class ProductContentCampaignService
         $snapshotConflict = false;
         DB::transaction(function () use ($item, &$snapshotConflict) {
             $item = AiProductContentCampaignItem::query()->lockForUpdate()->with('campaign')->findOrFail($item->id);
-            $product = Product::query()->lockForUpdate()->with(['specifications.specificationKey'])->findOrFail($item->product_id);
+            $product = Product::query()->lockForUpdate()->with(['images', 'specifications.specificationKey'])->findOrFail($item->product_id);
             $payload = $item->generated_payload;
             if (! is_array($payload) || ! in_array($item->status, ['draft', 'needs_review'], true)) {
                 throw new \RuntimeException('Item chưa có bản nháp để áp dụng.');
             }
-            if ($this->canonicalSnapshot($this->snapshot($product)) !== $this->canonicalSnapshot($item->source_snapshot)) {
+            $currentSnapshot = $this->snapshot($product, (bool) $item->campaign->include_product_images);
+            $sourceSnapshot = $item->source_snapshot;
+            // Campaigns created before article image snapshots existed remain
+            // applicable; new campaigns always carry this key and therefore
+            // detect image/ALT changes before applying.
+            if (! array_key_exists('article_images', $sourceSnapshot)) {
+                unset($currentSnapshot['article_images']);
+            }
+            if ($this->canonicalSnapshot($currentSnapshot) !== $this->canonicalSnapshot($sourceSnapshot)) {
                 $snapshotConflict = true;
 
                 return;
@@ -181,6 +236,12 @@ class ProductContentCampaignService
             if ($item->campaign->append_contact_footer) {
                 $this->footer->ensure($product);
             }
+            if ($item->campaign->include_product_images && array_key_exists('article_images', $payload)) {
+                // Recompute from the locked product instead of trusting the
+                // stored preview payload, so an admin cannot apply an unsafe
+                // or unrelated URL by modifying campaign JSON.
+                $this->syncArticleImageBlocks($product, $this->articleImages($product));
+            }
 
             $item->update(['status' => 'applied', 'applied_at' => now(), 'error_message' => null]);
             $item->campaign->refreshProgress();
@@ -196,6 +257,37 @@ class ProductContentCampaignService
             $conflictItem->campaign->refreshProgress();
 
             throw new \RuntimeException($message);
+        }
+    }
+
+    /**
+     * Replace only image blocks previously managed by this campaign feature.
+     * Hand-authored image_text blocks remain untouched.
+     *
+     * @param  array<int,array{id:int,url:string,alt:string,title:string,caption:string,position:int}>  $images
+     */
+    private function syncArticleImageBlocks(Product $product, array $images): void
+    {
+        $product->detailBlocks()
+            ->where('type', 'image_text')
+            ->get()
+            ->filter(fn ($block): bool => ($block->payload['managed_by'] ?? null) === 'ai-product-content-campaign')
+            ->each(fn ($block) => $block->delete());
+
+        foreach (array_values($images) as $index => $image) {
+            $product->detailBlocks()->create([
+                'type' => 'image_text',
+                'title' => 'Hình ảnh sản phẩm',
+                'payload' => [
+                    'managed_by' => 'ai-product-content-campaign',
+                    'source_image_id' => $image['id'],
+                    'image_url' => $image['url'],
+                    'alt' => $image['alt'],
+                    'description' => $image['caption'],
+                ],
+                'sort_order' => 900 + $index,
+                'is_active' => true,
+            ]);
         }
     }
 

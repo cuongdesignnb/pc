@@ -41,6 +41,7 @@ class ProcessAiGenerationSchedule implements ShouldQueue
                     'technical_heading' => 'auto',
                     'use_web_research' => false,
                     'append_contact_footer' => false,
+                    'include_product_images' => true,
                     'max_items' => 1,
                     'status' => 'pending',
                     'scheduled_at' => now(),
@@ -48,7 +49,7 @@ class ProcessAiGenerationSchedule implements ShouldQueue
                 ]);
                 $campaign->items()->create([
                     'product_id' => $schedule->product_id,
-                    'source_snapshot' => $campaigns->snapshot($schedule->product()->with(['specifications.specificationKey'])->firstOrFail()),
+                    'source_snapshot' => $campaigns->snapshot($schedule->product()->with(['images', 'specifications.specificationKey'])->firstOrFail(), true),
                     'status' => 'pending',
                 ]);
                 $campaign->refreshProgress();

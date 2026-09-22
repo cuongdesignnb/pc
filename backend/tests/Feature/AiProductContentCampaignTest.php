@@ -6,6 +6,7 @@ use App\Models\AiProductContentCampaign;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Ai\ProductContentCampaignService;
@@ -42,6 +43,7 @@ class AiProductContentCampaignTest extends TestCase
         $campaign = AiProductContentCampaign::query()->with('items')->firstOrFail();
 
         $this->assertSame('draft', $campaign->mode);
+        $this->assertTrue($campaign->include_product_images);
         $this->assertSame('pending', $campaign->status);
         $this->assertSame($product->id, $campaign->items->first()->product_id);
         $this->assertSame('Mô tả cũ', $product->fresh()->description);
@@ -91,6 +93,83 @@ class AiProductContentCampaignTest extends TestCase
         $this->assertSame('123456', (string) $updated->price);
         $this->assertSame(7, $updated->stock_quantity);
         $this->assertSame('CPU: Core i5', $updated->specifications_text);
+        $this->assertSame('applied', $item->fresh()->status);
+    }
+
+    public function test_apply_persists_only_public_product_images_with_generated_alt_blocks(): void
+    {
+        $product = $this->product(['name' => 'Card màn hình test AI']);
+        ProductImage::create([
+            'product_id' => $product->id,
+            'provider' => 'local',
+            'url' => 'https://cdn.example.test/products/card.webp',
+            'alt_text' => null,
+            'sort_order' => 0,
+            'is_primary' => true,
+        ]);
+        ProductImage::create([
+            'product_id' => $product->id,
+            'provider' => 'local',
+            'url' => 'https://cdn.example.test/products/card.webp',
+            'alt_text' => 'Ảnh trùng không được lặp',
+            'sort_order' => 1,
+        ]);
+        ProductImage::create([
+            'product_id' => $product->id,
+            'provider' => 'local',
+            'url' => 'javascript:alert(1)',
+            'sort_order' => 2,
+        ]);
+        ProductImage::create([
+            'product_id' => $product->id,
+            'provider' => 'local',
+            'url' => '//unsafe.example.test/card.webp',
+            'sort_order' => 3,
+        ]);
+        ProductImage::create([
+            'product_id' => $product->id,
+            'provider' => 'kiot',
+            'url' => 'https://kiot.example.test/card.webp',
+            'storage_path' => null,
+            'sort_order' => 4,
+        ]);
+
+        $service = app(ProductContentCampaignService::class);
+        $product = $product->fresh()->load(['images', 'specifications.specificationKey']);
+        $campaign = AiProductContentCampaign::create([
+            'name' => 'Ảnh sản phẩm',
+            'mode' => 'draft',
+            'technical_heading' => 'specifications',
+            'include_product_images' => true,
+            'max_items' => 1,
+            'status' => 'pending',
+            'scheduled_at' => now(),
+        ]);
+        $articleImages = $service->articleImages($product);
+        $item = $campaign->items()->create([
+            'product_id' => $product->id,
+            'source_snapshot' => $service->snapshot($product, true),
+            'generated_payload' => [
+                'content' => '<p>Nội dung có ảnh sản phẩm.</p>',
+                'short_description' => 'Tóm tắt',
+                'meta_title' => 'Title',
+                'meta_description' => 'Meta',
+                'article_images' => $articleImages,
+            ],
+            'status' => 'draft',
+        ]);
+
+        $this->assertCount(1, $articleImages);
+        $this->assertSame('https://cdn.example.test/products/card.webp', $articleImages[0]['url']);
+        $this->assertSame('Card màn hình test AI - hình ảnh sản phẩm 1', $articleImages[0]['alt']);
+
+        $service->applyItem($item);
+        $blocks = $product->fresh()->detailBlocks()->where('type', 'image_text')->get();
+
+        $this->assertCount(1, $blocks);
+        $this->assertSame('ai-product-content-campaign', $blocks[0]->payload['managed_by']);
+        $this->assertSame('https://cdn.example.test/products/card.webp', $blocks[0]->payload['image_url']);
+        $this->assertSame('Card màn hình test AI - hình ảnh sản phẩm 1', $blocks[0]->payload['alt']);
         $this->assertSame('applied', $item->fresh()->status);
     }
 
