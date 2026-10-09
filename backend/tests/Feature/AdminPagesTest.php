@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Page;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -23,7 +24,7 @@ class AdminPagesTest extends TestCase
 
     public function test_empty_index_returns_an_array_without_a_pagination_wrapper(): void
     {
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertOk()
             ->assertJsonPath('component', 'Admin/Pages/Index')
             ->assertJsonPath('props.pages', []);
@@ -39,7 +40,7 @@ class AdminPagesTest extends TestCase
         ]));
         $published->forceFill(['created_at' => now()->subHour()])->save();
 
-        $response = $this->get('/admin/pages', ['X-Inertia' => 'true'])->assertOk();
+        $response = $this->get('/admin/pages', $this->inertiaHeaders())->assertOk();
         $pages = $response->json('props.pages');
 
         $this->assertIsArray($pages);
@@ -66,12 +67,12 @@ class AdminPagesTest extends TestCase
         $this->assertDatabaseHas('pages', $fixture);
         $saved = Page::sole();
 
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertOk()
             ->assertJsonPath('props.flash.success', 'Tạo trang thành công')
             ->assertJsonPath('props.pages.0.id', $saved->id);
 
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertOk()
             ->assertJsonPath('props.flash.success', null)
             ->assertJsonPath('props.pages.0.id', $saved->id)
@@ -98,7 +99,7 @@ class AdminPagesTest extends TestCase
         $fixture = $this->fixture();
         $this->post('/admin/pages', $fixture)->assertRedirect('/admin/pages');
         $original = Page::sole();
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertJsonPath('props.flash.success', 'Tạo trang thành công');
         $this->get('/admin/pages/create')->assertOk();
 
@@ -110,7 +111,7 @@ class AdminPagesTest extends TestCase
 
         $this->assertDatabaseCount('pages', 1);
         $this->assertDatabaseHas('pages', ['id' => $original->id] + $fixture);
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertJsonPath('props.flash.success', null)
             ->assertJsonPath('props.pages.0.id', $original->id);
     }
@@ -146,9 +147,9 @@ class AdminPagesTest extends TestCase
         $this->put('/admin/pages/'.$page->id, $updated)
             ->assertRedirect('/admin/pages')
             ->assertSessionHas('success', 'Cập nhật trang thành công');
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertJsonPath('props.flash.success', 'Cập nhật trang thành công');
-        $this->get('/admin/pages', ['X-Inertia' => 'true'])
+        $this->get('/admin/pages', $this->inertiaHeaders())
             ->assertOk()
             ->assertJsonPath('props.flash.success', null)
             ->assertJsonPath('props.pages.0.id', $page->id)
@@ -170,6 +171,16 @@ class AdminPagesTest extends TestCase
             'meta_title' => 'Tiêu đề SEO thử nghiệm',
             'meta_description' => 'Mô tả thử nghiệm.',
             'is_active' => false,
+        ];
+    }
+
+    private function inertiaHeaders(): array
+    {
+        $version = app(HandleInertiaRequests::class)->version(request());
+
+        return [
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => $version ?? '',
         ];
     }
 }
