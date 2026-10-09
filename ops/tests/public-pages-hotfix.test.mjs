@@ -41,3 +41,11 @@ test('success requires real SSR policy body/canonical, matching public release a
   assert.ok(source.includes('Storefront is serving a different release'))
   assert.ok(source.includes('HIDDEN_PAGE=404_VERIFIED'))
 })
+
+test('SSR acceptance compares the current API title, not a hardcoded casing or stale sample title', () => {
+  assert.ok(source.includes('echo base64_encode($data["page"]["title"])'))
+  assert.ok(source.includes('trim(base64_decode($argv[2]))'))
+  assert.ok(source.includes("' \"$EXPECTED_BODY\" \"$EXPECTED_TITLE\""))
+  assert.ok(source.includes('$title->length !== 1'))
+  assert.ok(!source.includes('!== "Chính sách giá"'))
+})

@@ -261,14 +261,15 @@ validate_ssr_page() {
         $dom = new DOMDocument(); $dom->loadHTML(stream_get_contents(STDIN));
         $xpath = new DOMXPath($dom);
         $h1 = $xpath->query("//h1");
+        $title = $xpath->query("//head/title");
         $canonical = $xpath->query("//link[@rel=\"canonical\"]/@href");
         $body = $xpath->query("//div[contains(concat(\" \",normalize-space(@class),\" \"),\" static-page-body \")]");
-        if ($h1->length !== 1 || trim($h1->item(0)->textContent) !== "Chính sách giá" || $body->length !== 1 || $canonical->length !== 1 || $canonical->item(0)->nodeValue !== "https://laptopplus.vn/chinh-sach-gia") exit(1);
+        if ($h1->length !== 1 || trim($h1->item(0)->textContent) !== trim(base64_decode($argv[2])) || $title->length !== 1 || trim($title->item(0)->textContent) === "" || $body->length !== 1 || $canonical->length !== 1 || $canonical->item(0)->nodeValue !== "https://laptopplus.vn/chinh-sach-gia") exit(1);
         $expected = new DOMDocument();
         $expected->loadHTML("<?xml encoding=\"UTF-8\"><div id=\"expected-body\">".base64_decode($argv[1])."</div>");
         $normalize = fn ($value) => preg_replace("/\\s+/u", " ", trim($value));
         if ($normalize($body->item(0)->textContent) !== $normalize($expected->getElementById("expected-body")->textContent)) exit(1);
-        echo "PUBLIC_PAGE_SSR=PASS slug=chinh-sach-gia body=matches_API\n";' "$EXPECTED_BODY" <"$1"
+        echo "PUBLIC_PAGE_SSR=PASS slug=chinh-sach-gia title=matches_API body=matches_API\n";' "$EXPECTED_BODY" "$EXPECTED_TITLE" <"$1"
 }
 
 step smoke-real-policy-and-release
@@ -280,6 +281,9 @@ validate_api_page "$CONTEXT/api-public.json" || fail 'Invalid public page data'
 EXPECTED_BODY="$(docker exec -i laptopplus-backend-php php -r '
     $data = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
     echo base64_encode($data["page"]["body"]);' <"$CONTEXT/api-public.json")"
+EXPECTED_TITLE="$(docker exec -i laptopplus-backend-php php -r '
+    $data = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+    echo base64_encode($data["page"]["title"]);' <"$CONTEXT/api-public.json")"
 for endpoint in 'http://127.0.0.1:8902' "$PUBLIC_ORIGIN"; do
     # Check the real URL, not just a cache-busting probe that hides stale 404s.
     http_check "$endpoint/chinh-sach-gia" "$CONTEXT/page.html" 200 || fail 'Published storefront policy failed'
