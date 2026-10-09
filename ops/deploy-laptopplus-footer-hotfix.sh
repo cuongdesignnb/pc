@@ -136,6 +136,7 @@ printf '%s\n' \
     "FROM laptopplus-backend:${BACKEND_BASE:0:12}" \
     'COPY --chmod=0644 backend/app/Http/Controllers/Api/MenuController.php /var/www/html/app/Http/Controllers/Api/MenuController.php' \
     'COPY --chmod=0644 backend/app/Services/Menus/FooterPolicyLinks.php /var/www/html/app/Services/Menus/FooterPolicyLinks.php' \
+    'RUN chmod 0755 app/Services/Menus' \
     'RUN php -l app/Http/Controllers/Api/MenuController.php && php -l app/Services/Menus/FooterPolicyLinks.php' \
     'RUN COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_DISABLE_NETWORK=1 composer dump-autoload --no-dev --classmap-authoritative --no-scripts --no-plugins --no-interaction' \
     'RUN php -r '\''require "vendor/autoload.php"; if (!class_exists("App\\Services\\Menus\\FooterPolicyLinks")) exit(1);'\''' \
@@ -146,6 +147,12 @@ docker build --network=none --pull=false --progress=plain --label "org.openconta
     --label "com.laptopplus.hotfix.base=$BACKEND_BASE" -f "$CONTEXT/php.Dockerfile" -t "laptopplus-backend:$NEW_TAG" "$CONTEXT"
 docker build --network=none --pull=false --progress=plain --label "org.opencontainers.image.revision=$BACKEND_SHA" \
     --label "com.laptopplus.hotfix.base=$BACKEND_BASE" -f "$CONTEXT/nginx.Dockerfile" -t "laptopplus-backend-nginx:$NEW_TAG" "$CONTEXT"
+# COPY --chmod applies to a newly created parent directory too. Root-only
+# build lint is insufficient: prove the new class is readable by actual FPM.
+docker run --rm --network none --user www-data --entrypoint php "laptopplus-backend:$NEW_TAG" -r '
+    require "vendor/autoload.php";
+    if (!class_exists("App\\Services\\Menus\\FooterPolicyLinks")) exit(1);
+    echo "BACKEND_RUNTIME_READABILITY=PASS user=www-data\n";' || fail 'New PHP image is not readable by the FPM worker'
 [[ "$(docker image inspect "laptopplus-backend:${BACKEND_BASE:0:12}" --format '{{.Id}}')" == "$PHP_BASE_ID" ]] || fail 'PHP base image changed'
 [[ "$(docker image inspect "laptopplus-backend-nginx:${BACKEND_BASE:0:12}" --format '{{.Id}}')" == "$NGINX_BASE_ID" ]] || fail 'Nginx base image changed'
 

@@ -17,10 +17,18 @@ test('only copies two PHP files and generates authoritative autoload offline wit
     assert.equal(copies.length, 2);
     assert.match(copies[0], /MenuController\.php/);
     assert.match(copies[1], /FooterPolicyLinks\.php/);
+    assert.match(script, /RUN chmod 0755 app\/Services\/Menus/);
     assert.match(script, /--network=none --pull=false/);
     assert.match(script, /COMPOSER_DISABLE_NETWORK=1 composer dump-autoload --no-dev --classmap-authoritative --no-scripts --no-plugins/);
     assert.match(script, /class_exists\("App\\\\Services\\\\Menus\\\\FooterPolicyLinks"\)/);
     assert.doesNotMatch(script, /composer install|npm (?:ci|run build)|artisan (?:migrate|db:seed|cache:clear|optimize:clear)/);
+});
+test('non-root FPM autoload smoke must pass before production tag switch', () => {
+    const probe = script.indexOf('docker run --rm --network none --user www-data');
+    assert.ok(probe >= 0);
+    assert.ok(probe < script.indexOf('step switch-backend-only'));
+    assert.match(script, /BACKEND_RUNTIME_READABILITY=PASS user=www-data/);
+    assert.match(script, /fail 'New PHP image is not readable by the FPM worker'/);
 });
 test('activation and rollback recreate backend services, never the frontend/database/cache', () => {
     const calls = script.split('\n').filter(line => line.includes('up -d'));
