@@ -19,16 +19,22 @@ if [[ "$DEPLOY_SCRIPT_URL" != "https://raw.githubusercontent.com/cuongdesignnb/p
     exit 1
 fi
 
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+[[ "$SCRIPT_PATH" == /* ]] || SCRIPT_PATH="$PWD/$SCRIPT_PATH"
+if [[ ! -f "$SCRIPT_PATH" ]]; then
+    echo "DEPLOY_ERROR=Run the deploy helper from its saved script file" >&2
+    exit 1
+fi
+
 if [[ "${DEPLOY_DETACH:-0}" == "1" && "${DEPLOY_DAEMONIZED:-0}" != "1" ]]; then
     deploy_log="${DEPLOY_LOG:-/tmp/laptopplus-admin-pages-deploy-$(date -u +%Y%m%d-%H%M%S).log}"
-    printf -v url_arg '%q' "$DEPLOY_SCRIPT_URL"
-    printf -v sha_arg '%q' "$TARGET_SHA"
-    child_command="set -o pipefail; curl --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 -fsSL ${url_arg} | DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 DEPLOY_SCRIPT_URL=${url_arg} bash -s -- ${sha_arg}"
 
     if command -v setsid >/dev/null 2>&1; then
-        setsid nohup bash -c "$child_command" >"$deploy_log" 2>&1 </dev/null &
+        DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 DEPLOY_SCRIPT_URL="$DEPLOY_SCRIPT_URL" \
+            setsid nohup bash "$SCRIPT_PATH" "$TARGET_SHA" >"$deploy_log" 2>&1 </dev/null &
     else
-        nohup bash -c "$child_command" >"$deploy_log" 2>&1 </dev/null &
+        DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 DEPLOY_SCRIPT_URL="$DEPLOY_SCRIPT_URL" \
+            nohup bash "$SCRIPT_PATH" "$TARGET_SHA" >"$deploy_log" 2>&1 </dev/null &
     fi
 
     echo "DEPLOY_PID=$!"
