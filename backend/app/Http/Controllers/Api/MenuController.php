@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Menu;
+use App\Services\Menus\FooterPolicyLinks;
 use App\Support\PublicAssetUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -46,6 +47,10 @@ class MenuController extends Controller
             ])
             ->get() ?? collect();
 
+        $footerItems = $location === 'footer'
+            ? app(FooterPolicyLinks::class)->appendTo($items->toArray())
+            : [];
+
         if ($items->isEmpty()) {
             return response()->json([
                 'menu' => [
@@ -53,10 +58,9 @@ class MenuController extends Controller
                     'name' => $menu?->name ?? 'Danh mục sản phẩm',
                     'slug' => $menu?->slug ?? 'synced-categories',
                 ],
-                // Only the header has a category fallback. A missing footer
-                // menu must stay empty instead of rendering product categories
-                // in the footer.
-                'items' => $location === 'header' ? $this->syncedCategoryItems() : [],
+                // Only the header falls back to categories. Footer policies
+                // come from published CMS records without creating menu rows.
+                'items' => $location === 'header' ? $this->syncedCategoryItems() : $footerItems,
             ]);
         }
 
@@ -66,7 +70,7 @@ class MenuController extends Controller
                 'name' => $menu->name,
                 'slug' => $menu->slug,
             ],
-            'items' => $items,
+            'items' => $location === 'footer' ? $footerItems : $items,
         ]);
     }
 
