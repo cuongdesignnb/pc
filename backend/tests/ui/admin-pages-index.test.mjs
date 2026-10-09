@@ -98,6 +98,17 @@ test('a hidden page still has a row labelled Ẩn', async () => {
     assert.equal(page.is_active, false);
 });
 
+test('published page slug opens the supplied storefront URL, not the admin domain', async () => {
+    const page = { ...fixture(3, true), public_url: 'https://storefront.example.test/trang-thu-3' };
+    const html = await render({ pages: [page] });
+    assert.match(html, /href="https:\/\/storefront\.example\.test\/trang-thu-3" target="_blank" rel="noopener noreferrer"/);
+});
+
+test('hidden page slug has no public link even if a URL is supplied', async () => {
+    const page = { ...fixture(4), public_url: 'https://storefront.example.test/trang-thu-4' };
+    assert.doesNotMatch(await render({ pages: [page] }), /href="https:\/\/storefront\.example\.test/);
+});
+
 test('all rows and their supplied order survive a multi-page array', async () => {
     const pages = Array.from({ length: 30 }, (_, index) => fixture(100 - index, index % 2 === 0));
     const html = await render({ pages });

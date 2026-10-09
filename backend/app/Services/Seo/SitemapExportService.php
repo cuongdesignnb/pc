@@ -3,6 +3,7 @@
 namespace App\Services\Seo;
 
 use App\Models\Category;
+use App\Models\Page;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Product;
@@ -80,8 +81,20 @@ class SitemapExportService
     private function staticEntries(): array
     {
         return collect((array) config('seo.static_paths', []))
-            ->filter(fn (mixed $path): bool => $this->policy->isIndexablePath((string) $path))
             ->map(fn (mixed $path): array => ['path' => (string) $path, 'lastmod' => null])
+            ->merge(Page::query()->active()
+                ->whereNotIn('slug', Category::query()->select('slug'))
+                ->orderBy('id')->get(['slug', 'updated_at'])
+                ->map(function (Page $page): ?array {
+                    $path = $this->urls->pagePathForSlug((string) $page->slug);
+
+                    return $path === null || app(VietnameseSlugNormalizer::class)->isReserved((string) $page->slug)
+                        || app(SlugRedirectService::class)->categoryBySlug((string) $page->slug) !== null
+                        ? null
+                        : ['path' => $path, 'lastmod' => $page->updated_at];
+                }))
+            ->filter(fn (?array $entry): bool => $entry !== null && $this->policy->isIndexablePath($entry['path']))
+            ->unique('path')
             ->values()
             ->all();
     }
