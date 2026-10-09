@@ -98,6 +98,12 @@ class SlugRedirectService
         return $this->categoryFromHistory(SlugHistory::forAlias('category', $slug)->latest('id')->first());
     }
 
+    public function pageBySlug(string $slug): ?Page
+    {
+        return Page::query()->where('slug', $slug)->first()
+            ?? $this->pageFromHistory(SlugHistory::forAlias('page', $slug)->latest('id')->first());
+    }
+
     public function postBySlug(string $slug): ?Post
     {
         $post = Post::query()->where('slug', $slug)->first();
@@ -389,6 +395,13 @@ class SlugRedirectService
     {
         return $history?->target_entity_id
             ? Category::query()->find($history->target_entity_id)
+            : null;
+    }
+
+    private function pageFromHistory(?SlugHistory $history): ?Page
+    {
+        return $history?->target_entity_id
+            ? Page::query()->find($history->target_entity_id)
             : null;
     }
 
