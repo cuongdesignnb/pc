@@ -40,9 +40,11 @@ class AiConfigurationResolver
     {
         $resolved = [];
         foreach ($values as $key => [$settingKey, $fallback]) {
-            $setting = Setting::query()->where('key', $settingKey)->value('value');
-            $resolved[$key] = is_string($setting) && trim($setting) !== ''
-                ? trim($setting)
+            // Setting::get() decrypts secrets (*_api_key / password); reading the
+            // raw column would send the encrypted payload as the API key.
+            $setting = Setting::get($settingKey);
+            $resolved[$key] = (is_string($setting) || is_int($setting) || is_float($setting)) && trim((string) $setting) !== ''
+                ? trim((string) $setting)
                 : $fallback;
         }
 
