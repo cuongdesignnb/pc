@@ -1,0 +1,1601 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+# Application source, Composer dependencies and Nuxt output must be readable by
+# the unprivileged PHP-FPM/PM2 runtime users. Sensitive deploy artifacts are
+# protected separately by their 0700 backup directory and explicit 0600 modes.
+umask 022
+
+# One-command, data-preserving deployment for every aaPanel site that serves
+# this Laravel backend through PHP-FPM and the pcfrontend Nuxt storefront
+# through PM2.
+#
+# Runtime layout of one site on the aaPanel host (all paths come from config):
+#   backend  BACKEND_DIR   (Laravel + PHP-FPM, e.g. /www/wwwroot/admin.example.vn)
+#   frontend FRONTEND_DIR  (Nuxt output + PM2 app PM2_APP on FRONTEND_PORT)
+#   sources  SOURCE_ROOT   (dedicated Git mirrors, default /www/deploy/<site>-source)
+#
+# Every site has exactly one config file named <site>.env with non-secret
+# runtime facts only (directories, domains, PM2 app, port). Lookup order:
+#   1. $SITES_DIR/<site>.env              (default /www/deploy/sites, on the server)
+#   2. ops/sites/<site>.env in this repo  (fetched from $SITE_CONFIG_BASE_URL)
+# Variables already set in the calling environment win over the config file,
+# so one-off overrides such as RUN_MIGRATIONS=0 keep working.
+#
+# The script deliberately deploys immutable commits from the two Git
+# repositories. It never replaces either .env file, never deletes storage or
+# public upload directories, and creates a database/code/admin-assets/output
+# backup before the first production mutation.
+#
+# Default invocation (one site):
+#   curl -fsSL https://raw.githubusercontent.com/cuongdesignnb/pc/main/ops/deploy-aapanel.sh | DEPLOY_DETACH=1 bash -s -- <site>
+# Every configured site in $SITES_DIR, one after another, stopping at the
+# first failure:
+#   ... | DEPLOY_DETACH=1 bash -s -- all
+# Show configured sites:
+#   ... | bash -s -- list
+# Add DEPLOY_FOLLOW=1 to stream the detached job until it exits; the job keeps
+# running if the terminal follower is interrupted or disconnected.
+#
+# Optional pinned commits:
+#   ... | DEPLOY_DETACH=1 bash -s -- <site> BACKEND_SHA FRONTEND_SHA
+#
+# Migration is enabled by default after the database backup. Seeders are not
+# run by default. Use RUN_MIGRATIONS=0 for a code-only deploy, or explicitly
+# set RUN_SEEDERS=1 and SEEDERS="SeederA SeederB" when a reviewed data change
+# is required.
+
+SITE="${1:-}"
+requested_backend_sha="${2:-}"
+requested_frontend_sha="${3:-}"
+DEPLOY_SCRIPT_URL="${DEPLOY_SCRIPT_URL:-https://raw.githubusercontent.com/cuongdesignnb/pc/main/ops/deploy-aapanel.sh}"
+SITES_DIR="${SITES_DIR:-/www/deploy/sites}"
+SITE_CONFIG_BASE_URL="${SITE_CONFIG_BASE_URL:-${DEPLOY_SCRIPT_URL%/*}/sites}"
+
+# Keys a site config may set. Anything else is rejected so a typo cannot
+# silently fall back to a default that belongs to another site.
+SITE_CONFIG_KEYS=(
+    SITE_LABEL BACKEND_DIR FRONTEND_DIR PM2_APP API_ORIGIN PUBLIC_ORIGIN
+    FRONTEND_PORT FRONTEND_HOST FRONTEND_LOCAL_ORIGIN FRONTEND_HEALTH_PATH
+    PUBLIC_RELEASE_PATH SOURCE_ROOT BACKEND_SOURCE_URL FRONTEND_SOURCE_URL
+    BACKEND_SOURCE_REPO FRONTEND_SOURCE_REPO BACKUP_ROOT DEPLOY_LOCK DEPLOY_LOG
+    PHP_BIN COMPOSER_BIN NODE_BIN NPM_BIN PM2_BIN RSYNC_BIN MYSQLDUMP_BIN
+    RUN_MIGRATIONS RUN_SEEDERS SEEDERS SKIP_PUBLIC_CHECK QUEUE_RESTART
+    PHP_FPM_RELOAD_COMMAND PHP_FPM_USER PHP_FPM_GROUP API_LOCAL_IP
+    PUBLIC_LOCAL_IP FRONTEND_READY_ATTEMPTS FRONTEND_PUBLIC_ATTEMPTS
+    FRONTEND_READY_DELAY
+)
+SITE_REQUIRED_KEYS=(BACKEND_DIR FRONTEND_DIR PM2_APP API_ORIGIN PUBLIC_ORIGIN FRONTEND_PORT)
+
+# When the script is piped from curl, bash reads the script itself from
+# stdin; when it runs from a file, stdin belongs to the operator.
+SELF_FILE=
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    SELF_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+fi
+
+# Consume the remaining curl stream before returning. This prevents the
+# upstream curl from failing with exit 23 after an early exit.
+drain_script_stdin() {
+    [ -n "$SELF_FILE" ] || while IFS= read -r; do :; done
+}
+
+config_fail() {
+    echo "DEPLOY_ERROR=$*" >&2
+    drain_script_stdin
+    exit 1
+}
+
+usage() {
+    cat >&2 <<'EOF'
+Usage: deploy-aapanel.sh <site|all|list> [BACKEND_SHA FRONTEND_SHA]
+  <site>  deploy the site described by <site>.env
+  all     deploy every $SITES_DIR/*.env one after another
+  list    show the configured sites
+EOF
+}
+
+site_config_value() {
+    local file="$1"
+    local key="$2"
+
+    tr -d '\r' < "$file" \
+        | sed -n -E "s/^${key}=[\"']?([^\"']*)[\"']?[[:space:]]*$/\1/p" \
+        | tail -n 1
+}
+
+list_site_names() {
+    local file
+
+    [ -d "$SITES_DIR" ] || return 0
+    for file in "$SITES_DIR"/*.env; do
+        [ -f "$file" ] || continue
+        file="${file##*/}"
+        printf '%s\n' "${file%.env}"
+    done
+}
+
+# Resolve <site>.env to a local file path, downloading the repository copy
+# when the server has no local override.
+resolve_site_config() {
+    local site="$1"
+    local local_file="$SITES_DIR/$site.env"
+    local fetched
+
+    if [ -f "$local_file" ]; then
+        printf '%s' "$local_file"
+        return 0
+    fi
+
+    fetched="$(mktemp "/tmp/${site}-site-config-XXXXXX")"
+    if curl --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 60 -fsSL \
+        "$SITE_CONFIG_BASE_URL/$site.env" -o "$fetched" 2>/dev/null; then
+        printf '%s' "$fetched"
+        return 0
+    fi
+    rm -f -- "$fetched"
+    return 1
+}
+
+load_site_config() {
+    local file="$1"
+    local line key value lineno=0
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        lineno=$((lineno + 1))
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+        [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] \
+            || config_fail "Invalid line $lineno in $file (expected KEY=VALUE)"
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        [[ " ${SITE_CONFIG_KEYS[*]} " == *" $key "* ]] \
+            || config_fail "Unknown key $key on line $lineno in $file"
+        if [ -z "${!key+x}" ]; then
+            printf -v "$key" '%s' "$value"
+        fi
+    done < "$file"
+}
+
+origin_host() {
+    local authority="${1#*://}"
+    authority="${authority%%/*}"
+    printf '%s' "${authority%%:*}"
+}
+
+case "$SITE" in
+    "")
+        usage
+        config_fail "Missing site name"
+        ;;
+    list)
+        drain_script_stdin
+        echo "SITES_DIR=$SITES_DIR"
+        while IFS= read -r name; do
+            file="$SITES_DIR/$name.env"
+            printf 'SITE=%s PUBLIC_ORIGIN=%s API_ORIGIN=%s PM2_APP=%s FRONTEND_PORT=%s\n' \
+                "$name" \
+                "$(site_config_value "$file" PUBLIC_ORIGIN)" \
+                "$(site_config_value "$file" API_ORIGIN)" \
+                "$(site_config_value "$file" PM2_APP)" \
+                "$(site_config_value "$file" FRONTEND_PORT)"
+        done < <(list_site_names)
+        exit 0
+        ;;
+    all)
+        [ -n "$(list_site_names)" ] \
+            || config_fail "No site configs found in $SITES_DIR"
+        ;;
+    *)
+        [[ "$SITE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] \
+            || config_fail "Site name must match [a-z0-9][a-z0-9._-]*: $SITE"
+        SITE_CONFIG_FILE="$(resolve_site_config "$SITE")" \
+            || config_fail "No config for site $SITE in $SITES_DIR or $SITE_CONFIG_BASE_URL"
+        ;;
+esac
+
+# aaPanel's browser terminal can lose its websocket while a build is running.
+# Keep the one-command workflow, but let the actual run continue in a new
+# session and write progress to a durable log.
+if [[ "${DEPLOY_DETACH:-0}" == "1" && "${DEPLOY_DAEMONIZED:-0}" != "1" ]]; then
+    deploy_log="${DEPLOY_LOG:-/tmp/${SITE}-production-deploy-$(date -u +%Y%m%d-%H%M%S).log}"
+    printf -v site_arg '%q' "$SITE"
+    printf -v backend_sha_arg '%q' "$requested_backend_sha"
+    printf -v frontend_sha_arg '%q' "$requested_frontend_sha"
+    if [ -n "$SELF_FILE" ]; then
+        printf -v self_arg '%q' "$SELF_FILE"
+        child_command="DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 bash ${self_arg} ${site_arg} ${backend_sha_arg} ${frontend_sha_arg}"
+    else
+        printf -v url_arg '%q' "$DEPLOY_SCRIPT_URL"
+        child_command="curl --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 -fsSL ${url_arg} | DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 bash -s -- ${site_arg} ${backend_sha_arg} ${frontend_sha_arg}"
+    fi
+
+    if command -v setsid >/dev/null 2>&1; then
+        setsid nohup bash -lc "$child_command" >"$deploy_log" 2>&1 < /dev/null &
+    else
+        nohup bash -lc "$child_command" >"$deploy_log" 2>&1 < /dev/null &
+    fi
+
+    deploy_pid=$!
+    echo "SITE=$SITE"
+    echo "DEPLOY_PID=$deploy_pid"
+    echo "DEPLOY_LOG=$deploy_log"
+    drain_script_stdin
+
+    # Optional live output keeps the aaPanel terminal informative while the
+    # detached process remains independent. Closing the terminal or pressing
+    # Ctrl+C stops only this follower; the deploy itself keeps running.
+    if [[ "${DEPLOY_FOLLOW:-0}" == "1" ]]; then
+        tail --pid="$deploy_pid" -n +1 -F "$deploy_log" || true
+        deploy_exit=0
+        wait "$deploy_pid" || deploy_exit=$?
+        echo "DEPLOY_PROCESS_EXIT=$deploy_exit"
+        exit "$deploy_exit"
+    fi
+    exit 0
+fi
+
+# Deploy every configured site sequentially from one immutable copy of this
+# script. Each site runs in its own process with its own lock, backup and
+# rollback; the first failure stops the remaining sites so one bad release
+# cannot spread to every domain.
+if [ "$SITE" = "all" ]; then
+    drain_script_stdin
+    all_script="$SELF_FILE"
+    if [ -z "$all_script" ]; then
+        all_script="$(mktemp /tmp/deploy-aapanel-XXXXXX.sh)"
+        trap 'rm -f -- "$all_script"' EXIT
+        curl --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 -fsSL \
+            "$DEPLOY_SCRIPT_URL" -o "$all_script" \
+            || config_fail "Could not download $DEPLOY_SCRIPT_URL"
+    fi
+
+    mapfile -t all_sites < <(list_site_names)
+    deployed=()
+    failed_site=
+    for name in "${all_sites[@]}"; do
+        printf '\n===== SITE_DEPLOY_BEGIN=%s =====\n' "$name"
+        if DEPLOY_DAEMONIZED=1 DEPLOY_DETACH=0 bash "$all_script" \
+            "$name" "$requested_backend_sha" "$requested_frontend_sha" < /dev/null; then
+            deployed+=("$name")
+            printf '===== SITE_DEPLOY_END=%s STATUS=SUCCESS =====\n' "$name"
+        else
+            failed_site="$name"
+            printf '===== SITE_DEPLOY_END=%s STATUS=FAILED =====\n' "$name"
+            break
+        fi
+    done
+
+    echo "SITES_DEPLOYED=${deployed[*]:-none}"
+    if [ -n "$failed_site" ]; then
+        echo "SITE_FAILED=$failed_site"
+        echo "ALL_SITES_STATUS=FAILED"
+        exit 1
+    fi
+    echo "ALL_SITES_STATUS=SUCCESS"
+    exit 0
+fi
+
+load_site_config "$SITE_CONFIG_FILE"
+case "$SITE_CONFIG_FILE" in
+    "$SITES_DIR"/*) ;;
+    *) rm -f -- "$SITE_CONFIG_FILE"; SITE_CONFIG_FILE="$SITE_CONFIG_BASE_URL/$SITE.env" ;;
+esac
+for key in "${SITE_REQUIRED_KEYS[@]}"; do
+    test -n "${!key:-}" || config_fail "Site $SITE config is missing $key"
+done
+
+SITE_LABEL="${SITE_LABEL:-$SITE}"
+PUBLIC_HOST="$(origin_host "$PUBLIC_ORIGIN")"
+SOURCE_ROOT="${SOURCE_ROOT:-/www/deploy/${SITE}-source}"
+BACKEND_SOURCE_URL="${BACKEND_SOURCE_URL:-https://github.com/cuongdesignnb/pc.git}"
+FRONTEND_SOURCE_URL="${FRONTEND_SOURCE_URL:-https://github.com/cuongdesignnb/pcfrontend.git}"
+BACKEND_SOURCE_REPO="${BACKEND_SOURCE_REPO:-$SOURCE_ROOT/pc}"
+FRONTEND_SOURCE_REPO="${FRONTEND_SOURCE_REPO:-$SOURCE_ROOT/pcfrontend}"
+PUBLIC_RELEASE_PATH="${PUBLIC_RELEASE_PATH:-/release.json}"
+FRONTEND_HEALTH_PATH="${FRONTEND_HEALTH_PATH:-/}"
+FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
+FRONTEND_LOCAL_ORIGIN="${FRONTEND_LOCAL_ORIGIN:-http://127.0.0.1:${FRONTEND_PORT}}"
+FRONTEND_READY_ATTEMPTS="${FRONTEND_READY_ATTEMPTS:-60}"
+FRONTEND_PUBLIC_ATTEMPTS="${FRONTEND_PUBLIC_ATTEMPTS:-30}"
+FRONTEND_READY_DELAY="${FRONTEND_READY_DELAY:-2}"
+BACKUP_ROOT="${BACKUP_ROOT:-/www/backups/${PUBLIC_HOST}}"
+DEPLOY_LOCK="${DEPLOY_LOCK:-/tmp/${SITE}-production-deploy.lock}"
+PHP_BIN="${PHP_BIN:-/www/server/php/83/bin/php}"
+COMPOSER_BIN="${COMPOSER_BIN:-composer}"
+NODE_BIN="${NODE_BIN:-/www/server/nodejs/v22.12.0/bin/node}"
+NPM_BIN="${NPM_BIN:-/www/server/nodejs/v22.12.0/bin/npm}"
+PM2_BIN="${PM2_BIN:-pm2}"
+RSYNC_BIN="${RSYNC_BIN:-rsync}"
+MYSQLDUMP_BIN="${MYSQLDUMP_BIN:-mysqldump}"
+RUN_MIGRATIONS="${RUN_MIGRATIONS:-1}"
+RUN_SEEDERS="${RUN_SEEDERS:-0}"
+SEEDERS="${SEEDERS:-}"
+SKIP_PUBLIC_CHECK="${SKIP_PUBLIC_CHECK:-0}"
+QUEUE_RESTART="${QUEUE_RESTART:-1}"
+PHP_FPM_RELOAD_COMMAND="${PHP_FPM_RELOAD_COMMAND:-}"
+PHP_FPM_USER="${PHP_FPM_USER:-}"
+PHP_FPM_GROUP="${PHP_FPM_GROUP:-}"
+API_LOCAL_IP="${API_LOCAL_IP:-127.0.0.1}"
+PUBLIC_LOCAL_IP="${PUBLIC_LOCAL_IP:-127.0.0.1}"
+
+# aaPanel names PHP-FPM services after the version directory, e.g. 83 for
+# /www/server/php/83/bin/php.
+PHP_RUNTIME_DIR="${PHP_BIN%/bin/php}"
+PHP_DIR_VERSION="${PHP_RUNTIME_DIR##*/}"
+
+echo "SITE=$SITE"
+echo "SITE_LABEL=$SITE_LABEL"
+echo "SITE_CONFIG=$SITE_CONFIG_FILE"
+API_ORIGIN="${API_ORIGIN%/}"
+PUBLIC_ORIGIN="${PUBLIC_ORIGIN%/}"
+FRONTEND_LOCAL_ORIGIN="${FRONTEND_LOCAL_ORIGIN%/}"
+PUBLIC_RELEASE_PATH="/${PUBLIC_RELEASE_PATH#/}"
+FRONTEND_HEALTH_PATH="/${FRONTEND_HEALTH_PATH#/}"
+
+# Resolve the API vhost directly to this server for origin health checks. This
+# prevents a CDN, public DNS record, or stale proxy cache from hiding the state
+# of the code that was just activated by PHP-FPM.
+api_scheme="${API_ORIGIN%%://*}"
+api_authority="${API_ORIGIN#*://}"
+api_authority="${api_authority%%/*}"
+api_host="${api_authority%%:*}"
+if [[ "$api_authority" == *:* ]]; then
+    api_port="${api_authority##*:}"
+elif [ "$api_scheme" = "https" ]; then
+    api_port=443
+else
+    api_port=80
+fi
+API_LOCAL_RESOLVE="${API_LOCAL_RESOLVE:-${api_host}:${api_port}:${API_LOCAL_IP}}"
+
+# Probe the public frontend vhost through loopback after PM2 is ready. This
+# separates application startup from public DNS/network reachability and
+# catches the exact Nginx/PM2 integration used by real requests.
+public_scheme="${PUBLIC_ORIGIN%%://*}"
+public_authority="${PUBLIC_ORIGIN#*://}"
+public_authority="${public_authority%%/*}"
+public_host="${public_authority%%:*}"
+if [[ "$public_authority" == *:* ]]; then
+    public_port="${public_authority##*:}"
+elif [ "$public_scheme" = "https" ]; then
+    public_port=443
+else
+    public_port=80
+fi
+PUBLIC_LOCAL_RESOLVE="${PUBLIC_LOCAL_RESOLVE:-${public_host}:${public_port}:${PUBLIC_LOCAL_IP}}"
+
+# npm and PM2 entrypoints on aaPanel commonly use /usr/bin/env node. Put the
+# selected Node runtime first so an unrelated system Node cannot be chosen.
+NODE_BIN_DIR="${NODE_BIN%/*}"
+export PATH="$NODE_BIN_DIR:$PATH"
+
+CURRENT_STEP=initialization
+ERROR_REPORTED=0
+DEPLOY_SUCCEEDED=0
+ROLLBACK_DONE=0
+BACKEND_SYNC_STARTED=0
+FRONTEND_OUTPUT_SWAPPED=0
+FRONTEND_OUTPUT_OLD_MOVED=0
+MIGRATION_STATUS=NOT_RUN
+DATABASE_CHANGED=NO
+BACKEND_STAGE_DIR=
+FRONTEND_STAGE_DIR=
+BACKUP_DIR=
+BACKEND_BEFORE_DIR=
+ADMIN_ASSET_BACKUP=
+ADMIN_ASSET_MANIFEST_SHA256=
+FRONTEND_OUTPUT_BACKUP=
+FRONTEND_OUTPUT_FAILED=
+MYSQL_CNF=
+LOCK_FD=9
+
+BACKEND_EXCLUDES=(
+    --exclude=.env
+    --exclude='.env.*'
+    --exclude=.git/
+    --exclude=storage/
+    --exclude=public/storage
+    --exclude=.htaccess
+    --exclude=.user.ini
+    --exclude=.well-known/
+    --exclude=public/.well-known/
+    --exclude=node_modules/
+    --exclude=bootstrap/cache/
+)
+
+# The old admin bundle is included in BACKEND_BEFORE_DIR for rollback, but is
+# activated separately from the PHP source. This prevents rsync from exposing
+# a partially copied Vite build while deployment is still in progress.
+BACKEND_SYNC_EXCLUDES=(
+    "${BACKEND_EXCLUDES[@]}"
+    --exclude=public/build/
+)
+
+fail() {
+    ERROR_REPORTED=1
+    echo "DEPLOY_ERROR=$*" >&2
+    exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
+}
+
+# Many domains share one aaPanel host. Refuse to deploy a site whose port,
+# PM2 app or directories collide with another configured site, because the
+# swap and PM2 reload would then hit the other domain.
+assert_site_isolated() {
+    local name file key value
+
+    while IFS= read -r name; do
+        [ "$name" != "$SITE" ] || continue
+        file="$SITES_DIR/$name.env"
+        for key in FRONTEND_PORT PM2_APP BACKEND_DIR FRONTEND_DIR; do
+            value="$(site_config_value "$file" "$key")"
+            if [ -n "$value" ] && [ "${value%/}" = "${!key%/}" ]; then
+                fail "Site $SITE shares $key=$value with site $name"
+            fi
+        done
+    done < <(list_site_names)
+    echo "SITE_ISOLATION=PASS"
+}
+
+require_executable() {
+    test -x "$1" || fail "Missing executable: $1"
+}
+
+require_file() {
+    test -f "$1" || fail "Required file not found: $1"
+}
+
+require_directory() {
+    test -d "$1" || fail "Required directory not found: $1"
+}
+
+validate_locations_file() {
+    local label="$1"
+    local file="$2"
+
+    "$PHP_BIN" -r '
+        $label = $argv[1];
+        $file = $argv[2];
+        $raw = file_get_contents($file);
+        if ($raw === false) {
+            fwrite(STDERR, "LOCATION_FILE=FAIL label={$label} reason=unreadable\n");
+            exit(1);
+        }
+
+        $data = json_decode(ltrim($raw, "\xEF\xBB\xBF"), true);
+        $provinces = is_array($data) ? ($data["provinces"] ?? $data) : [];
+        $provinces = is_array($provinces) ? array_values($provinces) : [];
+        $first = $provinces[0] ?? null;
+        $code = is_array($first) ? trim((string) ($first["code"] ?? "")) : "";
+        $wards = is_array($first) && is_array($first["wards"] ?? null)
+            ? array_values($first["wards"])
+            : [];
+
+        if (json_last_error() !== JSON_ERROR_NONE || $code === "" || $wards === []) {
+            fwrite(STDERR, sprintf(
+                "LOCATION_FILE=FAIL label=%s bytes=%d json_error=%s provinces=%d first_code=%s first_wards=%d\n",
+                $label,
+                strlen($raw),
+                json_last_error_msg(),
+                count($provinces),
+                $code === "" ? "missing" : $code,
+                count($wards)
+            ));
+            exit(1);
+        }
+
+        printf(
+            "LOCATION_FILE=OK label=%s bytes=%d sha256=%s provinces=%d first_code=%s first_wards=%d\n",
+            $label,
+            strlen($raw),
+            hash("sha256", $raw),
+            count($provinces),
+            $code,
+            count($wards)
+        );
+    ' "$label" "$file"
+}
+
+ensure_backend_runtime_readability() {
+    local -a readable_directories=()
+    local path
+
+    for path in app bootstrap config database resources routes vendor; do
+        if [ -d "$BACKEND_DIR/$path" ]; then
+            readable_directories+=("$BACKEND_DIR/$path")
+        fi
+    done
+
+    if [ "${#readable_directories[@]}" -gt 0 ]; then
+        chmod -R a+rX "${readable_directories[@]}"
+    fi
+    for path in artisan composer.json composer.lock locations.json public/index.php; do
+        if [ -f "$BACKEND_DIR/$path" ]; then
+            chmod a+r "$BACKEND_DIR/$path"
+        fi
+    done
+
+    (
+        cd "$BACKEND_DIR"
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" -r '
+            $root = getcwd();
+            $required = [
+                "vendor/composer/platform_check.php",
+                "vendor/autoload.php",
+                "bootstrap/app.php",
+                "locations.json",
+            ];
+            foreach ($required as $relative) {
+                if (! is_readable($root . DIRECTORY_SEPARATOR . $relative)) {
+                    fwrite(STDERR, "BACKEND_RUNTIME_READABILITY=FAIL file={$relative}\n");
+                    exit(1);
+                }
+            }
+            require "vendor/autoload.php";
+            echo "BACKEND_RUNTIME_AUTOLOAD=OK\n";
+        '
+    )
+    printf 'BACKEND_RUNTIME_READABILITY=OK user=%s\n' "$PHP_FPM_USER"
+}
+
+ensure_laravel_runtime_permissions() {
+    local -a runtime_directories=(
+        "$BACKEND_DIR/storage/framework/cache"
+        "$BACKEND_DIR/storage/framework/sessions"
+        "$BACKEND_DIR/storage/framework/views"
+        "$BACKEND_DIR/storage/logs"
+        "$BACKEND_DIR/bootstrap/cache"
+    )
+    local directory
+
+    for directory in "${runtime_directories[@]}"; do
+        test -d "$directory" \
+            || fail "Required Laravel runtime directory is missing: $directory"
+        chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$directory"
+        find "$directory" -type d -exec chmod 2770 {} +
+        find "$directory" -type f -exec chmod 0660 {} +
+        runuser -u "$PHP_FPM_USER" -- test -r "$directory"
+        runuser -u "$PHP_FPM_USER" -- test -w "$directory"
+        runuser -u "$PHP_FPM_USER" -- test -x "$directory"
+    done
+
+    printf 'LARAVEL_RUNTIME_PERMISSIONS=OK owner=%s group=%s\n' \
+        "$PHP_FPM_USER" "$PHP_FPM_GROUP"
+}
+
+fetch_main_with_retry() {
+    local repository="$1"
+    local attempt
+
+    for attempt in 1 2 3 4 5; do
+        if git -C "$repository" \
+            -c http.connectTimeout=20 \
+            -c http.lowSpeedLimit=1000 \
+            -c http.lowSpeedTime=30 \
+            fetch --no-tags --prune origin main; then
+            return 0
+        fi
+
+        if [ "$attempt" -lt 5 ]; then
+            echo "FETCH_RETRY=$attempt/5 repository=$repository" >&2
+            sleep 5
+        fi
+    done
+
+    return 1
+}
+
+prepare_source_repository() {
+    local repository="$1"
+    local remote_url="$2"
+
+    if [ ! -e "$repository/.git" ]; then
+        [ ! -e "$repository" ] \
+            || fail "Source path exists but is not a Git repository: $repository"
+        mkdir -p "$SOURCE_ROOT"
+        step "Cloning dedicated source repository $remote_url"
+        git clone --no-tags --branch main "$remote_url" "$repository" \
+            || fail "Could not clone source repository: $remote_url"
+    fi
+}
+
+step() {
+    printf '\n[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+find_php_fpm_master_pid() {
+    local runtime_root config_file pid
+
+    runtime_root="${PHP_BIN%/bin/php}"
+    config_file="$runtime_root/etc/php-fpm.conf"
+    pid="$(ps -eo pid=,args= | awk -v config="$config_file" '
+        index($0, "php-fpm: master process (" config ")") { print $1; exit }
+    ')"
+    test -n "$pid" || return 1
+    printf '%s' "$pid"
+}
+
+find_php_fpm_worker_user() {
+    local master_pid="$1"
+    local user
+
+    user="$(ps -eo ppid=,user=,args= | awk -v master="$master_pid" '
+        $1 == master && $2 != "root" && index($0, "php-fpm: pool") {
+            print $2;
+            exit;
+        }
+    ')"
+    test -n "$user" || return 1
+    printf '%s' "$user"
+}
+
+assert_php_fpm_runtime_identity() {
+    local attempt master_pid worker_user
+
+    for ((attempt = 1; attempt <= 15; attempt++)); do
+        master_pid=
+        worker_user=
+        master_pid="$(find_php_fpm_master_pid 2>/dev/null || true)"
+        if [ -n "$master_pid" ]; then
+            worker_user="$(find_php_fpm_worker_user "$master_pid" 2>/dev/null || true)"
+            if [ "$worker_user" = "$PHP_FPM_USER" ]; then
+                printf 'PHP_FPM_RUNTIME_IDENTITY=PASS master_pid=%s user=%s attempt=%d/15\n' \
+                    "$master_pid" "$worker_user" "$attempt"
+                return 0
+            fi
+        fi
+
+        printf 'PHP_FPM_RUNTIME_IDENTITY_WAIT attempt=%d/15 master_pid=%s detected_user=%s expected_user=%s\n' \
+            "$attempt" "${master_pid:-missing}" "${worker_user:-missing}" "$PHP_FPM_USER"
+        sleep 1
+    done
+
+    return 1
+}
+
+cleanup() {
+    [ -z "$BACKEND_STAGE_DIR" ] || rm -rf -- "$BACKEND_STAGE_DIR" || true
+    [ -z "$FRONTEND_STAGE_DIR" ] || rm -rf -- "$FRONTEND_STAGE_DIR" || true
+    [ -z "$MYSQL_CNF" ] || rm -f -- "$MYSQL_CNF" || true
+}
+
+assert_php_fpm_does_not_hold_deploy_lock() {
+    local pid process_name
+
+    if ! command -v fuser >/dev/null 2>&1; then
+        echo "DEPLOY_LOCK_INHERITANCE_CHECK=SKIPPED reason=fuser_unavailable"
+        return 0
+    fi
+
+    for pid in $(fuser "$DEPLOY_LOCK" 2>/dev/null || true); do
+        process_name="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+        if [[ "$process_name" == *php-fpm* ]]; then
+            echo "DEPLOY_LOCK_INHERITANCE_CHECK=FAIL pid=$pid process=$process_name" >&2
+            return 1
+        fi
+    done
+
+    echo "DEPLOY_LOCK_INHERITANCE_CHECK=PASS"
+}
+
+restart_php_fpm() {
+    if [ -n "$PHP_FPM_RELOAD_COMMAND" ]; then
+        echo "PHP_FPM_RESTART=custom"
+        # FD 9 owns the deployment flock. Close only the child copy before
+        # starting a daemon; the parent shell keeps holding the lock for the
+        # remainder of the deployment.
+        bash -lc "$PHP_FPM_RELOAD_COMMAND" 9>&-
+        assert_php_fpm_runtime_identity
+        assert_php_fpm_does_not_hold_deploy_lock
+        return 0
+    fi
+
+    # aaPanel commonly exposes the PHP-FPM init script under this name. A hard
+    # restart is intentional: a reload can leave OPcache and Laravel's cached
+    # provider manifest serving the previous source tree after a sync or
+    # rollback.
+    local init_script
+    for init_script in "/etc/init.d/php-fpm-${PHP_DIR_VERSION}" "/etc/init.d/php${PHP_DIR_VERSION}-php-fpm"; do
+        if [ -x "$init_script" ]; then
+            echo "PHP_FPM_RESTART=$init_script"
+            "$init_script" restart 9>&-
+            assert_php_fpm_runtime_identity
+            assert_php_fpm_does_not_hold_deploy_lock
+            return 0
+        fi
+    done
+
+    if command -v systemctl >/dev/null 2>&1; then
+        local unit
+        for unit in "php${PHP_DIR_VERSION:0:1}.${PHP_DIR_VERSION:1}-fpm" "php-fpm-${PHP_DIR_VERSION}" "php${PHP_DIR_VERSION}-php-fpm"; do
+            if systemctl is-active --quiet "$unit" 2>/dev/null; then
+                echo "PHP_FPM_RESTART=$unit"
+                systemctl restart "$unit" 9>&-
+                assert_php_fpm_runtime_identity
+                assert_php_fpm_does_not_hold_deploy_lock
+                return 0
+            fi
+        done
+    fi
+
+    echo "PHP_FPM_RESTART=NOT_FOUND"
+}
+
+rollback() {
+    [ "$ROLLBACK_DONE" -eq 0 ] || return 0
+    [ "$BACKEND_SYNC_STARTED" -eq 1 ] || [ "$FRONTEND_OUTPUT_SWAPPED" -eq 1 ] || [ "$FRONTEND_OUTPUT_OLD_MOVED" -eq 1 ] || return 0
+
+    ROLLBACK_DONE=1
+    echo "ROLLBACK=START" >&2
+
+    # Restore application code only. All data/config paths are excluded from
+    # both the backup and restore operations, so rollback cannot overwrite
+    # .env, storage, uploads, aaPanel files, or public/.well-known.
+    if [ "$BACKEND_SYNC_STARTED" -eq 1 ] && [ -n "$BACKEND_BEFORE_DIR" ] && [ -d "$BACKEND_BEFORE_DIR" ]; then
+        "$RSYNC_BIN" -a --delete "${BACKEND_EXCLUDES[@]}" \
+            "$BACKEND_BEFORE_DIR/" "$BACKEND_DIR/" || true
+        echo "ROLLBACK_BACKEND=RESTORED" >&2
+        # Recycle PHP-FPM after restoring code. Without this, a failed deploy
+        # can leave the web process running a mixed source/provider state.
+        restart_php_fpm || true
+        echo "ROLLBACK_BACKEND_FPM=RESTARTED" >&2
+    fi
+
+    if [ "$FRONTEND_OUTPUT_OLD_MOVED" -eq 1 ] && [ -n "$FRONTEND_OUTPUT_BACKUP" ] && [ -e "$FRONTEND_OUTPUT_BACKUP" ]; then
+        if [ -e "$FRONTEND_DIR/.output" ]; then
+            FRONTEND_OUTPUT_FAILED="$BACKUP_DIR/frontend-output-failed"
+            mv -- "$FRONTEND_DIR/.output" "$FRONTEND_OUTPUT_FAILED" || true
+        fi
+        mv -- "$FRONTEND_OUTPUT_BACKUP" "$FRONTEND_DIR/.output" || true
+        echo "ROLLBACK_FRONTEND_OUTPUT=RESTORED" >&2
+        "$PM2_BIN" reload "$PM2_APP" --update-env 9>&- >/dev/null 2>&1 || true
+    fi
+
+    # A database dump is intentionally retained rather than automatically
+    # restored. Restoring a dump could destroy orders or settings created by a
+    # concurrent process. The log always exposes the exact recovery directory.
+    if [ "$DATABASE_CHANGED" != "NO" ]; then
+        echo "ROLLBACK_DATABASE=NOT_AUTOMATIC; BACKUP_DIR=$BACKUP_DIR" >&2
+    fi
+    echo "ROLLBACK=COMPLETE" >&2
+}
+
+on_exit() {
+    local exit_code=$?
+    if [ "$exit_code" -ne 0 ]; then
+        [ "$ERROR_REPORTED" -eq 1 ] || \
+            echo "DEPLOY_ERROR=step=$CURRENT_STEP exit_code=$exit_code" >&2
+        rollback || true
+        echo "DEPLOY_STATUS=FAILED" >&2
+    elif [ "$DEPLOY_SUCCEEDED" -eq 1 ]; then
+        echo "DEPLOY_STATUS=SUCCESS"
+    fi
+    cleanup
+    exit "$exit_code"
+}
+
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# aaPanel may send SIGHUP when its browser terminal reconnects.
+trap '' HUP
+
+CURRENT_STEP=preflight
+for command in git curl rsync mysqldump tar awk sed grep mktemp flock sha256sum date sleep bash cmp chmod chown find ps stat runuser id; do
+    require_command "$command"
+done
+require_executable "$PHP_BIN"
+require_executable "$NODE_BIN"
+require_executable "$NPM_BIN"
+require_command "$COMPOSER_BIN"
+require_command "$PM2_BIN"
+"$PM2_BIN" describe "$PM2_APP" >/dev/null 2>&1 \
+    || fail "PM2 app is not registered: $PM2_APP"
+assert_site_isolated
+
+[[ "$RUN_MIGRATIONS" == 0 || "$RUN_MIGRATIONS" == 1 ]] \
+    || fail "RUN_MIGRATIONS must be 0 or 1"
+[[ "$RUN_SEEDERS" == 0 || "$RUN_SEEDERS" == 1 ]] \
+    || fail "RUN_SEEDERS must be 0 or 1"
+[[ "$QUEUE_RESTART" == 0 || "$QUEUE_RESTART" == 1 ]] \
+    || fail "QUEUE_RESTART must be 0 or 1"
+[[ "$FRONTEND_READY_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] \
+    || fail "FRONTEND_READY_ATTEMPTS must be a positive integer"
+[[ "$FRONTEND_PUBLIC_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] \
+    || fail "FRONTEND_PUBLIC_ATTEMPTS must be a positive integer"
+[[ "$FRONTEND_READY_DELAY" =~ ^[1-9][0-9]*$ ]] \
+    || fail "FRONTEND_READY_DELAY must be a positive integer"
+[[ "$FRONTEND_PORT" =~ ^[0-9]+$ ]] \
+    && (( FRONTEND_PORT >= 1 && FRONTEND_PORT <= 65535 )) \
+    || fail "FRONTEND_PORT must be between 1 and 65535"
+test -n "$FRONTEND_HOST" || fail "FRONTEND_HOST must not be empty"
+if [ "$RUN_SEEDERS" = "1" ]; then
+    test -n "$SEEDERS" || fail 'RUN_SEEDERS=1 requires SEEDERS="SeederA SeederB"'
+fi
+
+prepare_source_repository "$BACKEND_SOURCE_REPO" "$BACKEND_SOURCE_URL"
+prepare_source_repository "$FRONTEND_SOURCE_REPO" "$FRONTEND_SOURCE_URL"
+require_directory "$BACKEND_SOURCE_REPO"
+require_directory "$FRONTEND_SOURCE_REPO"
+require_directory "$BACKEND_DIR"
+require_directory "$FRONTEND_DIR"
+require_file "$BACKEND_DIR/.env"
+require_file "$FRONTEND_DIR/.env"
+require_file "$FRONTEND_DIR/.output/server/index.mjs"
+
+exec 9>"$DEPLOY_LOCK"
+flock -n 9 || fail "Another deploy of site $SITE is already running: $DEPLOY_LOCK"
+
+PHP_FPM_MASTER_PID="$(find_php_fpm_master_pid)" \
+    || fail "Could not find the PHP-FPM master for ${PHP_BIN%/bin/php}/etc/php-fpm.conf"
+PHP_FPM_DETECTED_USER="$(find_php_fpm_worker_user "$PHP_FPM_MASTER_PID")" \
+    || fail "Could not determine the PHP-FPM worker user for master PID $PHP_FPM_MASTER_PID"
+if [ -z "$PHP_FPM_USER" ]; then
+    PHP_FPM_USER="$PHP_FPM_DETECTED_USER"
+elif [ "$PHP_FPM_USER" != "$PHP_FPM_DETECTED_USER" ]; then
+    fail "PHP_FPM_USER=$PHP_FPM_USER does not match PHP 8.3 worker user $PHP_FPM_DETECTED_USER"
+fi
+test "$PHP_FPM_USER" != root || fail "PHP-FPM runtime user must not be root"
+id "$PHP_FPM_USER" >/dev/null 2>&1 \
+    || fail "PHP-FPM runtime user does not exist: $PHP_FPM_USER"
+if [ -z "$PHP_FPM_GROUP" ]; then
+    PHP_FPM_GROUP="$(id -gn "$PHP_FPM_USER")"
+fi
+test -n "$PHP_FPM_GROUP" || fail "Could not determine the PHP-FPM runtime group"
+echo "PHP_FPM_USER=$PHP_FPM_USER"
+echo "PHP_FPM_GROUP=$PHP_FPM_GROUP"
+echo "PHP_FPM_MASTER_PID=$PHP_FPM_MASTER_PID"
+echo "PHP_FPM_IDENTITY_SOURCE=${PHP_BIN%/bin/php}/etc/php-fpm.conf"
+
+# A previous interrupted or failed deployment may have left Laravel's cache,
+# session, view or log directories owned by a different PHP installation's
+# worker. Repair them immediately using the worker attached to the exact PHP
+# runtime selected above; file contents and application configuration remain
+# untouched.
+CURRENT_STEP=preflight_runtime_permissions
+ensure_laravel_runtime_permissions
+echo "LARAVEL_RUNTIME_PREFLIGHT_REPAIR=COMPLETE"
+CURRENT_STEP=preflight
+
+test "$(git -C "$BACKEND_SOURCE_REPO" rev-parse --is-inside-work-tree)" = true \
+    || fail "Backend source path is not a Git worktree: $BACKEND_SOURCE_REPO"
+test "$(git -C "$FRONTEND_SOURCE_REPO" rev-parse --is-inside-work-tree)" = true \
+    || fail "Frontend source path is not a Git worktree: $FRONTEND_SOURCE_REPO"
+
+backend_remote="$(git -C "$BACKEND_SOURCE_REPO" remote get-url origin 2>/dev/null || true)"
+frontend_remote="$(git -C "$FRONTEND_SOURCE_REPO" remote get-url origin 2>/dev/null || true)"
+[ "${backend_remote%.git}" = "${BACKEND_SOURCE_URL%.git}" ] \
+    || fail "Unexpected backend origin: $backend_remote (expected $BACKEND_SOURCE_URL)"
+[ "${frontend_remote%.git}" = "${FRONTEND_SOURCE_URL%.git}" ] \
+    || fail "Unexpected frontend origin: $frontend_remote (expected $FRONTEND_SOURCE_URL)"
+
+# The PHP/NPM paths may be overridden for a different aaPanel installation,
+# but never silently fall back to an incompatible runtime.
+test -x "$PHP_BIN" || fail "PHP binary is not executable: $PHP_BIN"
+test -x "$NODE_BIN" || fail "Node binary is not executable: $NODE_BIN"
+test -x "$NPM_BIN" || fail "NPM binary is not executable: $NPM_BIN"
+php_version="$($PHP_BIN -r 'echo PHP_VERSION;')"
+node_version="$($NODE_BIN --version)"
+php_major="${php_version%%.*}"
+php_minor="${php_version#*.}"
+php_minor="${php_minor%%.*}"
+(( php_major > 8 || (php_major == 8 && php_minor >= 2) )) \
+    || fail "PHP >= 8.2 is required; found $php_version"
+echo "RUNTIME_PHP=$php_version"
+echo "RUNTIME_NODE=$node_version"
+
+CURRENT_STEP=fetch_sources
+step "Fetching backend and frontend main"
+fetch_main_with_retry "$BACKEND_SOURCE_REPO" \
+    || fail "Could not fetch backend main"
+fetch_main_with_retry "$FRONTEND_SOURCE_REPO" \
+    || fail "Could not fetch frontend main"
+
+BACKEND_SHA="${requested_backend_sha:-$(git -C "$BACKEND_SOURCE_REPO" rev-parse origin/main)}"
+FRONTEND_SHA="${requested_frontend_sha:-$(git -C "$FRONTEND_SOURCE_REPO" rev-parse origin/main)}"
+[[ "$BACKEND_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "Backend SHA must be 40 hexadecimal characters"
+[[ "$FRONTEND_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "Frontend SHA must be 40 hexadecimal characters"
+test "$(git -C "$BACKEND_SOURCE_REPO" rev-parse origin/main)" = "$BACKEND_SHA" \
+    || fail "Backend SHA is not origin/main"
+test "$(git -C "$FRONTEND_SOURCE_REPO" rev-parse origin/main)" = "$FRONTEND_SHA" \
+    || fail "Frontend SHA is not origin/main"
+
+BACKEND_TAG="${BACKEND_SHA:0:7}"
+FRONTEND_TAG="${FRONTEND_SHA:0:7}"
+echo "BACKEND_SHA=$BACKEND_SHA"
+echo "FRONTEND_SHA=$FRONTEND_SHA"
+
+BACKEND_STAGE_DIR="$(mktemp -d "/tmp/${SITE}-backend-${BACKEND_TAG}-XXXXXX")"
+FRONTEND_STAGE_DIR="$(mktemp -d "/tmp/${SITE}-frontend-${FRONTEND_TAG}-XXXXXX")"
+
+CURRENT_STEP=prepare_sources
+step "Preparing immutable source trees"
+git -C "$BACKEND_SOURCE_REPO" archive --format=tar "$BACKEND_SHA" backend \
+    | tar -xf - -C "$BACKEND_STAGE_DIR"
+git -C "$FRONTEND_SOURCE_REPO" archive --format=tar "$FRONTEND_SHA" \
+    | tar -xf - -C "$FRONTEND_STAGE_DIR"
+require_directory "$BACKEND_STAGE_DIR/backend"
+require_file "$BACKEND_STAGE_DIR/backend/composer.json"
+require_file "$BACKEND_STAGE_DIR/backend/composer.lock"
+require_file "$BACKEND_STAGE_DIR/backend/locations.json"
+require_file "$BACKEND_STAGE_DIR/backend/package.json"
+require_file "$BACKEND_STAGE_DIR/backend/package-lock.json"
+require_file "$BACKEND_STAGE_DIR/backend/vite.config.js"
+require_file "$FRONTEND_STAGE_DIR/package.json"
+require_file "$FRONTEND_STAGE_DIR/package-lock.json"
+validate_locations_file staged "$BACKEND_STAGE_DIR/backend/locations.json" \
+    || fail "Staged locations.json is invalid"
+
+# Do not allow a stale tracked .env.server from the source repository to win
+# over the site runtime values during the Nuxt build.
+rm -f -- "$FRONTEND_STAGE_DIR/.env" "$FRONTEND_STAGE_DIR/.env.server"
+mkdir -p "$FRONTEND_STAGE_DIR/public"
+cat > "$FRONTEND_STAGE_DIR/public/release.json" <<EOF
+{
+  "site": "$PUBLIC_HOST",
+  "backend_sha": "$BACKEND_SHA",
+  "frontend_sha": "$FRONTEND_SHA",
+  "backend_tag": "$BACKEND_TAG",
+  "frontend_tag": "$FRONTEND_TAG"
+}
+EOF
+
+CURRENT_STEP=admin_assets_build
+step "Building Laravel admin assets from $BACKEND_SHA"
+(
+    cd "$BACKEND_STAGE_DIR/backend"
+    # Vite imports Ziggy and scans Laravel vendor views, so install the locked
+    # production Composer dependencies in the isolated source tree first.
+    # --no-scripts guarantees the staging build cannot execute Artisan against
+    # the live site environment.
+    "$COMPOSER_BIN" install --no-dev --prefer-dist --no-interaction \
+        --no-progress --no-scripts --optimize-autoloader
+    "$NPM_BIN" ci --include=dev --no-audit --no-fund
+    NODE_ENV=production "$NPM_BIN" run build
+)
+require_file "$BACKEND_STAGE_DIR/backend/public/build/manifest.json"
+ADMIN_ASSET_MANIFEST_SHA256="$(
+    sha256sum "$BACKEND_STAGE_DIR/backend/public/build/manifest.json" \
+        | awk '{print $1}'
+)"
+test -n "$ADMIN_ASSET_MANIFEST_SHA256" \
+    || fail "Could not fingerprint the staged Laravel admin manifest"
+echo "ADMIN_ASSET_BUILD=READY manifest_sha256=$ADMIN_ASSET_MANIFEST_SHA256"
+
+# Dependencies are installed again against the preserved production .env
+# after source activation. Do not copy staging vendor/node_modules into the
+# active tree as a side effect of the source rsync.
+rm -rf -- \
+    "$BACKEND_STAGE_DIR/backend/vendor" \
+    "$BACKEND_STAGE_DIR/backend/node_modules"
+
+CURRENT_STEP=frontend_build
+step "Building frontend from $FRONTEND_SHA"
+(
+    cd "$FRONTEND_STAGE_DIR"
+    export NODE_ENV=production
+    export NUXT_PUBLIC_API_BASE="$API_ORIGIN/api/v1"
+    export NUXT_API_PROXY_TARGET="$API_ORIGIN"
+    export NUXT_PUBLIC_SITE_URL="$PUBLIC_ORIGIN"
+    "$NPM_BIN" ci --no-audit --no-fund
+    "$NPM_BIN" run build
+)
+require_file "$FRONTEND_STAGE_DIR/.output/server/index.mjs"
+
+CURRENT_STEP=backup
+BACKUP_DIR="$BACKUP_ROOT/${BACKEND_TAG}-${FRONTEND_TAG}-$(date -u +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+BACKEND_BEFORE_DIR="$BACKUP_DIR/backend-before"
+ADMIN_ASSET_BACKUP="$BACKUP_DIR/admin-build-before"
+FRONTEND_OUTPUT_BACKUP="$BACKUP_DIR/frontend-output-before"
+FRONTEND_OUTPUT_FAILED="$BACKUP_DIR/frontend-output-failed"
+echo "BACKUP_DIR=$BACKUP_DIR"
+
+step "Backing up database, code, output and runtime fingerprints"
+
+# Save status/diff metadata without copying .env values into the evidence.
+git -C "$BACKEND_DIR" status --short > "$BACKUP_DIR/backend-working-tree.status" 2>/dev/null || true
+git -C "$FRONTEND_DIR" status --short > "$BACKUP_DIR/frontend-working-tree.status" 2>/dev/null || true
+git -C "$FRONTEND_DIR" diff --binary > "$BACKUP_DIR/frontend-working-tree.patch" 2>/dev/null || true
+sha256sum "$BACKEND_DIR/.env" "$FRONTEND_DIR/.env" > "$BACKUP_DIR/runtime-env.sha256"
+
+# Keep a restorable copy of application code. Exclusions are deliberately
+# repeated on restore so user data/configuration is never touched.
+mkdir -p "$BACKEND_BEFORE_DIR"
+"$RSYNC_BIN" -a --delete "${BACKEND_EXCLUDES[@]}" \
+    "$BACKEND_DIR/" "$BACKEND_BEFORE_DIR/"
+
+env_value() {
+    "$PHP_BIN" -r '
+        require $argv[1] . "/vendor/autoload.php";
+        $dotenv = Dotenv\Dotenv::createImmutable($argv[1], ".env");
+        $values = $dotenv->safeLoad();
+        echo (string)($values[$argv[2]] ?? "");
+    ' "$BACKEND_DIR" "$1"
+}
+
+DB_CONNECTION="$(env_value DB_CONNECTION)"
+DB_HOST="$(env_value DB_HOST)"
+DB_PORT="$(env_value DB_PORT)"
+DB_DATABASE="$(env_value DB_DATABASE)"
+DB_USERNAME="$(env_value DB_USERNAME)"
+DB_PASSWORD="$(env_value DB_PASSWORD)"
+DB_PORT="${DB_PORT:-3306}"
+[[ "$DB_CONNECTION" == mysql || "$DB_CONNECTION" == mariadb ]] \
+    || fail "$SITE_LABEL database connection must be mysql/mariadb; found ${DB_CONNECTION:-missing}"
+test -n "$DB_HOST" || fail "DB_HOST is missing from the active backend .env"
+test -n "$DB_DATABASE" || fail "DB_DATABASE is missing from the active backend .env"
+test -n "$DB_USERNAME" || fail "DB_USERNAME is missing from the active backend .env"
+
+MYSQL_CNF="$(mktemp "$BACKUP_DIR/mysql-client.XXXXXX.cnf")"
+chmod 600 "$MYSQL_CNF"
+{
+    printf '[client]\n'
+    printf 'host=%s\n' "$DB_HOST"
+    printf 'port=%s\n' "$DB_PORT"
+    printf 'user=%s\n' "$DB_USERNAME"
+    printf 'password=%s\n' "$DB_PASSWORD"
+} > "$MYSQL_CNF"
+"$MYSQLDUMP_BIN" --defaults-extra-file="$MYSQL_CNF" \
+    --single-transaction --routines --triggers --hex-blob --no-tablespaces \
+    "$DB_DATABASE" > "$BACKUP_DIR/database.sql"
+test -s "$BACKUP_DIR/database.sql" || fail "Database backup is empty"
+rm -f -- "$MYSQL_CNF"
+MYSQL_CNF=
+
+cat > "$BACKUP_DIR/manifest.env" <<EOF
+BACKEND_SHA=$BACKEND_SHA
+FRONTEND_SHA=$FRONTEND_SHA
+SOURCE_ROOT=$SOURCE_ROOT
+BACKEND_DIR=$BACKEND_DIR
+FRONTEND_DIR=$FRONTEND_DIR
+API_ORIGIN=$API_ORIGIN
+PUBLIC_ORIGIN=$PUBLIC_ORIGIN
+FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN
+FRONTEND_RUNTIME=$FRONTEND_HOST:$FRONTEND_PORT
+PHP_VERSION=$php_version
+NODE_VERSION=$node_version
+RUN_MIGRATIONS=$RUN_MIGRATIONS
+RUN_SEEDERS=$RUN_SEEDERS
+ADMIN_ASSET_MANIFEST_SHA256=$ADMIN_ASSET_MANIFEST_SHA256
+EOF
+
+CURRENT_STEP=backend_sync
+step "Syncing backend source while preserving config and data"
+BACKEND_SYNC_STARTED=1
+"$RSYNC_BIN" -a "${BACKEND_SYNC_EXCLUDES[@]}" \
+    "$BACKEND_STAGE_DIR/backend/" "$BACKEND_DIR/"
+cmp -s "$BACKEND_STAGE_DIR/backend/locations.json" "$BACKEND_DIR/locations.json" \
+    || fail "Active locations.json does not match the staged release"
+validate_locations_file active "$BACKEND_DIR/locations.json" \
+    || fail "Active locations.json is invalid after sync"
+
+CURRENT_STEP=backend_dependencies
+step "Installing backend dependencies with active $SITE_LABEL .env"
+(
+    cd "$BACKEND_DIR"
+    "$COMPOSER_BIN" install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+)
+
+CURRENT_STEP=admin_assets_activate
+step "Activating the immutable Laravel admin asset bundle"
+mkdir -p "$BACKEND_DIR/public"
+if [ -e "$BACKEND_DIR/public/build" ] || [ -L "$BACKEND_DIR/public/build" ]; then
+    test ! -e "$ADMIN_ASSET_BACKUP" \
+        || fail "Admin asset backup path already exists: $ADMIN_ASSET_BACKUP"
+    mv -- "$BACKEND_DIR/public/build" "$ADMIN_ASSET_BACKUP"
+fi
+mv -- "$BACKEND_STAGE_DIR/backend/public/build" "$BACKEND_DIR/public/build"
+chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$BACKEND_DIR/public/build"
+find "$BACKEND_DIR/public/build" -type d -exec chmod 0755 {} +
+find "$BACKEND_DIR/public/build" -type f -exec chmod 0644 {} +
+ACTIVE_ADMIN_ASSET_MANIFEST_SHA256="$(
+    sha256sum "$BACKEND_DIR/public/build/manifest.json" | awk '{print $1}'
+)"
+test "$ACTIVE_ADMIN_ASSET_MANIFEST_SHA256" = "$ADMIN_ASSET_MANIFEST_SHA256" \
+    || fail "Active Laravel admin manifest does not match the staged release"
+echo "ADMIN_ASSET_SWAP=COMPLETE manifest_sha256=$ACTIVE_ADMIN_ASSET_MANIFEST_SHA256"
+
+CURRENT_STEP=backend_permissions
+step "Verifying backend files as PHP-FPM user $PHP_FPM_USER"
+ensure_laravel_runtime_permissions
+ensure_backend_runtime_readability \
+    || fail "Backend dependencies are not readable by PHP-FPM user $PHP_FPM_USER"
+
+check_location_directory_cli() {
+    (
+        cd "$BACKEND_DIR"
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+            $kernel->bootstrap();
+
+            Illuminate\Support\Facades\Cache::forget("locations_payload");
+            Illuminate\Support\Facades\Cache::forget("locations_provinces");
+
+            $directory = $app->make(App\Services\Locations\LocationDirectory::class);
+            $provinces = $directory->provinces();
+            $first = is_array($provinces) ? ($provinces[0] ?? null) : null;
+            $provinceCode = is_array($first)
+                ? trim((string) ($first["code"] ?? ""))
+                : "";
+            $wards = $provinceCode !== "" ? $directory->wards($provinceCode) : null;
+            $firstWard = is_array($wards) ? ($wards[0] ?? null) : null;
+            $wardCode = is_array($firstWard)
+                ? trim((string) ($firstWard["code"] ?? ""))
+                : "";
+
+            if ($provinceCode === "" || $wardCode === "") {
+                fwrite(STDERR, sprintf(
+                    "LOCATION_DIRECTORY_CLI=FAIL provinces=%d province_code=%s wards=%d ward_code=%s\n",
+                    is_array($provinces) ? count($provinces) : -1,
+                    $provinceCode === "" ? "missing" : $provinceCode,
+                    is_array($wards) ? count($wards) : -1,
+                    $wardCode === "" ? "missing" : $wardCode
+                ));
+                exit(1);
+            }
+
+            printf(
+                "LOCATION_DIRECTORY_CLI=OK provinces=%d first_code=%s first_wards=%d first_ward_code=%s\n",
+                count($provinces),
+                $provinceCode,
+                count($wards),
+                $wardCode
+            );
+        '
+    )
+}
+
+CURRENT_STEP=backend_cache
+step "Clearing only Laravel runtime caches"
+(
+    cd "$BACKEND_DIR"
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan config:clear --no-ansi
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan route:clear --no-ansi
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan view:clear --no-ansi
+    # LocationDirectory intentionally uses rememberForever. Remove only its
+    # two known keys so a previous invalid/BOM parse cannot survive a deploy;
+    # do not run cache:clear because that could evict unrelated application
+    # state.
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan cache:forget locations_payload --no-ansi || true
+    runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan cache:forget locations_provinces --no-ansi || true
+)
+
+CURRENT_STEP=backend_location_runtime
+step "Validating and warming the active Laravel location directory"
+check_location_directory_cli \
+    || fail "Active Laravel location directory is invalid"
+
+CURRENT_STEP=backend_reload
+step "Restarting PHP-FPM to activate the backend source"
+restart_php_fpm
+
+check_http() {
+    local label="$1"
+    local url="$2"
+    local mode="${3:-public}"
+    local -a curl_args=(
+        curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30
+        -H 'Cache-Control: no-cache'
+        -H 'Pragma: no-cache'
+    )
+    local status
+
+    if [ "$mode" = "origin" ]; then
+        curl_args+=(--resolve "$API_LOCAL_RESOLVE" --insecure)
+    elif [ "$mode" != "public" ]; then
+        echo "HTTP_CHECK=FAIL label=$label reason=invalid_mode mode=$mode" >&2
+        return 1
+    fi
+
+    status="$("${curl_args[@]}" -sS -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)" \
+        || status=000
+    printf '%s MODE=%s URL=%s HTTP=%s\n' "$label" "$mode" "$url" "$status"
+    [[ "$status" == 2?? ]]
+}
+
+backend_diagnostics() {
+    local master_pid directory
+    local -a runtime_directories=(
+        "$BACKEND_DIR/storage/framework/cache"
+        "$BACKEND_DIR/storage/framework/sessions"
+        "$BACKEND_DIR/storage/framework/views"
+        "$BACKEND_DIR/storage/logs"
+        "$BACKEND_DIR/bootstrap/cache"
+    )
+
+    echo "BACKEND_DIAGNOSTICS=START" >&2
+    master_pid="$(find_php_fpm_master_pid 2>/dev/null || true)"
+    if [ -n "$master_pid" ]; then
+        ps -eo pid=,ppid=,user=,args= \
+            | awk -v master="$master_pid" '$1 == master || $2 == master' >&2 || true
+    else
+        echo "BACKEND_DIAGNOSTIC_PHP_FPM_MASTER=missing" >&2
+    fi
+
+    for directory in "${runtime_directories[@]}"; do
+        stat -c 'BACKEND_RUNTIME_PATH=%n owner=%U group=%G mode=%a' \
+            "$directory" >&2 || true
+    done
+
+    if [ -f "$BACKEND_DIR/storage/logs/laravel.log" ]; then
+        echo "BACKEND_LARAVEL_LOG_TAIL=START" >&2
+        tail -n 100 "$BACKEND_DIR/storage/logs/laravel.log" >&2 || true
+        echo "BACKEND_LARAVEL_LOG_TAIL=END" >&2
+    fi
+    echo "BACKEND_DIAGNOSTICS=END" >&2
+}
+
+frontend_http_status() {
+    local url="$1"
+    local mode="${2:-direct}"
+    local -a curl_args=(
+        curl --connect-timeout 3 --max-time 10
+        -H 'Cache-Control: no-cache'
+        -H 'Pragma: no-cache'
+        -sS -o /dev/null -w '%{http_code}'
+    )
+    local status
+
+    case "$mode" in
+        direct|public)
+            ;;
+        origin)
+            curl_args+=(--resolve "$PUBLIC_LOCAL_RESOLVE" --insecure)
+            ;;
+        *)
+            echo "FRONTEND_HTTP=FAIL reason=invalid_mode mode=$mode" >&2
+            return 1
+            ;;
+    esac
+
+    status="$("${curl_args[@]}" "$url" 2>/dev/null)" || status=000
+    printf '%s' "$status"
+}
+
+wait_for_frontend_http() {
+    local label="$1"
+    local url="$2"
+    local mode="$3"
+    local attempts="$4"
+    local attempt status
+
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        status="$(frontend_http_status "$url" "$mode")" || status=000
+        if [[ "$status" == 2?? ]]; then
+            printf 'FRONTEND_READY=YES label=%s mode=%s URL=%s HTTP=%s attempt=%d/%d\n' \
+                "$label" "$mode" "$url" "$status" "$attempt" "$attempts"
+            return 0
+        fi
+
+        printf 'FRONTEND_HEALTH_WAIT label=%s mode=%s attempt=%d/%d HTTP=%s\n' \
+            "$label" "$mode" "$attempt" "$attempts" "$status"
+        sleep "$FRONTEND_READY_DELAY"
+    done
+
+    return 1
+}
+
+frontend_diagnostics() {
+    echo "FRONTEND_DIAGNOSTICS=START" >&2
+    "$PM2_BIN" describe "$PM2_APP" 9>&- >&2 || true
+    "$PM2_BIN" logs "$PM2_APP" --lines 80 --nostream 9>&- >&2 || true
+
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnp 2>&1 | grep -E "(^|:)${FRONTEND_PORT}([[:space:]]|$)" >&2 || true
+    fi
+
+    curl --connect-timeout 3 --max-time 10 -sS -o /dev/null \
+        -w 'FRONTEND_DIAGNOSTIC_LOCAL HTTP=%{http_code}\n' \
+        "$FRONTEND_LOCAL_ORIGIN$FRONTEND_HEALTH_PATH" >&2 || true
+    curl --connect-timeout 3 --max-time 10 --resolve "$PUBLIC_LOCAL_RESOLVE" \
+        --insecure -sS -o /dev/null \
+        -w 'FRONTEND_DIAGNOSTIC_ORIGIN HTTP=%{http_code}\n' \
+        "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" >&2 || true
+    curl --connect-timeout 3 --max-time 10 -sS -o /dev/null \
+        -w 'FRONTEND_DIAGNOSTIC_PUBLIC HTTP=%{http_code}\n' \
+        "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" >&2 || true
+    echo "FRONTEND_DIAGNOSTICS=END" >&2
+}
+
+read_location_code() {
+    local response_file="$1"
+
+    "$PHP_BIN" -r '
+        $raw = file_get_contents($argv[1]);
+        $raw = $raw === false ? "" : $raw;
+        $data = json_decode(ltrim($raw, "\xEF\xBB\xBF"), true);
+
+        $extract = static function (mixed $value) use (&$extract): array {
+            if (! is_array($value)) {
+                return [];
+            }
+            if (array_is_list($value)) {
+                return array_values($value);
+            }
+            foreach (["data", "provinces", "wards", "items", "result"] as $key) {
+                if (array_key_exists($key, $value)) {
+                    $items = $extract($value[$key]);
+                    if ($items !== []) {
+                        return $items;
+                    }
+                }
+            }
+            return [];
+        };
+
+        $items = $extract($data);
+        $first = $items[0] ?? null;
+        $code = is_array($first)
+            ? trim((string) ($first["code"] ?? $first["id"] ?? ""))
+            : "";
+        $rootKeys = is_array($data) && ! array_is_list($data)
+            ? implode(",", array_keys($data))
+            : "list";
+        $head = preg_replace("/\\s+/u", " ", mb_substr($raw, 0, 240));
+
+        fwrite(STDERR, sprintf(
+            "LOCATION_RESPONSE bytes=%d json_error=%s root_type=%s root_keys=%s items=%d first_code=%s body_head=%s\n",
+            strlen($raw),
+            json_last_error_msg(),
+            get_debug_type($data),
+            $rootKeys,
+            count($items),
+            $code === "" ? "missing" : $code,
+            json_encode($head, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)
+        ));
+
+        if ($code === "") {
+            exit(1);
+        }
+        echo $code;
+    ' "$response_file"
+}
+
+fetch_location_code() {
+    local label="$1"
+    local path="$2"
+    local mode="$3"
+    local response_file headers_file probe url result status content_type code
+    local -a curl_args=(
+        curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30
+        -H 'Accept: application/json'
+        -H 'Cache-Control: no-cache'
+        -H 'Pragma: no-cache'
+    )
+
+    response_file="$(mktemp "/tmp/${SITE}-${label}-body-XXXXXX")"
+    headers_file="$(mktemp "/tmp/${SITE}-${label}-headers-XXXXXX")"
+    probe="${BACKEND_TAG}-$(date +%s)-${RANDOM}"
+    url="${API_ORIGIN}${path}?deploy_probe=${probe}"
+
+    if [ "$mode" = "origin" ]; then
+        curl_args+=(--resolve "$API_LOCAL_RESOLVE" --insecure)
+    elif [ "$mode" != "public" ]; then
+        rm -f -- "$response_file" "$headers_file"
+        echo "LOCATION_HTTP=FAIL label=$label reason=invalid_mode mode=$mode" >&2
+        return 1
+    fi
+
+    result="$("${curl_args[@]}" -sS -D "$headers_file" -o "$response_file" \
+        -w '%{http_code}|%{content_type}' "$url" 2>/dev/null)" || result='000|'
+    status="${result%%|*}"
+    content_type="${result#*|}"
+    printf 'LOCATION_HTTP label=%s mode=%s HTTP=%s CONTENT_TYPE=%s URL=%s\n' \
+        "$label" "$mode" "$status" "${content_type:-missing}" "$url" >&2
+
+    if [[ "$status" != 2?? ]]; then
+        read_location_code "$response_file" >/dev/null || true
+        rm -f -- "$response_file" "$headers_file"
+        return 1
+    fi
+
+    if ! code="$(read_location_code "$response_file")"; then
+        rm -f -- "$response_file" "$headers_file"
+        return 1
+    fi
+    rm -f -- "$response_file" "$headers_file"
+    printf '%s' "$code"
+}
+
+check_locations_api() {
+    local mode="$1"
+    local province_code ward_code
+
+    province_code="$(fetch_location_code locations_provinces \
+        /api/v1/locations/provinces "$mode")" || return 1
+    ward_code="$(fetch_location_code locations_wards \
+        "/api/v1/locations/provinces/${province_code}/wards" "$mode")" || return 1
+    printf 'LOCATIONS_API=OK MODE=%s FIRST_PROVINCE_CODE=%s FIRST_WARD_CODE=%s\n' \
+        "$mode" "$province_code" "$ward_code"
+}
+
+check_frontend_locations_dataset() {
+    local response_file url result status content_type code
+
+    response_file="$(mktemp "/tmp/${SITE}-frontend-locations-body-XXXXXX")"
+    url="${PUBLIC_ORIGIN}/data/locations.json?deploy_probe=${FRONTEND_TAG}-$(date +%s)-${RANDOM}"
+    result="$(curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 \
+        -H 'Accept: application/json' \
+        -H 'Cache-Control: no-cache' \
+        -H 'Pragma: no-cache' \
+        -sS -o "$response_file" -w '%{http_code}|%{content_type}' "$url" 2>/dev/null)" \
+        || result='000|'
+    status="${result%%|*}"
+    content_type="${result#*|}"
+    printf 'FRONTEND_LOCATION_HTTP HTTP=%s CONTENT_TYPE=%s URL=%s\n' \
+        "$status" "${content_type:-missing}" "$url"
+
+    if [[ "$status" != 2?? ]]; then
+        read_location_code "$response_file" >/dev/null || true
+        rm -f -- "$response_file"
+        return 1
+    fi
+    if ! code="$(read_location_code "$response_file")"; then
+        rm -f -- "$response_file"
+        return 1
+    fi
+    rm -f -- "$response_file"
+    printf 'FRONTEND_LOCATION_DATASET=OK FIRST_CODE=%s\n' "$code"
+}
+
+CURRENT_STEP=backend_smoke_before_migration
+step "Checking $SITE_LABEL backend before migration"
+echo "API_LOCAL_RESOLVE=$API_LOCAL_RESOLVE"
+check_http admin_login_origin "$API_ORIGIN/admin/login" origin \
+    || { backend_diagnostics; fail "Admin login origin endpoint failed"; }
+check_locations_api origin \
+    || fail "Locations origin API returned invalid province/ward data"
+check_http header_menu_origin "$API_ORIGIN/api/v1/menus/header" origin \
+    || fail "Header menu origin endpoint failed"
+check_http admin_login_public "$API_ORIGIN/admin/login" public \
+    || fail "Admin login public endpoint failed"
+check_locations_api public \
+    || fail "Locations public API returned invalid province/ward data"
+check_http header_menu_public "$API_ORIGIN/api/v1/menus/header" public \
+    || fail "Header menu public endpoint failed"
+
+if [ "$RUN_MIGRATIONS" = "1" ]; then
+    CURRENT_STEP=migrate
+    step "Running Laravel migrations after backup"
+    MIGRATION_STATUS=STARTED
+    DATABASE_CHANGED=POSSIBLY_CHANGED
+    (
+        cd "$BACKEND_DIR"
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan migrate --force --no-ansi
+    )
+    MIGRATION_STATUS=RUN
+    DATABASE_CHANGED=YES
+elif [ "$RUN_MIGRATIONS" = "0" ]; then
+    MIGRATION_STATUS=NOT_RUN
+    DATABASE_CHANGED=NO
+fi
+
+if [ "$RUN_SEEDERS" = "1" ]; then
+    CURRENT_STEP=seed
+    for seeder in $SEEDERS; do
+        step "Running reviewed seeder $seeder"
+        (
+            cd "$BACKEND_DIR"
+            runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan db:seed \
+                --class="$seeder" --force --no-ansi
+        )
+    done
+fi
+
+# Long-running queue workers keep the previous code in memory. queue:restart
+# only writes a cache signal, so workers finish their current job and exit;
+# the supervisor (PM2/Supervisor) then starts them on the new release.
+QUEUE_RESTART_STATUS=NOT_RUN
+if [ "$QUEUE_RESTART" = "1" ]; then
+    CURRENT_STEP=queue_restart
+    step "Signalling queue workers to restart"
+    if (
+        cd "$BACKEND_DIR"
+        runuser -u "$PHP_FPM_USER" -- "$PHP_BIN" artisan queue:restart --no-ansi
+    ); then
+        QUEUE_RESTART_STATUS=SIGNALLED
+    else
+        QUEUE_RESTART_STATUS=FAILED
+        echo "QUEUE_RESTART=FAILED (deploy continues; restart workers manually)" >&2
+    fi
+fi
+
+CURRENT_STEP=frontend_ready
+step "Frontend output is ready from $FRONTEND_SHA"
+test -f "$FRONTEND_STAGE_DIR/.output/server/index.mjs"
+
+CURRENT_STEP=frontend_swap
+step "Installing frontend output and reloading PM2 app $PM2_APP"
+mv -- "$FRONTEND_DIR/.output" "$FRONTEND_OUTPUT_BACKUP"
+FRONTEND_OUTPUT_OLD_MOVED=1
+mv -- "$FRONTEND_STAGE_DIR/.output" "$FRONTEND_DIR/.output"
+FRONTEND_OUTPUT_SWAPPED=1
+export NODE_ENV=production
+export NUXT_PUBLIC_API_BASE="$API_ORIGIN/api/v1"
+export NUXT_API_PROXY_TARGET="$API_ORIGIN"
+export NUXT_PUBLIC_SITE_URL="$PUBLIC_ORIGIN"
+export PORT="$FRONTEND_PORT"
+export NITRO_PORT="$FRONTEND_PORT"
+export HOST="$FRONTEND_HOST"
+export NITRO_HOST="$FRONTEND_HOST"
+"$PM2_BIN" reload "$PM2_APP" --update-env 9>&-
+
+CURRENT_STEP=production_smoke
+step "Running $SITE_LABEL production smoke checks"
+echo "FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN"
+echo "FRONTEND_RUNTIME=${FRONTEND_HOST}:${FRONTEND_PORT}"
+echo "PUBLIC_LOCAL_RESOLVE=$PUBLIC_LOCAL_RESOLVE"
+wait_for_frontend_http local \
+    "$FRONTEND_LOCAL_ORIGIN$FRONTEND_HEALTH_PATH" direct \
+    "$FRONTEND_READY_ATTEMPTS" \
+    || { frontend_diagnostics; fail "Frontend PM2 endpoint did not become ready"; }
+wait_for_frontend_http nginx_origin \
+    "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" origin \
+    "$FRONTEND_READY_ATTEMPTS" \
+    || { frontend_diagnostics; fail "Frontend Nginx origin endpoint did not become ready"; }
+wait_for_frontend_http public \
+    "$PUBLIC_ORIGIN$FRONTEND_HEALTH_PATH" public \
+    "$FRONTEND_PUBLIC_ATTEMPTS" \
+    || { frontend_diagnostics; fail "Public frontend endpoint did not become ready"; }
+check_http public_admin_login "$API_ORIGIN/admin/login" \
+    || fail "Public admin endpoint failed"
+check_locations_api origin \
+    || fail "Final locations origin API check failed"
+check_locations_api public \
+    || fail "Final locations public API check failed"
+check_frontend_locations_dataset \
+    || fail "Public frontend locations dataset is invalid"
+
+check_release() {
+    local url="$1"
+    local separator='?'
+    local body
+    case "$url" in
+        *\?*) separator='&' ;;
+    esac
+    body="$(curl --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 30 \
+        -fsS "$url${separator}deploy_sha=$FRONTEND_SHA")" || return 1
+    printf 'PUBLIC_RELEASE=%s\n' "$body"
+    printf '%s' "$body" | grep -Fq '"frontend_sha"' \
+        && printf '%s' "$body" | grep -Fq "$FRONTEND_SHA"
+}
+
+if [ "$SKIP_PUBLIC_CHECK" = "1" ]; then
+    echo "PUBLIC_RELEASE_CHECK=SKIPPED"
+else
+    check_release "$PUBLIC_ORIGIN$PUBLIC_RELEASE_PATH" \
+        || fail "Public frontend release marker does not match $FRONTEND_SHA"
+fi
+
+CURRENT_STEP=finalize
+DEPLOY_SUCCEEDED=1
+echo "BACKUP_DIR=$BACKUP_DIR"
+echo "BACKEND_SHA=$BACKEND_SHA"
+echo "FRONTEND_SHA=$FRONTEND_SHA"
+echo "BACKEND_SOURCE_REPO=$BACKEND_SOURCE_REPO"
+echo "FRONTEND_SOURCE_REPO=$FRONTEND_SOURCE_REPO"
+echo "BACKEND_DIR=$BACKEND_DIR"
+echo "FRONTEND_DIR=$FRONTEND_DIR"
+echo "PUBLIC_ORIGIN=$PUBLIC_ORIGIN"
+echo "API_ORIGIN=$API_ORIGIN"
+echo "FRONTEND_LOCAL_ORIGIN=$FRONTEND_LOCAL_ORIGIN"
+echo "FRONTEND_RUNTIME=$FRONTEND_HOST:$FRONTEND_PORT"
+echo "ADMIN_ASSET_MANIFEST_SHA256=$ADMIN_ASSET_MANIFEST_SHA256"
+echo "ADMIN_ASSETS=BUILT_AND_ACTIVATED"
+echo "MIGRATION=$MIGRATION_STATUS"
+echo "QUEUE_RESTART=$QUEUE_RESTART_STATUS"
+echo "SEEDERS=$([ "$RUN_SEEDERS" = "1" ] && echo "$SEEDERS" || echo NOT_RUN)"
+echo "DATABASE_CHANGED=$DATABASE_CHANGED"
+echo "SITE=$SITE"
+echo "AAPANEL_DEPLOY_COMPLETE=YES"
