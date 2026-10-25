@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Page;
+use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
@@ -12,9 +13,14 @@ use Inertia\Inertia;
 
 class PageController extends Controller
 {
-    public function index()
+    public function index(PublicUrlResolver $urls)
     {
-        $pages = Page::latest()->get();
+        $pages = Page::latest()->get()->map(fn (Page $page): array => [
+            ...$page->toArray(),
+            'public_url' => $page->is_active
+                ? $urls->absolute($urls->pagePathForSlug((string) $page->slug))
+                : null,
+        ]);
 
         return Inertia::render('Admin/Pages/Index', [
             'pages' => $pages,

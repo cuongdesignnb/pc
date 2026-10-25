@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MenuController;
 use App\Http\Controllers\Api\NewsletterController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\PcBuilderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductQuestionController;
@@ -73,6 +74,9 @@ Route::prefix('v1')->group(function () {
 
     // Settings
     Route::get('/settings', [SettingController::class, 'index']);
+
+    // Published CMS pages. Hidden pages remain unavailable to public clients.
+    Route::get('/pages/{slug}', [PageController::class, 'show']);
 
     // Newsletter
     Route::post('/newsletter/subscribe', [NewsletterController::class, 'subscribe']);
