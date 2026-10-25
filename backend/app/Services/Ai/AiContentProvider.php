@@ -14,14 +14,25 @@ class AiContentProvider
 
     public function generate(array $input, ?string $fallbackTitle = null): array
     {
+        $type = $input['type'];
+        $text = $this->complete($this->systemPrompt($type), $this->prompt($input));
+
+        return $this->sanitizer->parse($text, $type, $fallbackTitle ?? $input['topic']);
+    }
+
+    /**
+     * Send one system + user prompt to the configured content provider and
+     * return its raw JSON text. Shared by every text feature so they all use
+     * the same (OpenAI-compatible) provider and key.
+     */
+    public function complete(string $system, string $prompt): string
+    {
         $config = $this->configuration->content();
         $this->assertHttps($config['base_url']);
         if (trim((string) $config['api_key']) === '') {
             throw new AiProviderException('Chưa cấu hình OPENAI_API_KEY cho AI nội dung.', 503);
         }
 
-        $type = $input['type'];
-        $prompt = $this->prompt($input);
         $request = Http::timeout((int) $config['timeout'])
             ->withToken($config['api_key'])
             ->acceptJson();
@@ -29,7 +40,7 @@ class AiContentProvider
         $response = $config['wire_api'] === 'responses'
             ? $request->post($config['base_url'].'/responses', [
                 'model' => $config['model'],
-                'instructions' => $this->systemPrompt($type),
+                'instructions' => $system,
                 'input' => $prompt,
                 'reasoning' => ['effort' => $config['reasoning_effort']],
                 'max_output_tokens' => (int) $config['max_tokens'],
@@ -39,7 +50,7 @@ class AiContentProvider
             : $request->post($config['base_url'].'/chat/completions', [
                 'model' => $config['model'],
                 'messages' => [
-                    ['role' => 'system', 'content' => $this->systemPrompt($type)],
+                    ['role' => 'system', 'content' => $system],
                     ['role' => 'user', 'content' => $prompt],
                 ],
                 'max_tokens' => (int) $config['max_tokens'],
@@ -55,7 +66,7 @@ class AiContentProvider
             throw new AiProviderException('AI provider không trả về nội dung.', 502);
         }
 
-        return $this->sanitizer->parse($text, $type, $fallbackTitle ?? $input['topic']);
+        return $text;
     }
 
     private function systemPrompt(string $type): string

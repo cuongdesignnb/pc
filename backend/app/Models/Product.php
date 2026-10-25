@@ -33,6 +33,7 @@ class Product extends Model
         'specifications_text',
         'meta_title',
         'meta_description',
+        'video_url',
         'views_count',
         'sold_count',
         'barcode',

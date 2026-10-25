@@ -203,7 +203,8 @@ class AiProductContentCampaignTest extends TestCase
 
     public function test_web_research_requires_allowlisted_official_source_and_exact_model_match(): void
     {
-        config()->set('ai.content.api_key', 'test-key');
+        config()->set('ai.content.api_key', 'third-party-key');
+        config()->set('ai.research.api_key', 'official-research-key');
         Setting::set('ai_product_research_enabled', true);
         Setting::set('ai_product_research_official_domains', "NVIDIA=nvidia.com\nIntel=intel.com");
         $brand = Brand::create(['name' => 'NVIDIA', 'slug' => 'nvidia', 'is_active' => true]);
@@ -226,7 +227,26 @@ class AiProductContentCampaignTest extends TestCase
 
         $this->assertTrue($result['verified']);
         $this->assertSame('www.nvidia.com', $result['sources'][0]['domain']);
-        Http::assertSent(fn ($request) => $request->data()['tools'][0]['filters']['allowed_domains'] === ['nvidia.com']);
+        Http::assertSent(fn ($request) => $request->data()['tools'][0]['filters']['allowed_domains'] === ['nvidia.com']
+            && $request->hasHeader('Authorization', 'Bearer official-research-key'));
+    }
+
+    public function test_web_research_never_sends_third_party_content_key_to_openai(): void
+    {
+        config()->set('ai.content.api_key', 'third-party-key');
+        config()->set('ai.content.base_url', 'https://modelapi.vn/v1');
+        config()->set('ai.research.api_key', null);
+        Setting::set('ai_product_research_enabled', true);
+        Setting::set('ai_product_research_official_domains', 'NVIDIA=nvidia.com');
+        $brand = Brand::create(['name' => 'NVIDIA', 'slug' => 'nvidia', 'is_active' => true]);
+        $product = $this->product(['name' => 'NVIDIA GeForce RTX 5080', 'sku' => 'RTX5080-KEY'], ['brand' => $brand]);
+        Http::fake();
+
+        $result = app(ProductContentResearchService::class)->research($product);
+
+        $this->assertFalse($result['verified']);
+        $this->assertStringContainsString('OPENAI_RESEARCH_API_KEY', implode(' ', $result['warnings']));
+        Http::assertNothingSent();
     }
 
     private function admin(): User

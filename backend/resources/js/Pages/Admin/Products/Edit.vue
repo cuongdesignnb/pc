@@ -43,6 +43,7 @@ const form = useForm({
     warranty_months: props.product.warranty_months || 12,
     meta_title: props.product.meta_title || '',
     meta_description: props.product.meta_description || '',
+    video_url: props.product.video_url || '',
     thumbnail: primaryImg ? primaryImg.url : '',
     gallery: galleryImgs,
     variants: (props.product.variants || []).map(variant => ({
@@ -344,6 +345,15 @@ function removeVariant(index) {
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">SEO</h4>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta title</label><input v-model="form.meta_title" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta description</label><textarea v-model="form.meta_description" rows="2" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
+            </div>
+
+            <!-- Video -->
+            <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-2">
+                <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Video sản phẩm</h4>
+                <label class="block text-sm font-medium text-slate-300 mb-1">Link YouTube</label>
+                <input v-model="form.video_url" type="url" placeholder="https://www.youtube.com/watch?v=..." class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                <p v-if="form.errors.video_url" class="text-xs text-red-400">{{ form.errors.video_url }}</p>
+                <p class="text-xs text-slate-500">Dán link YouTube (video thường, youtu.be hoặc Shorts). Video hiện trên trang chi tiết sản phẩm; để trống nếu không có.</p>
             </div>
 
             <div class="flex justify-end gap-3">
