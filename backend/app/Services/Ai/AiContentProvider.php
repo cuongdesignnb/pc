@@ -25,9 +25,10 @@ class AiContentProvider
      * return its raw JSON text. Shared by every text feature so they all use
      * the same (OpenAI-compatible) provider and key.
      */
-    public function complete(string $system, string $prompt): string
+    public function complete(string $system, string $prompt, ?int $minOutputTokens = null): string
     {
         $config = $this->configuration->content();
+        $maxTokens = max((int) $config['max_tokens'], (int) $minOutputTokens);
         $this->assertHttps($config['base_url']);
         if (trim((string) $config['api_key']) === '') {
             throw new AiProviderException('Chưa cấu hình OPENAI_API_KEY cho AI nội dung.', 503);
@@ -43,7 +44,7 @@ class AiContentProvider
                 'instructions' => $system,
                 'input' => $prompt,
                 'reasoning' => ['effort' => $config['reasoning_effort']],
-                'max_output_tokens' => (int) $config['max_tokens'],
+                'max_output_tokens' => $maxTokens,
                 'store' => false,
                 'text' => ['format' => ['type' => 'json_object']],
             ])
@@ -53,7 +54,7 @@ class AiContentProvider
                     ['role' => 'system', 'content' => $system],
                     ['role' => 'user', 'content' => $prompt],
                 ],
-                'max_tokens' => (int) $config['max_tokens'],
+                'max_tokens' => $maxTokens,
                 'temperature' => 0.7,
             ]);
 

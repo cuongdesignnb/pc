@@ -5,6 +5,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
+import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 
 const props = defineProps({
@@ -131,11 +132,7 @@ function submit() {
 }
 
 function applyAi(data) {
-    form.description = data.content || data.body || form.description;
-    form.short_description = data.short_description || data.excerpt || form.short_description;
-    form.meta_title = data.meta_title || form.meta_title;
-    form.meta_description = data.meta_description || form.meta_description;
-    if (data.thumbnail) form.thumbnail = data.thumbnail;
+    applyProductAiResult(form, data);
 }
 
 function addVariant() {

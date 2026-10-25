@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Services\Ai\ProductContentHeadingResolver;
 use App\Services\Seo\PublicUrlResolver;
+use App\Support\HtmlToText;
 use App\Support\YouTubeVideo;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -114,11 +115,10 @@ class ProductDetailResource extends JsonResource
             'technical_section_title' => $technicalSectionTitle,
             'description_heading' => $headingResolver->contentHeading($hasSpecifications),
             'short_description' => $this->short_description,
-            // Legacy rich-editor HTML is intentionally reduced to text. New richer
-            // content is rendered only from the typed detail_blocks payload above.
-            'description' => filled($this->description)
-                ? trim(html_entity_decode(strip_tags($this->description), ENT_QUOTES | ENT_HTML5, 'UTF-8'))
-                : null,
+            // Rich-editor HTML is reduced to text (headings and paragraphs on
+            // their own lines, list items as bullets). Richer layout is rendered
+            // only from the typed detail_blocks payload above.
+            'description' => HtmlToText::convert($this->description),
             'seo' => [
                 'title' => $this->meta_title,
                 'description' => $this->meta_description,

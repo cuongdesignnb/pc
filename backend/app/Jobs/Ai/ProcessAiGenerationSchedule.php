@@ -77,6 +77,8 @@ class ProcessAiGenerationSchedule implements ShouldQueue
                 'category_id' => $schedule->category_id,
                 'product_id' => $schedule->product_id,
                 'existing_content' => $schedule->product?->description,
+                // Scheduled runs only persist the description and SEO fields.
+                'sections' => ['description'],
             ], $schedule->created_by);
 
             $articleId = null;

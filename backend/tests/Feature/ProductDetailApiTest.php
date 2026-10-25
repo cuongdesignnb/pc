@@ -49,7 +49,7 @@ class ProductDetailApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('product.name', $product->name)
             ->assertJsonPath('product.variants.0.attributes.RAM', '16 GB')
-            ->assertJsonPath('product.description', 'alert(1)Nội dung an toàn')
+            ->assertJsonPath('product.description', 'Nội dung an toàn')
             ->assertJsonMissingPath('product.cost_price')
             ->assertJsonMissingPath('product.provider')
             ->assertJsonMissingPath('product.kiot_sync_error_message')
