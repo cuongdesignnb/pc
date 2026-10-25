@@ -14,6 +14,14 @@ const loading = ref(false);
 const error = ref('');
 const warnings = ref([]);
 const form = ref({ topic: props.topic, keywords: '', tone: 'professional', length: 'medium', with_images: false, image_count: 0 });
+const isProduct = props.type === 'product_description';
+const sectionOptions = [
+    { value: 'description', label: 'Mô tả chi tiết + SEO' },
+    { value: 'specifications', label: 'Thông số kỹ thuật' },
+    { value: 'highlights', label: 'Điểm nổi bật' },
+    { value: 'blocks', label: 'Khối nội dung (thẻ tính năng, cấu hình, phù hợp cho)' },
+];
+const sections = ref(sectionOptions.map(option => option.value));
 
 function show() {
     form.value.topic = props.topic || form.value.topic;
@@ -24,6 +32,7 @@ function show() {
 
 async function generate() {
     if (!form.value.topic.trim()) { error.value = 'Vui lòng nhập chủ đề hoặc tên sản phẩm.'; return; }
+    if (isProduct && !sections.value.length) { error.value = 'Chọn ít nhất một phần cần viết.'; return; }
     loading.value = true;
     error.value = '';
     warnings.value = [];
@@ -40,6 +49,7 @@ async function generate() {
             image_count: Number(form.value.image_count),
             existing_content: props.existingContent,
             product_id: props.productId || null,
+            ...(isProduct ? { sections: sections.value } : {}),
         }, { headers: { Accept: 'application/json' } });
         if (!data.success) throw new Error(data.message || data.error || 'Không thể tạo nội dung AI.');
         warnings.value = data.warnings || [];
@@ -64,6 +74,11 @@ async function generate() {
                     <label class="block text-sm text-slate-300">Chủ đề / tên sản phẩm<input v-model="form.topic" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" /></label>
                     <label class="block text-sm text-slate-300">Từ khóa SEO (không bắt buộc)<textarea v-model="form.keywords" rows="2" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" /></label>
                     <div class="grid grid-cols-2 gap-3"><label class="text-sm text-slate-300">Giọng văn<select v-model="form.tone" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2"><option value="professional">Chuyên nghiệp</option><option value="casual">Thân thiện</option><option value="luxury">Cao cấp</option></select></label><label class="text-sm text-slate-300">Độ dài<select v-model="form.length" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2"><option value="short">Ngắn</option><option value="medium">Vừa</option><option value="long">Dài</option></select></label></div>
+                    <fieldset v-if="isProduct" class="rounded-lg border border-slate-700 p-3">
+                        <legend class="px-1 text-sm text-slate-300">Phần cần viết (ghi đè vào form, chưa lưu)</legend>
+                        <label v-for="option in sectionOptions" :key="option.value" class="mt-1 flex items-center gap-2 text-sm text-slate-300"><input v-model="sections" :value="option.value" type="checkbox" class="rounded text-violet-500" /> {{ option.label }}</label>
+                        <p class="mt-2 text-xs text-amber-300/80">AI viết dựa trên tên sản phẩm. Kiểm tra lại thông số trước khi bấm Lưu.</p>
+                    </fieldset>
                     <label class="flex items-center gap-2 text-sm text-slate-300"><input v-model="form.with_images" type="checkbox" class="rounded text-violet-500" /> Sinh thêm ảnh minh họa</label>
                     <label v-if="form.with_images" class="block text-sm text-slate-300">Số ảnh trong nội dung (0–10)<input v-model.number="form.image_count" type="number" min="0" max="10" class="mt-1 w-28 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2" /></label>
                     <p v-if="warnings.length" class="text-xs text-amber-300">{{ warnings.join(' ') }}</p>

@@ -9,6 +9,7 @@ use App\Models\PostCategory;
 use App\Models\Product;
 use App\Services\Ai\AiConfigurationResolver;
 use App\Services\Ai\AiGenerationService;
+use App\Services\Ai\ProductPageWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -119,6 +120,8 @@ class AiGenerationController extends Controller
             'existing_content' => 'nullable|string|max:20000',
             'product_id' => 'nullable|exists:products,id',
             'image_count' => $withImages ? 'integer|min:0|max:10' : 'nullable',
+            'sections' => 'nullable|array',
+            'sections.*' => 'string|in:'.implode(',', ProductPageWriter::SECTIONS),
         ]);
         $data['with_images'] = $withImages;
         $data['image_count'] = $withImages ? (int) ($data['image_count'] ?? 0) : 0;

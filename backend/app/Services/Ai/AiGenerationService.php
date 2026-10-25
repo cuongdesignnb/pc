@@ -11,6 +11,7 @@ class AiGenerationService
     public function __construct(
         private readonly AiContentProvider $content,
         private readonly AiImageProvider $images,
+        private readonly ProductPageWriter $productPage,
     ) {}
 
     public function generate(array $input, ?int $userId = null): array
@@ -19,7 +20,10 @@ class AiGenerationService
         $category = $input['type'] === 'category_description' && ! empty($input['category_id'])
             ? Category::find($input['category_id'])
             : null;
-        if ($product) {
+        if ($input['type'] === 'product_description') {
+            $input['topic'] = $input['topic'] ?: (string) $product?->name;
+            $result = $this->productPage->generate($input, $product, (array) ($input['sections'] ?? ProductPageWriter::SECTIONS));
+        } elseif ($product) {
             $facts = "Tên: {$product->name}\nSKU: {$product->sku}\nMô tả hiện có: ".($product->description ?: 'trống')."\nThông số: ".($product->specifications_text ?: 'không có');
             $input['existing_content'] = trim(($input['existing_content'] ?? '')."\n".$facts);
             $input['topic'] = $input['topic'] ?: $product->name;
@@ -28,7 +32,7 @@ class AiGenerationService
             $input['topic'] = $input['topic'] ?: $category->name;
         }
 
-        $result = $this->content->generate($input, $input['topic']);
+        $result ??= $this->content->generate($input, $input['topic']);
         $result['warnings'] = [];
         $result['images'] = [];
         $result['thumbnail'] = null;
