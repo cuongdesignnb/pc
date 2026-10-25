@@ -8,6 +8,7 @@ use App\Models\AiArticleBatchItem;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Setting;
+use App\Services\Ai\AiConfigurationResolver;
 use App\Services\AiArticleService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
@@ -39,7 +40,7 @@ class AiArticleController extends Controller
         return Inertia::render('Admin/AiArticles/Create', [
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
             'hasKeys' => [
-                'chatgpt' => ! empty(Setting::get('chatgpt_api_key')),
+                'chatgpt' => app(AiConfigurationResolver::class)->contentConfigured(),
                 'gemini' => ! empty(Setting::get('gemini_api_key')),
             ],
         ]);
@@ -131,7 +132,7 @@ class AiArticleController extends Controller
                 // Generate featured image
                 $imageUrl = null;
                 if (! empty($article['image_prompt'])) {
-                    $imageProvider = ! empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
+                    $imageProvider = $this->imageProvider();
                     $imageUrl = $service->generateImage($article['image_prompt'], $imageProvider);
                 }
 
@@ -207,7 +208,7 @@ class AiArticleController extends Controller
             // Generate image
             $imageUrl = null;
             if (! empty($article['image_prompt'])) {
-                $imageProvider = ! empty(Setting::get('gemini_api_key')) ? 'gemini' : 'chatgpt';
+                $imageProvider = $this->imageProvider();
                 $imageUrl = $service->generateImage($article['image_prompt'], $imageProvider);
             }
             $article['featured_image'] = $imageUrl;
@@ -227,5 +228,16 @@ class AiArticleController extends Controller
 
         return redirect()->route('admin.ai-articles.index')
             ->with('success', 'Da xoa batch thanh cong.');
+    }
+
+    /**
+     * Featured images prefer the official OpenAI image key; Gemini is only a
+     * fallback when that key is not configured.
+     */
+    private function imageProvider(): string
+    {
+        return trim((string) app(AiConfigurationResolver::class)->image()['api_key']) !== ''
+            ? 'chatgpt'
+            : 'gemini';
     }
 }

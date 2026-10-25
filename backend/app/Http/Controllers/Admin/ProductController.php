@@ -13,6 +13,7 @@ use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\YouTubeVideo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -93,6 +94,11 @@ class ProductController extends Controller
             'warranty_months' => 'nullable|integer|min:0',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
+            'video_url' => ['nullable', 'string', 'max:500', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (YouTubeVideo::id((string) $value) === null) {
+                    $fail('Video phải là link YouTube hợp lệ (youtube.com/watch, youtu.be, shorts).');
+                }
+            }],
             // Images
             'thumbnail' => 'nullable|string',
             'gallery' => 'nullable|array',
@@ -151,6 +157,9 @@ class ProductController extends Controller
         }
 
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
+        if (array_key_exists('video_url', $productData)) {
+            $productData['video_url'] = YouTubeVideo::canonicalUrl($productData['video_url']);
+        }
         $productData += [
             'slug_source' => $validated['name'],
             'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
@@ -243,6 +252,11 @@ class ProductController extends Controller
             'warranty_months' => 'nullable|integer|min:0',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
+            'video_url' => ['nullable', 'string', 'max:500', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (YouTubeVideo::id((string) $value) === null) {
+                    $fail('Video phải là link YouTube hợp lệ (youtube.com/watch, youtu.be, shorts).');
+                }
+            }],
             // Images
             'thumbnail' => 'nullable|string',
             'gallery' => 'nullable|array',
@@ -306,6 +320,9 @@ class ProductController extends Controller
             ? '/'.trim((string) $oldCategorySlug, '/').'/'.trim($oldSlug, '/')
             : null;
         $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
+        if (array_key_exists('video_url', $productData)) {
+            $productData['video_url'] = YouTubeVideo::canonicalUrl($productData['video_url']);
+        }
         $productData += [
             'slug_source' => $validated['name'],
             'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,

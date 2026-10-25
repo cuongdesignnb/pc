@@ -45,7 +45,7 @@ function submit() {
         <!-- API Key warnings -->
         <div v-if="!hasKeys?.chatgpt && !hasKeys?.gemini" class="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
             <p class="text-sm text-red-400 font-medium">Chua cau hinh API Key</p>
-            <p class="text-xs text-red-400/70 mt-1">Vui long vao <Link href="/admin/settings" class="text-cyan-400 underline">Cai dat</Link> de nhap ChatGPT hoac Gemini API Key truoc khi su dung.</p>
+            <p class="text-xs text-red-400/70 mt-1">Vui long vao <Link href="/admin/settings" class="text-cyan-400 underline">Cai dat</Link> de nhap API key AI noi dung (hoac Gemini API Key) truoc khi su dung.</p>
         </div>
 
         <!-- Form -->
@@ -90,7 +90,7 @@ Cach chon man hinh cho do hoa"
                             v-model="form.ai_provider"
                             class="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50"
                         >
-                            <option value="chatgpt" :disabled="!hasKeys?.chatgpt">ChatGPT {{ !hasKeys?.chatgpt ? '(chua co key)' : '' }}</option>
+                            <option value="chatgpt" :disabled="!hasKeys?.chatgpt">GPT (AI noi dung) {{ !hasKeys?.chatgpt ? '(chua co key)' : '' }}</option>
                             <option value="gemini" :disabled="!hasKeys?.gemini">Gemini {{ !hasKeys?.gemini ? '(chua co key)' : '' }}</option>
                         </select>
                     </div>

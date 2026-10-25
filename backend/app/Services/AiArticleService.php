@@ -3,12 +3,28 @@
 namespace App\Services;
 
 use App\Models\Setting;
+use App\Services\Ai\AiContentProvider;
+use App\Services\Ai\AiImageProvider;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class AiArticleService
 {
+    private readonly AiContentProvider $content;
+
+    private readonly AiImageProvider $images;
+
+    // Text goes through the shared OpenAI-compatible content provider
+    // (OPENAI_BASE_URL, usually a cheaper third party); images use the
+    // separate official OpenAI image key. The legacy chatgpt_api_key setting
+    // is no longer used.
+    public function __construct(?AiContentProvider $content = null, ?AiImageProvider $images = null)
+    {
+        $this->content = $content ?? app(AiContentProvider::class);
+        $this->images = $images ?? app(AiImageProvider::class);
+    }
+
     /**
      * Generate a full article from a keyword/title.
      */
@@ -38,8 +54,7 @@ class AiArticleService
                 return $this->callGeminiImage($prompt);
             }
 
-            // ChatGPT/DALL-E
-            return $this->callDallE($prompt);
+            return $this->callOpenAiImage($prompt);
         } catch (\Exception $e) {
             Log::error('AI Image generation failed: '.$e->getMessage());
 
@@ -84,32 +99,10 @@ PROMPT;
 
     private function callChatGPT(string $prompt): string
     {
-        $apiKey = Setting::get('chatgpt_api_key');
-        $model = Setting::get('chatgpt_model', 'gpt-4o-mini');
-
-        if (! $apiKey) {
-            throw new \Exception('ChatGPT API Key chua duoc cau hinh. Vui long cap nhat trong Cai dat.');
-        }
-
-        $response = Http::timeout(120)->withHeaders([
-            'Authorization' => "Bearer {$apiKey}",
-            'Content-Type' => 'application/json',
-        ])->post('https://api.openai.com/v1/chat/completions', [
-            'model' => $model,
-            'messages' => [
-                ['role' => 'system', 'content' => 'Ban la chuyen gia viet noi dung SEO cho nganh cong nghe. Luon tra ve JSON hop le.'],
-                ['role' => 'user', 'content' => $prompt],
-            ],
-            'temperature' => 0.7,
-            'max_tokens' => 4000,
-        ]);
-
-        if ($response->failed()) {
-            $error = $response->json('error.message', 'API call failed');
-            throw new \Exception("ChatGPT API Error: {$error}");
-        }
-
-        return $response->json('choices.0.message.content', '');
+        return $this->content->complete(
+            'Ban la chuyen gia viet noi dung SEO cho nganh cong nghe. Luon tra ve JSON hop le.',
+            $prompt,
+        );
     }
 
     private function callGemini(string $prompt): string
@@ -186,42 +179,9 @@ PROMPT;
         return null;
     }
 
-    private function callDallE(string $prompt): ?string
+    private function callOpenAiImage(string $prompt): ?string
     {
-        $apiKey = Setting::get('chatgpt_api_key');
-        if (! $apiKey) {
-            return null;
-        }
-
-        $response = Http::timeout(60)->withHeaders([
-            'Authorization' => "Bearer {$apiKey}",
-        ])->post('https://api.openai.com/v1/images/generations', [
-            'model' => 'dall-e-3',
-            'prompt' => $prompt,
-            'n' => 1,
-            'size' => '1792x1024',
-            'quality' => 'standard',
-        ]);
-
-        if ($response->successful()) {
-            $imageUrl = $response->json('data.0.url');
-            if ($imageUrl) {
-                // Download and save locally
-                $imageData = Http::timeout(30)->get($imageUrl)->body();
-                $filename = 'ai-images/'.Str::random(20).'.png';
-                $path = storage_path('app/public/'.$filename);
-
-                if (! is_dir(dirname($path))) {
-                    mkdir(dirname($path), 0755, true);
-                }
-
-                file_put_contents($path, $imageData);
-
-                return '/storage/'.$filename;
-            }
-        }
-
-        return null;
+        return $this->images->generate($prompt, Str::limit($prompt, 120, ''))['url'];
     }
 
     private function parseArticleResponse(string $raw, string $keyword): array

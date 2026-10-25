@@ -51,6 +51,7 @@ function buildFormData() {
 const formData = ref(buildFormData());
 const processing = ref(false);
 const flash = ref(null);
+const saveErrors = ref([]);
 const testEmail = ref('');
 const testingSmtp = ref(false);
 
@@ -68,8 +69,12 @@ function submit() {
     }
 
     const form = useForm({ settings: allSettings });
+    saveErrors.value = [];
     form.put('/admin/settings', {
         preserveScroll: true,
+        onError: (errors) => {
+            saveErrors.value = Object.values(errors);
+        },
         onSuccess: () => {
             flash.value = 'Đã lưu cài đặt thành công!';
             setTimeout(() => { flash.value = null; }, 3000);
@@ -112,6 +117,11 @@ function sendSmtpTest() {
                 <h3 class="text-xl font-bold text-slate-200">Cài đặt website</h3>
                 <p class="text-sm text-slate-400 mt-1">Quản lý thông tin và cấu hình chung cho website</p>
             </div>
+        </div>
+
+        <!-- Validation errors -->
+        <div v-if="saveErrors.length" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm space-y-1">
+            <p v-for="message in saveErrors" :key="message">{{ message }}</p>
         </div>
 
         <!-- Success flash -->
@@ -213,10 +223,6 @@ function sendSmtpTest() {
                                         :rows="item.key === 'storefront_warehouse_addresses' || item.key === 'storefront_warranty_information' ? 8 : 3"
                                         class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
                                     />
-                                    <p v-if="item.key === 'storefront_warehouse_addresses'" class="text-xs text-slate-500 mt-1">Mỗi kho một nhóm dòng; có thể dùng ký hiệu 📍 và ☎, xuống dòng sẽ được giữ nguyên ngoài trang sản phẩm.</p>
-                                    <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
-                                    <p v-else-if="item.key === 'ai_product_research_official_domains'" class="text-xs text-slate-500 mt-1">Mỗi dòng một thương hiệu: <code class="text-slate-300">NVIDIA=nvidia.com</code>. Chỉ URL thuộc domain này mới được lưu làm nguồn kiểm chứng.</p>
-                                    <p v-else-if="item.key === 'storefront_product_contact_footer_website_url' || item.key === 'storefront_product_contact_footer_maps_url'" class="text-xs text-slate-500 mt-1">Dùng URL HTTPS đầy đủ. Footer mặc định tắt và chỉ được thêm vào sản phẩm khi campaign bật lựa chọn này.</p>
 
                                     <!-- Boolean toggle -->
                                     <label v-else-if="item.type === 'boolean'" class="relative inline-flex items-center cursor-pointer mt-1">
@@ -258,6 +264,14 @@ function sendSmtpTest() {
                                         :placeholder="item.label"
                                         class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
                                     />
+
+                                    <!-- Field hints: kept after the input chain so their v-if/v-else-if
+                                         cannot capture the input branches above. -->
+                                    <p v-if="item.key === 'storefront_warehouse_addresses'" class="text-xs text-slate-500 mt-1">Mỗi kho một nhóm dòng; có thể dùng ký hiệu 📍 và ☎, xuống dòng sẽ được giữ nguyên ngoài trang sản phẩm.</p>
+                                    <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
+                                    <p v-else-if="item.key === 'ai_product_research_official_domains'" class="text-xs text-slate-500 mt-1">Mỗi dòng một thương hiệu: <code class="text-slate-300">NVIDIA=nvidia.com</code>. Chỉ URL thuộc domain này mới được lưu làm nguồn kiểm chứng.</p>
+                                    <p v-else-if="item.key === 'contact_map_embed_url'" class="text-xs text-slate-500 mt-1">Trên Google Maps chọn Chia sẻ → Nhúng bản đồ → Sao chép HTML rồi dán vào đây (dán cả thẻ iframe cũng được). Để trống để ẩn bản đồ ở trang Liên hệ.</p>
+                                    <p v-else-if="item.key === 'storefront_product_contact_footer_website_url' || item.key === 'storefront_product_contact_footer_maps_url'" class="text-xs text-slate-500 mt-1">Dùng URL HTTPS đầy đủ. Footer mặc định tắt và chỉ được thêm vào sản phẩm khi campaign bật lựa chọn này.</p>
 
                                     <p class="text-xs text-slate-500 mt-1">{{ item.key }}</p>
                                 </div>

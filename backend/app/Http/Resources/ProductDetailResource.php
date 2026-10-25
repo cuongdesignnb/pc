@@ -4,8 +4,10 @@ namespace App\Http\Resources;
 
 use App\Services\Ai\ProductContentHeadingResolver;
 use App\Services\Seo\PublicUrlResolver;
+use App\Support\YouTubeVideo;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+
 
 /** @mixin \App\Models\Product */
 class ProductDetailResource extends JsonResource
@@ -107,6 +109,7 @@ class ProductDetailResource extends JsonResource
                 'title' => $block->title,
                 'payload' => $block->payload,
             ]),
+            'video' => YouTubeVideo::toArray($this->video_url),
             'specifications' => $specifications,
             'has_specifications' => $hasSpecifications,
             'technical_section_title' => $technicalSectionTitle,

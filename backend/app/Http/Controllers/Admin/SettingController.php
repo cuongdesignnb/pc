@@ -6,16 +6,22 @@ use App\Exceptions\SmtpConfigurationException;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Services\Mail\StorefrontSmtpMailer;
+use App\Support\GoogleMapsEmbed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Throwable;
 
 class SettingController extends Controller
 {
+    // Kept in the database but no longer read: AI article text now uses the
+    // shared content provider (openai_*), images use openai_image_*.
+    private const RETIRED_KEYS = ['chatgpt_api_key', 'chatgpt_model'];
+
     public function index()
     {
-        $settings = Setting::orderBy('group')->orderBy('id')->get()->map(function (Setting $setting) {
+        $settings = Setting::whereNotIn('key', self::RETIRED_KEYS)->orderBy('group')->orderBy('id')->get()->map(function (Setting $setting) {
             if ($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) {
                 $setting->type = 'password';
             }
@@ -51,6 +57,14 @@ class SettingController extends Controller
                     'value.url' => 'Website và Maps phải là URL hợp lệ.',
                     'value.starts_with' => 'Website và Maps phải dùng HTTPS.',
                 ])->validate();
+            }
+            if ($setting && $setting->key === 'contact_map_embed_url' && filled($item['value'] ?? null)) {
+                $item['value'] = GoogleMapsEmbed::normalize((string) $item['value']);
+                if ($item['value'] === null) {
+                    throw ValidationException::withMessages([
+                        'contact_map_embed_url' => 'Bản đồ phải là mã nhúng hoặc link "Nhúng bản đồ" của Google Maps (https://www.google.com/maps/embed?...).',
+                    ]);
+                }
             }
             if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'], ['', '********'], true))) {
                 Setting::set($setting->key, $item['value']);

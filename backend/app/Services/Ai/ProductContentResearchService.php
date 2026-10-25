@@ -31,9 +31,14 @@ class ProductContentResearchService
 
         $config = $this->configuration->content();
         $baseUrl = rtrim((string) config('ai.research.base_url', 'https://api.openai.com/v1'), '/');
-        $apiKey = trim((string) ($config['api_key'] ?? config('ai.research.api_key')));
+        // Never send the content key to OpenAI unless the content provider is
+        // OpenAI itself; a third-party key would leak and always be rejected.
+        $apiKey = trim((string) config('ai.research.api_key'));
+        if ($apiKey === '' && parse_url((string) $config['base_url'], PHP_URL_HOST) === 'api.openai.com') {
+            $apiKey = trim((string) $config['api_key']);
+        }
         if ($apiKey === '' || parse_url($baseUrl, PHP_URL_HOST) !== 'api.openai.com') {
-            $empty['warnings'][] = 'Web research cần OPENAI_API_KEY và Responses API chính thức của OpenAI.';
+            $empty['warnings'][] = 'Web research cần OPENAI_RESEARCH_API_KEY (OpenAI chính hãng) và Responses API chính thức của OpenAI.';
 
             return $empty;
         }
