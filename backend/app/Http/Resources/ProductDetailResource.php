@@ -8,7 +8,6 @@ use App\Support\YouTubeVideo;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-
 /** @mixin \App\Models\Product */
 class ProductDetailResource extends JsonResource
 {
