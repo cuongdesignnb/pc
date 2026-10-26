@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
@@ -7,6 +7,7 @@ import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
+import ProductFormErrors from '@/Components/ProductFormErrors.vue';
 
 const props = defineProps({
     categories: Array,
@@ -30,32 +31,7 @@ const form = useForm({
     compatibility_specs: [],
 });
 
-const validationSummary = ref(null);
-const validationLabels = {
-    name: 'Tên sản phẩm',
-    slug: 'Slug',
-    sku: 'SKU',
-    category_id: 'Danh mục',
-    brand_id: 'Thương hiệu',
-    component_type_id: 'Loại linh kiện',
-    price: 'Giá gốc',
-    sale_price: 'Giá sale',
-    stock_quantity: 'Tồn kho',
-    warranty_months: 'Thời hạn bảo hành',
-    thumbnail: 'Ảnh đại diện',
-    gallery: 'Thư viện ảnh',
-};
-const validationErrors = computed(() => Object.entries(form.errors).map(([field, message]) => ({
-    field,
-    label: validationLabels[field]
-        || (field.startsWith('variants.') ? 'Biến thể sản phẩm' : null)
-        || (field.startsWith('highlights.') ? 'Điểm nổi bật' : null)
-        || (field.startsWith('detail_blocks.') ? 'Khối nội dung' : null)
-        || (field.startsWith('relations.') ? 'Sản phẩm liên quan' : null)
-        || (field.startsWith('compatibility_specs.') ? 'Thông số tương thích' : null)
-        || field,
-    message,
-})));
+const formErrors = ref(null);
 
 function genSlug() {
     form.slug = form.name.toLowerCase().normalize('NFD')
@@ -104,11 +80,7 @@ function submit() {
     normalizeVariantAttributes();
     form.post('/admin/products', {
         preserveScroll: true,
-        onError: async () => {
-            await nextTick();
-            validationSummary.value?.focus();
-            validationSummary.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        },
+        onError: () => formErrors.value?.reveal(),
     });
 }
 
@@ -141,20 +113,7 @@ function removeVariant(index) {
             <Link href="/admin/products" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link>
         </div>
         <form @submit.prevent="submit" class="space-y-6">
-            <div
-                v-if="validationErrors.length"
-                ref="validationSummary"
-                tabindex="-1"
-                role="alert"
-                class="rounded-lg border border-red-500/40 bg-red-500/10 px-5 py-4 text-red-100 outline-none focus:ring-2 focus:ring-red-400/70"
-            >
-                <p class="font-semibold">Không thể tạo sản phẩm — vui lòng kiểm tra {{ validationErrors.length }} lỗi sau:</p>
-                <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-red-200">
-                    <li v-for="error in validationErrors" :key="error.field">
-                        <strong>{{ error.label }}:</strong> {{ error.message }}
-                    </li>
-                </ul>
-            </div>
+            <ProductFormErrors ref="formErrors" :errors="form.errors" heading="Không thể tạo sản phẩm" />
 
             <div class="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-5 py-3 text-sm text-slate-300">
                 <strong class="text-cyan-300">Trường bắt buộc:</strong>

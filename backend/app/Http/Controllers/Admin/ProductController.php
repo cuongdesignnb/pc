@@ -223,7 +223,11 @@ class ProductController extends Controller
 
         return Inertia::render('Admin/Products/Edit', [
             'product' => $product,
-            'categories' => Category::where('is_active', true)->get(),
+            // Keep the product's own category selectable even when it is
+            // hidden, otherwise the select shows "Chọn..." and saving fails.
+            'categories' => Category::where('is_active', true)
+                ->when($product->category_id, fn ($query, $categoryId) => $query->orWhere('id', $categoryId))
+                ->get(),
             'brands' => Brand::where('is_active', true)->get(),
             'componentTypes' => ComponentType::with(['specificationKeys' => fn ($q) => $q->orderBy('display_order')])->orderBy('display_order')->get(),
             'relationCandidates' => Product::select('id', 'name', 'sku')->whereKeyNot($product->id)->latest()->limit(500)->get(),
@@ -238,7 +242,9 @@ class ProductController extends Controller
             'name' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products,slug,'.$product->id,
             'sku' => 'required|string|max:100|unique:products,sku,'.$product->id,
-            'category_id' => 'required|exists:categories,id',
+            // KIOT sync owns the category of KIOT products and leaves it empty
+            // until the KIOT category is mapped; content edits must still save.
+            'category_id' => [$product->inventory_source === 'kiot' ? 'nullable' : 'required', 'exists:categories,id'],
             'brand_id' => 'nullable|exists:brands,id',
             'component_type_id' => 'nullable|exists:component_types,id',
             'description' => 'nullable|string',
@@ -330,6 +336,9 @@ class ProductController extends Controller
         ];
         if ($product->inventory_source === 'kiot') {
             unset($productData['sku'], $productData['price'], $productData['stock_quantity']);
+            if (blank($productData['category_id'] ?? null)) {
+                unset($productData['category_id']);
+            }
             unset($validated['variants']);
         }
         $product->update($productData);
