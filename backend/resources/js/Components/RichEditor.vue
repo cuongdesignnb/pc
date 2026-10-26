@@ -418,8 +418,13 @@ function insertImageByUrl() {
 </template>
 
 <style>
-/* TipTap editor styles */
-.rich-editor .tiptap {
+/* TipTap editor styles.
+   The admin dark theme (AdminLayout) sets `color: inherit` on every div, p,
+   span and li and a light colour on headings and links, with selectors like
+   `.min-h-screen.bg-slate-950 div`. The doubled `.rich-editor` class gives
+   these rules higher specificity so the editor keeps dark text on its white
+   page instead of inheriting the page's near-white text. */
+.rich-editor.rich-editor .tiptap {
     min-height: inherit;
     outline: none;
     color: #1f2937;
@@ -428,7 +433,10 @@ function insertImageByUrl() {
     line-height: 1.75;
     background: #ffffff;
 }
-.rich-editor .tiptap p.is-editor-empty:first-child::before {
+.rich-editor.rich-editor .tiptap :where(div, p, span, li, td, th, strong, em, u, s) {
+    color: inherit;
+}
+.rich-editor.rich-editor .tiptap p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
     float: left;
     color: #94a3b8;
@@ -437,35 +445,35 @@ function insertImageByUrl() {
 }
 
 /* Prose-like styles for the editor content */
-.rich-editor .tiptap h2 { font-size: 1.5em; font-weight: 700; margin-top: 1em; margin-bottom: 0.5em; line-height: 1.3; color: #111827; }
-.rich-editor .tiptap h3 { font-size: 1.25em; font-weight: 600; margin-top: 0.8em; margin-bottom: 0.4em; line-height: 1.35; color: #111827; }
-.rich-editor .tiptap h4 { font-size: 1.1em; font-weight: 600; margin-top: 0.6em; margin-bottom: 0.3em; color: #374151; }
-.rich-editor .tiptap p { margin-bottom: 0.5em; line-height: 1.6; }
-.rich-editor .tiptap ul { list-style: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
-.rich-editor .tiptap ol { list-style: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
-.rich-editor .tiptap li { margin-bottom: 0.2em; }
-.rich-editor .tiptap blockquote { border-left: 3px solid #6366f1; padding-left: 1em; margin: 0.5em 0; color: #4b5563; font-style: italic; }
-.rich-editor .tiptap code { background: #f3f4f6; padding: 0.15em 0.3em; border-radius: 4px; font-size: 0.9em; color: #dc2626; }
-.rich-editor .tiptap pre { background: #1f2937; color: #e5e7eb; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.5em 0; }
-.rich-editor .tiptap pre code { background: none; color: inherit; padding: 0; }
-.rich-editor .tiptap a { color: #4f46e5; text-decoration: underline; cursor: pointer; }
-.rich-editor .tiptap img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
-.rich-editor .tiptap hr { border: none; border-top: 2px solid #e5e7eb; margin: 1em 0; }
-.rich-editor .tiptap mark { background-color: #fef08a; padding: 0.1em 0.2em; border-radius: 2px; }
-.rich-editor .tiptap:focus { box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.14); }
-.rich-editor .tiptap > :first-child { margin-top: 0; }
-.rich-editor .tiptap > :last-child { margin-bottom: 0; }
+.rich-editor.rich-editor .tiptap h2 { font-size: 1.5em; font-weight: 700; margin-top: 1em; margin-bottom: 0.5em; line-height: 1.3; color: #111827; }
+.rich-editor.rich-editor .tiptap h3 { font-size: 1.25em; font-weight: 600; margin-top: 0.8em; margin-bottom: 0.4em; line-height: 1.35; color: #111827; }
+.rich-editor.rich-editor .tiptap h4 { font-size: 1.1em; font-weight: 600; margin-top: 0.6em; margin-bottom: 0.3em; color: #374151; }
+.rich-editor.rich-editor .tiptap p { margin-bottom: 0.5em; line-height: 1.6; }
+.rich-editor.rich-editor .tiptap ul { list-style: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
+.rich-editor.rich-editor .tiptap ol { list-style: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
+.rich-editor.rich-editor .tiptap li { margin-bottom: 0.2em; }
+.rich-editor.rich-editor .tiptap blockquote { border-left: 3px solid #6366f1; padding-left: 1em; margin: 0.5em 0; color: #4b5563; font-style: italic; }
+.rich-editor.rich-editor .tiptap code { background: #f3f4f6; padding: 0.15em 0.3em; border-radius: 4px; font-size: 0.9em; color: #dc2626; }
+.rich-editor.rich-editor .tiptap pre { background: #1f2937; color: #e5e7eb; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.5em 0; }
+.rich-editor.rich-editor .tiptap pre code { background: none; color: inherit; padding: 0; }
+.rich-editor.rich-editor .tiptap a { color: #4f46e5; text-decoration: underline; cursor: pointer; }
+.rich-editor.rich-editor .tiptap img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
+.rich-editor.rich-editor .tiptap hr { border: none; border-top: 2px solid #e5e7eb; margin: 1em 0; }
+.rich-editor.rich-editor .tiptap mark { background-color: #fef08a; padding: 0.1em 0.2em; border-radius: 2px; }
+.rich-editor.rich-editor .tiptap:focus { box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.14); }
+.rich-editor.rich-editor .tiptap > :first-child { margin-top: 0; }
+.rich-editor.rich-editor .tiptap > :last-child { margin-bottom: 0; }
 
 /* Table styles */
-.rich-editor .tiptap table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
-.rich-editor .tiptap td, .rich-editor .tiptap th { border: 1px solid #d1d5db; padding: 0.5em 0.75em; text-align: left; }
-.rich-editor .tiptap th { background: #f9fafb; font-weight: 600; }
-.rich-editor .tiptap tr:hover td { background: #f9fafb; }
+.rich-editor.rich-editor .tiptap table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+.rich-editor.rich-editor .tiptap td, .rich-editor.rich-editor .tiptap th { border: 1px solid #d1d5db; padding: 0.5em 0.75em; text-align: left; }
+.rich-editor.rich-editor .tiptap th { background: #f9fafb; font-weight: 600; }
+.rich-editor.rich-editor .tiptap tr:hover td { background: #f9fafb; }
 
 /* YouTube embed */
-.rich-editor .tiptap div[data-youtube-video] { margin: 0.5em 0; }
-.rich-editor .tiptap div[data-youtube-video] iframe { border-radius: 8px; max-width: 100%; }
+.rich-editor.rich-editor .tiptap div[data-youtube-video] { margin: 0.5em 0; }
+.rich-editor.rich-editor .tiptap div[data-youtube-video] iframe { border-radius: 8px; max-width: 100%; }
 
 /* Selected node styling */
-.rich-editor .tiptap .ProseMirror-selectednode { outline: 2px solid #6366f1; outline-offset: 2px; border-radius: 4px; }
+.rich-editor.rich-editor .tiptap .ProseMirror-selectednode { outline: 2px solid #6366f1; outline-offset: 2px; border-radius: 4px; }
 </style>

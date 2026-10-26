@@ -39,6 +39,10 @@ class ProductPageWriter
             ? $this->sanitizer->parse(json_encode($data, JSON_UNESCAPED_UNICODE), 'product_description', $input['topic'])
             : $this->emptyText($input['topic']);
 
+        // The product form accepts at most 500 characters here; a longer value
+        // would make the whole save fail validation.
+        $result['short_description'] = Str::limit((string) $result['short_description'], 500, '');
+        $result['excerpt'] = Str::limit((string) $result['excerpt'], 500, '');
         $result['specifications'] = in_array('specifications', $sections, true) ? $this->specifications($data['specifications'] ?? []) : [];
         $result['specifications_text'] = collect($result['specifications'])
             ->map(fn (array $spec) => $spec['label'].': '.$spec['value'])

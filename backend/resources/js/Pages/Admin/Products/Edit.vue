@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
@@ -7,6 +7,7 @@ import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
+import ProductFormErrors from '@/Components/ProductFormErrors.vue';
 
 const props = defineProps({
     product: Object,
@@ -92,6 +93,7 @@ const specKeys = computed(() => {
 });
 
 const isKiot = computed(() => props.product.inventory_source === 'kiot');
+const formErrors = ref(null);
 
 // Build compatibility spec entries from spec keys + existing values
 function buildCompatibilitySpecs() {
@@ -128,7 +130,10 @@ function normalizeVariantAttributes() {
 
 function submit() {
     if (!isKiot.value) normalizeVariantAttributes();
-    form.put(`/admin/products/${props.product.id}`);
+    form.put(`/admin/products/${props.product.id}`, {
+        preserveScroll: true,
+        onError: () => formErrors.value?.reveal(),
+    });
 }
 
 function applyAi(data) {
@@ -160,6 +165,8 @@ function removeVariant(index) {
             <Link href="/admin/products" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link>
         </div>
         <form @submit.prevent="submit" class="space-y-6">
+            <ProductFormErrors ref="formErrors" :errors="form.errors" heading="Chưa lưu được sản phẩm" />
+
             <!-- Thông tin cơ bản -->
             <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Thông tin cơ bản</h4>
@@ -185,8 +192,10 @@ function removeVariant(index) {
                     </div>
                 </div>
                 <div class="grid grid-cols-3 gap-4">
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Danh mục *</label>
-                        <select v-model="form.category_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="c in categories" :value="c.id">{{ c.name }}</option></select>
+                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Danh mục{{ isKiot ? '' : ' *' }}</label>
+                        <select v-model="form.category_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="c in categories" :value="c.id">{{ c.name }}{{ c.is_active ? '' : ' (đang ẩn)' }}</option></select>
+                        <div v-if="form.errors.category_id" class="text-red-400 text-xs mt-1">{{ form.errors.category_id }}</div>
+                        <p v-if="isKiot && !form.category_id" class="text-amber-300/80 text-xs mt-1">Sản phẩm KIOT chưa có danh mục website. Có thể lưu nội dung; danh mục do đồng bộ KIOT quản lý.</p>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Thương hiệu</label>
                         <select v-model="form.brand_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="">Chọn...</option><option v-for="b in brands" :value="b.id">{{ b.name }}</option></select>
