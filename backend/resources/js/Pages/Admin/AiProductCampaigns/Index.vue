@@ -35,8 +35,16 @@ const campaign = ref({
     use_web_research: false,
     append_contact_footer: false,
     include_product_images: true,
+    sections: ['description', 'specifications', 'highlights', 'blocks'],
     scheduled_at: new Date(Date.now() + 60_000).toISOString().slice(0, 16),
 });
+
+const sectionOptions = [
+    { value: 'description', label: 'Mô tả chi tiết + SEO' },
+    { value: 'specifications', label: 'Thông số kỹ thuật (chỉ sản phẩm chưa có thông số)' },
+    { value: 'highlights', label: 'Điểm nổi bật (chỉ sản phẩm chưa có)' },
+    { value: 'blocks', label: 'Khối nội dung (cấu hình nổi bật, điểm mạnh, phù hợp cho)' },
+];
 
 const pageProducts = computed(() => props.products?.data || []);
 const selectedCount = computed(() => selected.value.size);
@@ -81,6 +89,10 @@ async function submitCampaign() {
     }
     submitting.value = true;
     try {
+        if (!campaign.value.sections.length) {
+            error.value = 'Chọn ít nhất một phần cần viết.';
+            return;
+        }
         const response = await window.axios.post('/admin/ai-product-campaigns', {
             ...campaign.value,
             selected_product_ids: Array.from(selected.value),
@@ -149,7 +161,14 @@ function statusLabel(status) {
                 <label class="text-sm text-slate-300">Tiêu đề phần thông số<select v-model="campaign.technical_heading" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"><option value="auto">Tự động theo danh mục</option><option value="configuration">Cấu hình chi tiết</option><option value="specifications">Thông số kỹ thuật</option></select></label>
                 <div class="space-y-3 pt-6 text-sm text-slate-300"><label class="flex items-center gap-2"><input v-model="campaign.use_web_research" :disabled="!researchEnabled" type="checkbox" class="rounded border-slate-600 bg-slate-800 text-cyan-500" /> Tra cứu thêm nguồn chính hãng đã whitelist</label><label class="flex items-center gap-2"><input v-model="campaign.include_product_images" type="checkbox" class="rounded border-slate-600 bg-slate-800 text-cyan-500" /> Chèn ảnh sản phẩm vào bài (tự tạo ALT)</label><p v-if="campaign.include_product_images" class="text-xs text-cyan-300">Chỉ ảnh public hợp lệ của đúng sản phẩm được dùng; ảnh KIOT chưa mirror và URL không an toàn sẽ bị bỏ qua.</p><label class="flex items-center gap-2"><input v-model="campaign.append_contact_footer" :disabled="!contactFooterConfigured" type="checkbox" class="rounded border-slate-600 bg-slate-800 text-cyan-500" /> Thêm footer liên hệ cuối bài</label><p v-if="campaign.append_contact_footer && contactFooterConfigured" class="text-xs text-emerald-300">Footer liên hệ đã đủ cấu hình và sẽ dùng settings hiện tại của storefront.</p><p v-else-if="!contactFooterConfigured" class="text-xs text-slate-500">Footer đang tắt hoặc chưa đủ dữ liệu trong Cài đặt → Liên hệ.</p></div>
             </div>
-            <div v-if="campaign.mode === 'publish'" class="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">Publish sẽ chỉ ghi mô tả ngắn, mô tả, SEO và thông số văn bản khi đủ điều kiện. Thông số structured/PC Builder/KIOT không bị ghi đè.</div>
+            <fieldset class="mt-4 rounded-lg border border-slate-700 p-4">
+                <legend class="px-1 text-sm text-slate-300">Phần cần viết cho mỗi sản phẩm</legend>
+                <div class="grid gap-2 md:grid-cols-2">
+                    <label v-for="option in sectionOptions" :key="option.value" class="flex items-center gap-2 text-sm text-slate-300"><input v-model="campaign.sections" :value="option.value" type="checkbox" class="rounded border-slate-600 bg-slate-800 text-cyan-500" /> {{ option.label }}</label>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">Thông số và điểm nổi bật không bao giờ ghi đè dữ liệu đã có. Khối nội dung do campaign tạo được thay khi chạy lại; khối bạn tự làm được giữ nguyên.</p>
+            </fieldset>
+            <div v-if="campaign.mode === 'publish'" class="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">Publish tự áp dụng các phần đã chọn. Sản phẩm nhận thông số do AI đề xuất từ tên sản phẩm sẽ chuyển sang <strong>Chờ duyệt</strong> thay vì tự áp dụng. Thông số structured/PC Builder/KIOT không bị ghi đè.</div>
             <div class="mt-5 flex flex-wrap justify-end gap-3"><button type="button" @click="runNow" :disabled="submitting" class="rounded-lg bg-cyan-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">{{ submitting ? 'Đang tạo…' : 'Chạy ngay' }}</button><button type="button" @click="submitCampaign" :disabled="submitting" class="rounded-lg border border-slate-600 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:border-cyan-500 disabled:opacity-50">Đặt lịch campaign</button></div>
         </section>
 

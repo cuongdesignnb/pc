@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Services\Ai\ProductContactFooterService;
 use App\Services\Ai\ProductContentCampaignService;
+use App\Services\Ai\ProductPageWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -60,6 +61,8 @@ class AiProductContentCampaignController extends Controller
             'use_web_research' => 'boolean',
             'append_contact_footer' => 'boolean',
             'include_product_images' => 'boolean',
+            'sections' => 'nullable|array|min:1',
+            'sections.*' => ['string', Rule::in(ProductPageWriter::SECTIONS)],
             'scheduled_at' => 'required|date',
         ]);
         if (($data['append_contact_footer'] ?? false) && ! $this->footer->isConfigured()) {
@@ -81,6 +84,7 @@ class AiProductContentCampaignController extends Controller
                 'use_web_research' => (bool) ($data['use_web_research'] ?? false),
                 'append_contact_footer' => (bool) ($data['append_contact_footer'] ?? false),
                 'include_product_images' => (bool) ($data['include_product_images'] ?? true),
+                'sections' => array_values(array_intersect(ProductPageWriter::SECTIONS, $data['sections'] ?? ProductPageWriter::SECTIONS)),
                 'max_items' => count($productIds),
                 'status' => 'pending',
                 'scheduled_at' => Carbon::parse($data['scheduled_at']),
