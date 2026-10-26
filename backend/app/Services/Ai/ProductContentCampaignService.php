@@ -13,6 +13,10 @@ use Illuminate\Support\Str;
 
 class ProductContentCampaignService
 {
+    private const MANAGED_BY = 'ai-product-content-campaign';
+
+    private const CONTENT_BLOCK_TYPES = ['benchmark_cards', 'feature_cards', 'use_case_cards'];
+
     public function __construct(
         private readonly AiGenerationService $generation,
         private readonly ProductContentResearchService $research,
@@ -146,7 +150,15 @@ class ProductContentCampaignService
         if ($researchFacts !== '') {
             $existingFacts .= "\nThông số mới được kiểm chứng từ nguồn chính hãng:\n{$researchFacts}";
         }
-        $result = $this->generation->generate([
+        $hasSpecifications = $existingSpecs !== [] || $product->parsed_specifications !== [];
+        $sections = $campaign->writtenSections();
+        // Never ask the AI for specifications the product already has; they
+        // would be discarded and only cost tokens.
+        $writerSections = array_values(array_filter(
+            $sections,
+            fn (string $section) => $section !== 'specifications' || ! $hasSpecifications,
+        ));
+        $result = $writerSections === [] ? $this->emptyResult() : $this->generation->generate([
             'topic' => $product->name,
             'keywords' => $product->brand?->name,
             'type' => 'product_description',
@@ -157,12 +169,23 @@ class ProductContentCampaignService
             'image_count' => 0,
             'product_id' => $product->id,
             'existing_content' => trim($existingFacts),
+            'sections' => $writerSections,
         ], $campaign->created_by);
+
+        // Verified research wins; AI specifications from the title are only a
+        // fallback for products without any specifications and always need a
+        // human review before they are published.
+        $aiSpecifications = $hasSpecifications || ($research['verified'] && $research['specifications'] !== [])
+            ? []
+            : array_values($result['specifications'] ?? []);
 
         $hasVerifiedFacts = $existingSpecs !== [] || $product->parsed_specifications !== [] || ($research['verified'] && $research['specifications'] !== []);
         $warnings = array_values(array_unique(array_merge($result['warnings'] ?? [], $research['warnings'] ?? [])));
         if ($campaign->include_product_images && $articleImages === []) {
             $warnings[] = 'Sản phẩm chưa có ảnh public hợp lệ để chèn vào nội dung.';
+        }
+        if ($aiSpecifications !== []) {
+            $warnings[] = 'Thông số do AI đề xuất từ tên sản phẩm, cần kiểm tra trước khi áp dụng.';
         }
 
         $payload = [
@@ -173,6 +196,10 @@ class ProductContentCampaignService
             'content_heading' => $this->headings->contentHeading($hasVerifiedFacts),
             'technical_heading' => $this->headings->resolve($product, $campaign->technical_heading),
             'proposed_specifications' => $research['verified'] ? $research['specifications'] : [],
+            'ai_specifications' => $aiSpecifications,
+            'highlights' => in_array('highlights', $sections, true) ? array_values($result['highlights'] ?? []) : [],
+            'detail_blocks' => in_array('blocks', $sections, true) ? array_values($result['detail_blocks'] ?? []) : [],
+            'sections' => $sections,
             'include_product_images' => (bool) $campaign->include_product_images,
             'article_images' => $articleImages,
             'research' => [
@@ -181,7 +208,7 @@ class ProductContentCampaignService
                 'model_match' => (bool) ($research['model_match'] ?? false),
                 'source_count' => count($research['sources'] ?? []),
             ],
-            'can_auto_apply' => ! $research['requested'] || $research['verified'],
+            'can_auto_apply' => (! $research['requested'] || $research['verified']) && $aiSpecifications === [],
             'warnings' => array_values(array_unique($warnings)),
         ];
 
@@ -222,16 +249,29 @@ class ProductContentCampaignService
                 return;
             }
 
-            $product->update([
-                'description' => $payload['content'],
-                'short_description' => $payload['short_description'],
-                'meta_title' => $payload['meta_title'],
-                'meta_description' => $payload['meta_description'],
-            ]);
+            // Drafts created before sections existed only carried the description.
+            $sections = (array) ($payload['sections'] ?? ['description']);
+            if (in_array('description', $sections, true)) {
+                $product->update([
+                    'description' => $payload['content'],
+                    'short_description' => $payload['short_description'],
+                    'meta_title' => $payload['meta_title'],
+                    'meta_description' => $payload['meta_description'],
+                ]);
+            }
 
             $proposed = is_array($payload['proposed_specifications'] ?? null) ? $payload['proposed_specifications'] : [];
+            if ($proposed === [] && is_array($payload['ai_specifications'] ?? null)) {
+                $proposed = $payload['ai_specifications'];
+            }
             if ($proposed !== [] && ! $product->specifications()->exists() && blank($product->specifications_text)) {
                 $product->update(['specifications_text' => collect($proposed)->map(fn (array $spec) => $spec['label'].': '.$spec['value'].(filled($spec['unit'] ?? null) ? ' '.$spec['unit'] : ''))->implode("\n")]);
+            }
+            if (in_array('highlights', $sections, true)) {
+                $this->fillHighlights($product, (array) ($payload['highlights'] ?? []));
+            }
+            if (in_array('blocks', $sections, true)) {
+                $this->syncContentBlocks($product, (array) ($payload['detail_blocks'] ?? []));
             }
             if ($item->campaign->append_contact_footer) {
                 $this->footer->ensure($product);
@@ -260,6 +300,62 @@ class ProductContentCampaignService
         }
     }
 
+    private function emptyResult(): array
+    {
+        return [
+            'content' => '', 'short_description' => '', 'excerpt' => '', 'meta_title' => '', 'meta_description' => '',
+            'specifications' => [], 'highlights' => [], 'detail_blocks' => [], 'warnings' => [],
+        ];
+    }
+
+    /**
+     * Add highlights only to products that have none, so curated highlights
+     * are never replaced by a bulk run.
+     *
+     * @param  list<string>  $highlights
+     */
+    private function fillHighlights(Product $product, array $highlights): void
+    {
+        $highlights = array_values(array_filter(array_map(fn ($title) => is_string($title) ? trim($title) : '', $highlights)));
+        if ($highlights === [] || $product->highlights()->exists()) {
+            return;
+        }
+
+        foreach (array_slice($highlights, 0, 6) as $sortOrder => $title) {
+            $product->highlights()->create(['title' => Str::limit($title, 255, ''), 'icon' => null, 'sort_order' => $sortOrder, 'is_active' => true]);
+        }
+    }
+
+    /**
+     * Replace the card blocks this campaign wrote earlier. A card type that the
+     * administrator authored by hand is left alone and not duplicated.
+     *
+     * @param  list<array{type:string,title:string,payload:array{cards:list<array<string,string>>}}>  $blocks
+     */
+    private function syncContentBlocks(Product $product, array $blocks): void
+    {
+        $existing = $product->detailBlocks()->whereIn('type', self::CONTENT_BLOCK_TYPES)->get();
+        $managed = $existing->filter(fn ($block): bool => ($block->payload['managed_by'] ?? null) === self::MANAGED_BY);
+        $handAuthoredTypes = $existing->diff($managed)->pluck('type')->all();
+        $managed->each(fn ($block) => $block->delete());
+
+        $sortOrder = 500;
+        foreach ($blocks as $block) {
+            $type = $block['type'] ?? null;
+            $cards = $block['payload']['cards'] ?? [];
+            if (! in_array($type, self::CONTENT_BLOCK_TYPES, true) || in_array($type, $handAuthoredTypes, true) || ! is_array($cards) || $cards === []) {
+                continue;
+            }
+            $product->detailBlocks()->create([
+                'type' => $type,
+                'title' => Str::limit((string) ($block['title'] ?? ''), 255, ''),
+                'payload' => ['managed_by' => self::MANAGED_BY, 'cards' => array_values($cards)],
+                'sort_order' => $sortOrder++,
+                'is_active' => true,
+            ]);
+        }
+    }
+
     /**
      * Replace only image blocks previously managed by this campaign feature.
      * Hand-authored image_text blocks remain untouched.
@@ -271,7 +367,7 @@ class ProductContentCampaignService
         $product->detailBlocks()
             ->where('type', 'image_text')
             ->get()
-            ->filter(fn ($block): bool => ($block->payload['managed_by'] ?? null) === 'ai-product-content-campaign')
+            ->filter(fn ($block): bool => ($block->payload['managed_by'] ?? null) === self::MANAGED_BY)
             ->each(fn ($block) => $block->delete());
 
         foreach (array_values($images) as $index => $image) {
@@ -279,7 +375,7 @@ class ProductContentCampaignService
                 'type' => 'image_text',
                 'title' => 'Hình ảnh sản phẩm',
                 'payload' => [
-                    'managed_by' => 'ai-product-content-campaign',
+                    'managed_by' => self::MANAGED_BY,
                     'source_image_id' => $image['id'],
                     'image_url' => $image['url'],
                     'alt' => $image['alt'],
