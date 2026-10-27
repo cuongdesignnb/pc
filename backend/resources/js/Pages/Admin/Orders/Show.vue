@@ -1,10 +1,50 @@
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { router, Link, usePage } from "@inertiajs/vue3";
 import AdminLayout from "@/Layouts/AdminLayout.vue";
 
-const props = defineProps({ order: Object });
-const flash = usePage().props.flash;
+const props = defineProps({ order: Object, kiot: Object });
+const page = usePage();
+const flash = computed(() => page.props.flash);
+
+const resending = ref(false);
+function resendToKiot() {
+    if (
+        !confirm(
+            "Gửi đơn này sang KIOT? KIOT sẽ tạo đơn và giữ hàng theo các sản phẩm trong đơn.",
+        )
+    ) {
+        return;
+    }
+    router.post(
+        `/admin/orders/${props.order.id}/resend-kiot`,
+        {},
+        {
+            preserveScroll: true,
+            onStart: () => (resending.value = true),
+            onFinish: () => (resending.value = false),
+        },
+    );
+}
+
+const kiotStatusLabel = {
+    not_required: "Chưa gửi (lúc đặt đơn đồng bộ đang tắt)",
+    pending: "Đang chờ gửi",
+    sending: "Đang gửi",
+    retrying: "Đang thử gửi lại",
+    synced: "Đã đồng bộ",
+    failed: "Gửi thất bại",
+    rejected: "KIOT từ chối",
+    cancel_pending: "Đang hủy bên KIOT",
+    cancelled: "Đã hủy",
+};
+const kiotStatusClass = computed(() => {
+    const status = props.kiot?.status;
+    if (status === "synced") return "text-emerald-400";
+    if (["failed", "rejected"].includes(status)) return "text-red-400";
+    if (status === "not_required") return "text-amber-400";
+    return "text-slate-300";
+});
 
 const newStatus = ref(
     props.order.order_status || props.order.status || "pending",
@@ -57,6 +97,12 @@ const payLabel = {
             class="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-sm"
         >
             {{ flash.success }}
+        </div>
+        <div
+            v-if="flash?.error"
+            class="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-sm"
+        >
+            {{ flash.error }}
         </div>
         <div class="flex items-center justify-between mb-6">
             <h3 class="text-lg font-semibold text-slate-200">
@@ -155,6 +201,41 @@ const payLabel = {
                     </button>
                 </div>
             </div>
+        </div>
+        <div
+            v-if="kiot"
+            class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-4 mb-6 flex flex-wrap items-center justify-between gap-3"
+        >
+            <div class="text-sm space-y-1">
+                <p class="text-slate-300 font-semibold">Đồng bộ KIOT</p>
+                <p :class="kiotStatusClass">
+                    {{ kiotStatusLabel[kiot.status] || kiot.status }}
+                    <span v-if="kiot.order_code" class="text-slate-400">
+                        · Mã KIOT: {{ kiot.order_code }}</span
+                    >
+                </p>
+                <p
+                    v-if="kiot.error_message && ['failed', 'rejected', 'retrying'].includes(kiot.status)"
+                    class="text-slate-400"
+                >
+                    Lỗi: {{ kiot.error_message }}
+                </p>
+                <p
+                    v-if="!kiot.order_sync_enabled && ['not_required', 'failed'].includes(kiot.status)"
+                    class="text-slate-500"
+                >
+                    Bật "Đồng bộ đơn hàng" trong Tích hợp KIOT để gửi lại đơn này.
+                </p>
+            </div>
+            <button
+                v-if="kiot.can_resend"
+                type="button"
+                :disabled="resending"
+                @click="resendToKiot"
+                class="px-4 py-2 bg-cyan-600 text-white rounded-lg text-sm hover:bg-cyan-700 disabled:opacity-60"
+            >
+                {{ resending ? "Đang gửi..." : "Gửi lại sang KIOT" }}
+            </button>
         </div>
         <div
             class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 overflow-hidden mb-4"

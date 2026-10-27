@@ -180,9 +180,13 @@ class KiotOutboxService
                     'kiot_sync_error_code' => $code, 'kiot_sync_error_message' => $message,
                 ]);
             } else {
+                // A rejected checkout cancels the still-pending order; an order
+                // the shop already moved forward (e.g. resent from the admin)
+                // is left for staff to decide.
+                $cancel = $classification === 'business_rejection' && $order->order_status === 'pending';
                 $order->update([
                     'kiot_sync_status' => $classification === 'business_rejection' ? 'rejected' : 'failed',
-                    'order_status' => $classification === 'business_rejection' ? 'cancelled' : $order->order_status,
+                    'order_status' => $cancel ? 'cancelled' : $order->order_status,
                     'kiot_sync_error_code' => $code, 'kiot_sync_error_message' => $message,
                 ]);
             }

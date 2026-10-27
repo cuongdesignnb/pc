@@ -107,6 +107,12 @@ class Order extends Model
             && ! in_array($this->kiot_sync_status, ['rejected', 'cancelled', 'cancel_pending'], true);
     }
 
+    public function canResendToKiot(): bool
+    {
+        return in_array($this->kiot_sync_status, ['not_required', 'failed'], true)
+            && $this->order_status !== 'cancelled';
+    }
+
     public function matchesAccessToken(?string $token): bool
     {
         return is_string($token)

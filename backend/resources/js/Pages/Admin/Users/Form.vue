@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
@@ -21,11 +22,23 @@ const form = useForm({
     roles: props.userRoles?.map(id => id) || [],
 });
 
+const fieldLabels = {
+    name: 'Họ tên', email: 'Email', phone: 'Số điện thoại', role: 'Loại tài khoản',
+    password: 'Mật khẩu', password_confirmation: 'Xác nhận mật khẩu', roles: 'Vai trò',
+};
+// Every validation error, including fields without an inline message
+// (account type, roles), so a failed save is never silent.
+const errorList = computed(() => Object.entries(form.errors).map(([field, message]) => ({
+    field,
+    label: fieldLabels[field] || (field.startsWith('roles.') ? 'Vai trò' : field),
+    message,
+})));
+
 function submit() {
     if (isEditing) {
-        form.put(`/admin/users/${props.user.id}`);
+        form.put(`/admin/users/${props.user.id}`, { onError: () => window.scrollTo({ top: 0, behavior: 'smooth' }) });
     } else {
-        form.post('/admin/users');
+        form.post('/admin/users', { onError: () => window.scrollTo({ top: 0, behavior: 'smooth' }) });
     }
 }
 
@@ -54,6 +67,10 @@ function toggleRole(roleId) {
             </div>
 
             <form @submit.prevent="submit" class="space-y-6">
+                <div v-if="errorList.length" role="alert" class="rounded-lg border border-red-500/40 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+                    <p class="font-semibold text-red-100">Chưa lưu được tài khoản — vui lòng kiểm tra:</p>
+                    <ul class="mt-2 list-disc space-y-1 pl-5"><li v-for="error in errorList" :key="error.field"><strong>{{ error.label }}:</strong> {{ error.message }}</li></ul>
+                </div>
                 <!-- Basic Info Card -->
                 <div class="bg-slate-900 rounded-xl border border-slate-800/60 p-6">
                     <h3 class="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">

@@ -133,20 +133,7 @@ class KiotOrderService
                     $order->items()->create($snapshot);
                 }
 
-                $outbox = null;
-                if ($enabled) {
-                    $payload = $this->createPayload($order->fresh()->load('items'), $weight);
-                    $rawBody = $this->client->encode($payload);
-                    $payloadHash = hash('sha256', $rawBody);
-                    $order->update(['kiot_payload_hash' => $payloadHash]);
-                    $outbox = IntegrationOutboxEvent::create([
-                        'integration' => 'kiot', 'event_type' => 'order.create',
-                        'aggregate_type' => Order::class, 'aggregate_id' => $order->id,
-                        'event_id' => $eventId, 'idempotency_key' => $idempotencyKey,
-                        'payload' => $payload, 'raw_body' => $rawBody, 'payload_hash' => $payloadHash,
-                        'status' => 'pending', 'next_attempt_at' => now(),
-                    ]);
-                }
+                $outbox = $enabled ? $this->queueCreateEvent($order, $weight) : null;
 
                 return ['order' => $order, 'outbox_id' => $outbox?->id, 'duplicate' => false];
             }, 3);
@@ -158,6 +145,81 @@ class KiotOrderService
 
             return $this->existingResult($existing, $data['order_access_token'], $userId);
         }
+    }
+
+    /**
+     * Queue an order that never reached KIOT: one created while order sync
+     * was off ("not_required"), or one whose create event gave up
+     * ("failed"). A dead-lettered event is replayed with its original
+     * idempotency key and body, so KIOT deduplicates it if an earlier
+     * attempt did get through. Returns the outbox event id to process.
+     */
+    public function resend(Order $order): int
+    {
+        $runtime = $this->client->assertOrderSyncEnabled();
+        $this->client->assertConfigured($runtime);
+
+        return DB::transaction(function () use ($order) {
+            $order = Order::with('items.product')->lockForUpdate()->findOrFail($order->id);
+            if (! $order->canResendToKiot()) {
+                throw new KiotIntegrationException(
+                    'ORDER_NOT_RESENDABLE',
+                    'Chỉ gửi lại được đơn chưa hủy, chưa đồng bộ hoặc đồng bộ thất bại.',
+                    'business_rejection',
+                    422,
+                );
+            }
+
+            $existing = IntegrationOutboxEvent::where('integration', 'kiot')
+                ->where('aggregate_id', $order->id)
+                ->where('event_type', 'order.create')
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing && $existing->status === 'dead_letter') {
+                $existing->update(['status' => 'retrying', 'attempt_count' => 0, 'next_attempt_at' => now(), 'locked_at' => null]);
+                $order->update(['kiot_sync_status' => 'pending', 'kiot_sync_error_code' => null, 'kiot_sync_error_message' => null]);
+
+                return $existing->id;
+            }
+            if ($existing) {
+                throw new KiotIntegrationException(
+                    'ORDER_SYNC_IN_PROGRESS',
+                    'Đơn đang có yêu cầu gửi sang KIOT, vui lòng chờ hệ thống xử lý.',
+                    'business_rejection',
+                    409,
+                );
+            }
+
+            $order->update([
+                'kiot_event_id' => (string) Str::uuid(),
+                'kiot_idempotency_key' => (string) Str::uuid(),
+                'kiot_sync_status' => 'pending',
+                'kiot_sync_attempt_count' => 0,
+                'kiot_sync_error_code' => null,
+                'kiot_sync_error_message' => null,
+            ]);
+            $weight = (int) $order->items->sum(fn ($item) => (int) ($item->product?->weight ?? 0) * $item->quantity);
+
+            return $this->queueCreateEvent($order, $weight)->id;
+        }, 3);
+    }
+
+    private function queueCreateEvent(Order $order, int $weight): IntegrationOutboxEvent
+    {
+        $payload = $this->createPayload($order->fresh()->load('items'), $weight);
+        $rawBody = $this->client->encode($payload);
+        $payloadHash = hash('sha256', $rawBody);
+        $order->update(['kiot_payload_hash' => $payloadHash]);
+
+        return IntegrationOutboxEvent::create([
+            'integration' => 'kiot', 'event_type' => 'order.create',
+            'aggregate_type' => Order::class, 'aggregate_id' => $order->id,
+            'event_id' => $order->kiot_event_id, 'idempotency_key' => $order->kiot_idempotency_key,
+            'payload' => $payload, 'raw_body' => $rawBody, 'payload_hash' => $payloadHash,
+            'status' => 'pending', 'next_attempt_at' => now(),
+        ]);
     }
 
     private function existingResult(Order $order, string $accessToken, ?int $userId): array
