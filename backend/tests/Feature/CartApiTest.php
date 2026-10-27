@@ -40,8 +40,9 @@ class CartApiTest extends TestCase
             'key' => 'shipping_default_fee', 'value' => '30', 'group' => 'shipping',
             'type' => 'number', 'label' => 'Phí ship', 'is_public' => true,
         ]);
-        Setting::create([
-            'key' => 'contact_hotline', 'value' => '1900 2064', 'group' => 'contact',
+        // The hotline row is created by migration; only its value is set here.
+        Setting::updateOrCreate(['key' => 'contact_hotline'], [
+            'value' => '1900 2064', 'group' => 'contact',
             'type' => 'text', 'label' => 'Hotline', 'is_public' => true,
         ]);
 

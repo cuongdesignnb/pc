@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
+use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Models\Order;
+use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
+use App\Services\Integrations\Kiot\KiotOrderService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -50,13 +53,42 @@ class OrderController extends Controller
         ]);
     }
 
-    public function show(Order $order)
+    public function show(Order $order, KiotConfigurationResolver $resolver)
     {
         $order->load(['user', 'items.product', 'transaction']);
+        $runtime = $resolver->resolve();
+        $orderSyncEnabled = $runtime->enabled && $runtime->orderSyncEnabled;
 
         return Inertia::render('Admin/Orders/Show', [
             'order' => $order,
+            'kiot' => [
+                'status' => $order->kiot_sync_status,
+                'order_code' => $order->kiot_order_code,
+                'error_message' => $order->kiot_sync_error_message,
+                'order_sync_enabled' => $orderSyncEnabled,
+                'can_resend' => $orderSyncEnabled && $order->canResendToKiot(),
+            ],
         ]);
+    }
+
+    public function resendToKiot(Order $order, KiotOrderService $kiotOrders)
+    {
+        try {
+            $eventId = $kiotOrders->resend($order);
+        } catch (KiotIntegrationException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        // Send right away so the admin sees the result; if KIOT is slow or
+        // down the event stays queued and kiot:retry-outbox keeps trying.
+        ProcessKiotOutboxEvent::dispatchSync($eventId);
+        $order->refresh();
+
+        return match ($order->kiot_sync_status) {
+            'synced' => back()->with('success', 'Đã gửi đơn sang KIOT'.($order->kiot_order_code ? " (mã {$order->kiot_order_code})." : '.')),
+            'rejected', 'failed' => back()->with('error', 'KIOT từ chối đơn: '.($order->kiot_sync_error_message ?: 'không rõ lý do')),
+            default => back()->with('success', 'KIOT chưa phản hồi, hệ thống sẽ tự gửi lại trong ít phút.'),
+        };
     }
 
     public function updateStatus(Request $request, Order $order, KiotOrderCancellationService $cancellation)

@@ -90,6 +90,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
     Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.updateStatus');
     Route::patch('orders/{order}/payment-status', [OrderController::class, 'updatePaymentStatus'])->name('orders.updatePaymentStatus');
+    Route::post('orders/{order}/resend-kiot', [OrderController::class, 'resendToKiot'])->name('orders.resendKiot');
 
     // Coupons
     Route::resource('coupons', CouponController::class);
