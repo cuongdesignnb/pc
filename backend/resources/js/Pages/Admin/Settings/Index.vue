@@ -89,6 +89,24 @@ function getSettingsForGroup(group) {
     return props.settings?.[group] || [];
 }
 
+// Mirrors StorefrontSmtpMailer: what is still missing before new-order
+// emails can go out (password shows as ******** once saved).
+const isOn = (value) => ['1', 'true', 'on', 'yes', true, 1].includes(typeof value === 'string' ? value.toLowerCase() : value);
+const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+const smtpChecklist = computed(() => {
+    const f = formData.value;
+    const sender = String(f.smtp_from_address || '').trim() || (isEmail(f.smtp_username) ? f.smtp_username : '') || f.contact_email;
+    const recipient = String(f.smtp_order_recipient || '').trim() || f.contact_email || sender;
+    return [
+        { label: 'Bật gửi email SMTP', ok: isOn(f.smtp_enabled) },
+        { label: 'Máy chủ và cổng SMTP', ok: !!String(f.smtp_host || '').trim() && Number(f.smtp_port) > 0 },
+        { label: 'Tài khoản và mật khẩu SMTP', ok: !!String(f.smtp_username || '').trim() && !!String(f.smtp_password || '').trim() },
+        { label: 'Email người gửi hợp lệ', ok: isEmail(sender) },
+        { label: 'Email nhận thông báo đơn hàng', ok: String(recipient).split(/[\s,;]+/).some(isEmail) },
+        { label: 'Bật thông báo đơn hàng mới', ok: isOn(f.smtp_order_notifications_enabled) },
+    ];
+});
+
 function sendSmtpTest() {
     if (!testEmail.value.trim()) {
         flash.value = 'Nhập email nhận thử trước khi gửi.';
@@ -276,6 +294,18 @@ function sendSmtpTest() {
                                     <p class="text-xs text-slate-500 mt-1">{{ item.key }}</p>
                                 </div>
 
+                                <div v-if="group === 'smtp'" class="rounded-lg border border-slate-700/50 p-4">
+                                    <h5 class="text-sm font-semibold text-slate-200">Email báo đơn hàng mới</h5>
+                                    <ul class="mt-2 space-y-1 text-sm">
+                                        <li v-for="check in smtpChecklist" :key="check.label" :class="check.ok ? 'text-emerald-400' : 'text-amber-400'">
+                                            {{ check.ok ? '✓' : '✗' }} {{ check.label }}
+                                        </li>
+                                    </ul>
+                                    <p class="mt-2 text-xs leading-5 text-slate-500">
+                                        Để trống "Email người gửi" thì dùng tài khoản SMTP; để trống "Email nhận" thì gửi về email liên hệ của cửa hàng.
+                                        Gmail cần "Mật khẩu ứng dụng" (không dùng mật khẩu đăng nhập), máy chủ smtp.gmail.com, cổng 587, mã hóa TLS.
+                                    </p>
+                                </div>
                                 <div v-if="group === 'smtp'" class="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-4">
                                     <h5 class="text-sm font-semibold text-cyan-300">Kiểm tra cấu hình SMTP</h5>
                                     <p class="mt-1 text-xs leading-5 text-slate-400">Lưu cài đặt SMTP trước, sau đó gửi email thử để xác nhận máy chủ có thể gửi thư.</p>

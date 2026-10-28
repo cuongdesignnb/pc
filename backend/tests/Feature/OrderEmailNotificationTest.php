@@ -55,6 +55,69 @@ class OrderEmailNotificationTest extends TestCase
         Mail::assertSent(NewOrderNotification::class, 1);
     }
 
+    public function test_empty_sender_and_recipient_fall_back_to_smtp_login_and_contact_email(): void
+    {
+        $this->smtpSettings();
+        Setting::set('smtp_from_address', '');
+        Setting::set('smtp_order_recipient', '');
+        Setting::updateOrCreate(['key' => 'contact_email'], ['value' => 'shop@example.test', 'group' => 'contact', 'type' => 'text', 'label' => 'Email', 'is_public' => true]);
+        Setting::clearCache();
+        Mail::fake();
+
+        app(StorefrontSmtpMailer::class)->sendOrderNotification($this->order());
+
+        Mail::assertSent(NewOrderNotification::class, fn ($mail) => $mail->hasTo('shop@example.test'));
+        $this->assertSame('mailer@example.test', config('mail.from.address'));
+    }
+
+    public function test_without_any_recipient_or_contact_email_the_smtp_login_receives_orders(): void
+    {
+        $this->smtpSettings();
+        Setting::set('smtp_from_address', '');
+        Setting::set('smtp_order_recipient', '');
+        Setting::clearCache();
+        Mail::fake();
+
+        app(StorefrontSmtpMailer::class)->sendOrderNotification($this->order());
+
+        Mail::assertSent(NewOrderNotification::class, fn ($mail) => $mail->hasTo('mailer@example.test'));
+    }
+
+    public function test_order_email_is_not_sent_while_notifications_switch_is_off(): void
+    {
+        $this->smtpSettings();
+        Setting::set('smtp_order_notifications_enabled', '0');
+        Setting::clearCache();
+        Mail::fake();
+
+        app(StorefrontSmtpMailer::class)->sendOrderNotification($this->order());
+
+        Mail::assertNothingSent();
+    }
+
+    /**
+     * Sends through a real SMTP server when SMTP_E2E_HOST points at one
+     * (e.g. a Mailpit container), proving the transport settings work.
+     */
+    public function test_order_email_is_delivered_through_a_real_smtp_server(): void
+    {
+        $host = (string) env('SMTP_E2E_HOST', '');
+        if ($host === '') {
+            $this->markTestSkipped('Set SMTP_E2E_HOST to a test SMTP server (e.g. Mailpit) to run.');
+        }
+        $this->smtpSettings();
+        Setting::set('smtp_host', $host);
+        Setting::set('smtp_port', (string) env('SMTP_E2E_PORT', 1025));
+        Setting::set('smtp_encryption', 'none');
+        Setting::clearCache();
+
+        (new SendNewOrderNotification($this->order()->id))->handle(app(StorefrontSmtpMailer::class));
+
+        $messages = json_decode((string) file_get_contents('http://'.$host.':'.env('SMTP_E2E_API_PORT', 8025).'/api/v1/messages'), true);
+        $this->assertSame('Đơn hàng mới DH202609090001', $messages['messages'][0]['Subject'] ?? null);
+        $this->assertSame('admin@example.test', $messages['messages'][0]['To'][0]['Address'] ?? null);
+    }
+
     public function test_successful_checkout_queues_one_admin_order_notification(): void
     {
         Queue::fake();

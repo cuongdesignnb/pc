@@ -1,6 +1,7 @@
 <script setup>
 import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import SlugChangePanel from '@/Components/SlugChangePanel.vue';
 const props = defineProps({ category: Object });
 const form = useForm({ name: props.category.name, slug: props.category.slug, description: props.category.description || '', sort_order: props.category.sort_order || 0 });
 function submit() { form.put(`/admin/post-categories/${props.category.id}`); }
@@ -12,7 +13,7 @@ function submit() { form.put(`/admin/post-categories/${props.category.id}`); }
         <form @submit.prevent="submit" class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
             <div class="grid grid-cols-2 gap-4">
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Tên *</label><input v-model="form.name" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.name" class="text-red-400 text-xs mt-1">{{ form.errors.name }}</div></div>
-                <div><label class="block text-sm font-medium text-slate-300 mb-1">Slug *</label><input v-model="form.slug" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.slug" class="text-red-400 text-xs mt-1">{{ form.errors.slug }}</div></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Slug *</label><input v-model="form.slug" :readonly="!!category.slug_locked_at" :class="category.slug_locked_at ? 'opacity-60 cursor-not-allowed' : ''" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><p v-if="category.slug_locked_at" class="text-xs text-slate-500 mt-1">Slug đã khóa, đổi ở khung bên dưới.</p><div v-if="form.errors.slug" class="text-red-400 text-xs mt-1">{{ form.errors.slug }}</div></div>
             </div>
             <div><label class="block text-sm font-medium text-slate-300 mb-1">Mô tả</label><textarea v-model="form.description" rows="3" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
             <div><label class="block text-sm font-medium text-slate-300 mb-1">Thứ tự</label><input v-model.number="form.sort_order" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
@@ -21,6 +22,7 @@ function submit() { form.put(`/admin/post-categories/${props.category.id}`); }
                 <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium disabled:opacity-50">Lưu</button>
             </div>
         </form>
+        <SlugChangePanel v-if="category.slug_locked_at" class="mt-6" entity-type="post-category" :entity-id="category.id" :current-slug="category.slug" />
     </div>
 </AdminLayout>
 </template>

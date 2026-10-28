@@ -4,9 +4,9 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
-const props = defineProps({ post: Object, categories: Array });
+const props = defineProps({ post: Object, categories: Array, publishedAtLocal: String });
 const p = props.post;
-const form = useForm({ title: p.title, slug: p.slug, excerpt: p.excerpt || '', body: p.body || '', featured_image: p.featured_image || '', post_category_id: p.post_category_id || '', status: p.status || 'draft', is_featured: p.is_featured ?? false, published_at: p.published_at ? p.published_at.slice(0,16) : '', meta_title: p.meta_title || '', meta_description: p.meta_description || '' });
+const form = useForm({ title: p.title, slug: p.slug, excerpt: p.excerpt || '', body: p.body || '', featured_image: p.featured_image || '', post_category_id: p.post_category_id || '', status: p.status || 'draft', is_featured: p.is_featured ?? false, published_at: props.publishedAtLocal || '', meta_title: p.meta_title || '', meta_description: p.meta_description || '' });
 function submit() { form.put(`/admin/posts/${p.id}`); }
 function applyAi(data) { form.title = data.title || form.title; form.excerpt = data.excerpt || form.excerpt; form.body = data.content || data.body || form.body; form.meta_title = data.meta_title || form.meta_title; form.meta_description = data.meta_description || form.meta_description; if (data.thumbnail) form.featured_image = data.thumbnail; }
 </script>

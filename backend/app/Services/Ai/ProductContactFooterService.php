@@ -28,14 +28,27 @@ class ProductContactFooterService
 
     public function isConfigured(): bool
     {
+        return $this->missing() === [];
+    }
+
+    /**
+     * Admin labels of the settings still blocking the footer, so the campaign
+     * page can say exactly what to fill in instead of "not enough data".
+     *
+     * @return array<int, string>
+     */
+    public function missing(): array
+    {
         $config = $this->configuration();
 
-        return $config['enabled']
-            && $config['title'] !== ''
-            && $config['address'] !== ''
-            && ($config['phone'] !== '' || $config['hotline'] !== '')
-            && $config['website_url'] !== ''
-            && $config['maps_url'] !== '';
+        return array_keys(array_filter([
+            'Bật "Footer liên hệ sản phẩm"' => ! $config['enabled'],
+            'Tiêu đề footer (tên hộ kinh doanh)' => $config['title'] === '',
+            'Địa chỉ cửa hàng' => $config['address'] === '',
+            'Hotline hoặc số điện thoại' => $config['phone'] === '' && $config['hotline'] === '',
+            'Website (https://…)' => $config['website_url'] === '',
+            'Link Google Maps (https://…)' => $config['maps_url'] === '',
+        ]));
     }
 
     public function ensure(Product $product): ProductDetailBlock

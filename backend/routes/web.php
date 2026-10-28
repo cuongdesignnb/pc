@@ -38,6 +38,7 @@ Route::get('sitemaps/{shard}.xml', [SeoController::class, 'sitemapShard'])
     ->where('shard', '[a-z0-9-]+')
     ->name('seo.sitemap.shard');
 Route::get('robots.txt', [SeoController::class, 'robots'])->name('seo.robots');
+Route::get('llms.txt', [SeoController::class, 'llms'])->name('seo.llms');
 
 Route::get('/', function () {
     return redirect('/admin');
