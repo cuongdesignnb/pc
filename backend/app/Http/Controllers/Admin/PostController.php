@@ -9,12 +9,21 @@ use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PostController extends Controller
 {
+    /**
+     * The admin's date-time inputs carry no offset and the shop works in
+     * Vietnam time, while the app stores UTC. Without this conversion 23:00
+     * was saved as 23:00 UTC (06:00 next day locally) and the post stayed
+     * hidden until then.
+     */
+    private const ADMIN_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
     public function index(Request $request)
     {
         $query = Post::with(['author', 'category'])->latest();
@@ -62,6 +71,7 @@ class PostController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
         ]);
+        $validated['published_at'] = $this->publishedAtFromAdmin($validated['published_at'] ?? null);
 
         $validated['user_id'] = Auth::id() ?? 1;
         $validated['view_count'] = 0;
@@ -97,6 +107,7 @@ class PostController extends Controller
 
         return Inertia::render('Admin/Posts/Edit', [
             'post' => $post,
+            'publishedAtLocal' => $post->published_at?->copy()->timezone(self::ADMIN_TIMEZONE)->format('Y-m-d\TH:i'),
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
         ]);
     }
@@ -116,6 +127,7 @@ class PostController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
         ]);
+        $validated['published_at'] = $this->publishedAtFromAdmin($validated['published_at'] ?? null);
 
         $validated['body'] = $sanitizer->sanitize($validated['body']);
         try {
@@ -294,5 +306,14 @@ class PostController extends Controller
         }
 
         return back()->with('success', $msg);
+    }
+
+    private function publishedAtFromAdmin(mixed $value): ?Carbon
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        return Carbon::parse((string) $value, self::ADMIN_TIMEZONE)->utc();
     }
 }

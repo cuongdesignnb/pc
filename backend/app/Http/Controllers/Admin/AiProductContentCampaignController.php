@@ -38,6 +38,7 @@ class AiProductContentCampaignController extends Controller
             'configured' => app(\App\Services\Ai\AiConfigurationResolver::class)->contentConfigured(),
             'researchEnabled' => (bool) Setting::get('ai_product_research_enabled', false),
             'contactFooterConfigured' => $this->footer->isConfigured(),
+            'contactFooterMissing' => $this->footer->missing(),
             'maxItems' => min(500, max(1, (int) Setting::get('ai_product_campaign_max_items', 100))),
             'activeFilters' => $filters,
         ]);

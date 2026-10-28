@@ -48,7 +48,7 @@ class StorefrontSmtpMailer
     {
         $host = $this->string('smtp_host');
         $port = (int) Setting::get('smtp_port', 587);
-        $fromAddress = $this->string('smtp_from_address', $this->string('contact_email', (string) config('mail.from.address')));
+        $fromAddress = $this->senderAddress();
         $fromName = $this->string('smtp_from_name', $this->string('site_name', (string) config('mail.from.name')));
 
         if ($host === '') {
@@ -80,10 +80,30 @@ class StorefrontSmtpMailer
         }
     }
 
-    /** @return array<int, string> */
+    /**
+     * Most providers (Gmail, Zoho, Outlook) refuse to send as another address,
+     * so when no sender is configured use the SMTP login if it is an email.
+     */
+    private function senderAddress(): string
+    {
+        $username = $this->string('smtp_username');
+
+        return $this->string('smtp_from_address')
+            ?: (filter_var($username, FILTER_VALIDATE_EMAIL) ? $username : '')
+            ?: $this->string('contact_email', (string) config('mail.from.address'));
+    }
+
+    /**
+     * Shop staff receive new orders at the configured recipients; when that
+     * field is left empty, fall back to the shop contact email and then the
+     * sender, so filling in the SMTP account alone is enough to get emails.
+     *
+     * @return array<int, string>
+     */
     private function orderRecipients(): array
     {
-        $recipients = preg_split('/[\s,;]+/', $this->string('smtp_order_recipient')) ?: [];
+        $configured = $this->string('smtp_order_recipient') ?: $this->string('contact_email') ?: $this->senderAddress();
+        $recipients = preg_split('/[\s,;]+/', $configured) ?: [];
 
         return array_values(array_unique(array_filter($recipients, fn (string $email): bool => filter_var($email, FILTER_VALIDATE_EMAIL) !== false)));
     }

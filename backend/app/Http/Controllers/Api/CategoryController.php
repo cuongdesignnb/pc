@@ -13,6 +13,7 @@ use App\Models\Setting;
 use App\Models\SpecificationKey;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
+use App\Support\FaqExtractor;
 use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -471,6 +472,7 @@ class CategoryController extends Controller
                         ['product_count' => (int) $childProductCounts->get($child->id, 0)],
                     );
                 })->values()->all(),
+                'faq' => FaqExtractor::extract($category->description),
             ],
         );
     }

@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
+use App\Support\FaqExtractor;
 use App\Support\PublicAssetUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -52,6 +53,7 @@ class PostDetailResource extends JsonResource
             ],
             'public_url' => $urls->absolute($canonicalPath),
             'toc' => $content['toc'],
+            'faq' => FaqExtractor::extract($content['body']),
         ];
     }
 }
