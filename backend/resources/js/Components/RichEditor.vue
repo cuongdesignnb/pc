@@ -27,7 +27,8 @@ const editor = useEditor({
     extensions: [
         StarterKit.configure({
             heading: { levels: [2, 3, 4] },
-            link: { openOnClick: false, HTMLAttributes: { class: 'text-indigo-600 underline' } },
+            // rel is left out so internal links aren't nofollow; the API adds it to outbound links.
+            link: { openOnClick: false, HTMLAttributes: { class: 'text-indigo-600 underline', rel: null } },
         }),
         Image.configure({ inline: false, allowBase64: true }),
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
