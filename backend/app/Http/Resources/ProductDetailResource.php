@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Services\Ai\ProductContentHeadingResolver;
+use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
 use App\Support\HtmlToText;
 use App\Support\YouTubeVideo;
@@ -119,6 +120,11 @@ class ProductDetailResource extends JsonResource
             // their own lines, list items as bullets). Richer layout is rendered
             // only from the typed detail_blocks payload above.
             'description' => HtmlToText::convert($this->description),
+            // The same editor HTML, sanitized like news articles, so links and
+            // formatting the shop adds in admin stay clickable on the page.
+            'description_html' => filled($this->description)
+                ? (app(ArticleContentSanitizer::class)->sanitize($this->description, $this->name) ?: null)
+                : null,
             'seo' => [
                 'title' => $this->meta_title,
                 'description' => $this->meta_description,

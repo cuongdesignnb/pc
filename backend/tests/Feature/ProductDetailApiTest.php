@@ -56,6 +56,24 @@ class ProductDetailApiTest extends TestCase
             ->assertJsonMissingPath('product.reviews');
     }
 
+    public function test_detail_endpoint_keeps_safe_description_links_as_html(): void
+    {
+        $product = $this->product([
+            'description' => '<p onclick="x()">Xem <a href="https://laptopplus.vn/dell" target="_blank">Dell</a>'
+                .' và <a href="javascript:alert(1)">mã độc</a></p><script>alert(1)</script>',
+        ]);
+
+        $html = $this->getJson('/api/v1/products/'.$product->slug)
+            ->assertOk()
+            ->assertJsonPath('product.description', 'Xem Dell và mã độc')
+            ->json('product.description_html');
+
+        $this->assertStringContainsString('<a href="https://laptopplus.vn/dell" target="_blank" rel="noopener noreferrer">Dell</a>', $html);
+        $this->assertStringNotContainsString('javascript:', $html);
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('onclick', $html);
+    }
+
     public function test_detail_endpoint_exposes_only_usable_deduplicated_public_images(): void
     {
         $product = $this->product();
