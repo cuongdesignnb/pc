@@ -49,7 +49,7 @@ const kiotStatusClass = computed(() => {
 const newStatus = ref(
     props.order.order_status || props.order.status || "pending",
 );
-const newPayStatus = ref(props.order.payment_status || "pending");
+const newPayStatus = ref(props.order.payment_status || "unpaid");
 
 function updateStatus() {
     router.patch(`/admin/orders/${props.order.id}/status`, {
@@ -84,11 +84,25 @@ const statusLabel = {
     cancelled: "Đã hủy",
 };
 const payLabel = {
-    pending: "Chưa thanh toán",
+    unpaid: "Chưa thanh toán",
+    deposited: "Đã đặt cọc",
     paid: "Đã thanh toán",
-    failed: "Thất bại",
     refunded: "Hoàn tiền",
 };
+const paymentOptionLabel = {
+    full: "Chuyển khoản toàn bộ",
+    deposit: "Đặt cọc",
+};
+const transactionLabel = {
+    DEPOSIT: "Tiền cọc",
+    ORDER_PAID: "Thanh toán toàn bộ",
+    REMAINDER_PAID: "Thanh toán phần còn lại",
+    PARTIAL: "Chuyển một phần",
+    EXTRA: "Chuyển thêm",
+};
+const remaining = computed(() =>
+    Math.max(Number(props.order.total || 0) - Number(props.order.amount_paid || 0), 0),
+);
 </script>
 <template>
     <AdminLayout title="Chi tiết đơn hàng">
@@ -184,6 +198,28 @@ const payLabel = {
                 <h4 class="text-sm font-semibold text-slate-300 mb-3">
                     Thanh toán
                 </h4>
+                <div class="space-y-1 text-sm text-slate-400 mb-3">
+                    <p>
+                        <span class="text-slate-500">Phương thức:</span>
+                        {{ order.payment_method === "sepay" ? "Chuyển khoản (SePay)" : "COD" }}
+                        <span v-if="order.payment_option">
+                            · {{ paymentOptionLabel[order.payment_option] || order.payment_option }}</span
+                        >
+                    </p>
+                    <p v-if="order.deposit_amount">
+                        <span class="text-slate-500">Tiền cọc yêu cầu:</span>
+                        {{ formatPrice(order.deposit_amount) }}
+                        <span v-if="order.deposit_paid_at" class="text-emerald-400">
+                            · đã cọc {{ formatDate(order.deposit_paid_at) }}</span
+                        >
+                    </p>
+                    <p>
+                        <span class="text-slate-500">Đã nhận:</span>
+                        <span class="text-emerald-400">{{ formatPrice(order.amount_paid || 0) }}</span>
+                        · <span class="text-slate-500">Còn lại:</span>
+                        <span :class="remaining > 0 ? 'text-amber-400' : 'text-emerald-400'">{{ formatPrice(remaining) }}</span>
+                    </p>
+                </div>
                 <div class="space-y-3">
                     <select
                         v-model="newPayStatus"
@@ -236,6 +272,20 @@ const payLabel = {
             >
                 {{ resending ? "Đang gửi..." : "Gửi lại sang KIOT" }}
             </button>
+        </div>
+        <div
+            v-if="order.transactions?.length"
+            class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-4 mb-6"
+        >
+            <p class="text-sm text-slate-300 font-semibold mb-2">Giao dịch chuyển khoản (SePay)</p>
+            <ul class="space-y-1 text-sm text-slate-400">
+                <li v-for="t in order.transactions" :key="t.id">
+                    {{ formatDate(t.transaction_date || t.created_at) }} ·
+                    <span class="text-slate-200">{{ formatPrice(t.amount) }}</span> ·
+                    {{ transactionLabel[t.content] || t.content }}
+                    <span v-if="t.reference_code" class="text-slate-500"> · Mã GD {{ t.reference_code }}</span>
+                </li>
+            </ul>
         </div>
         <div
             class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 overflow-hidden mb-4"

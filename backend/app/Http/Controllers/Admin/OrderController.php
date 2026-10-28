@@ -49,13 +49,13 @@ class OrderController extends Controller
             'orders' => $orders,
             'filters' => $request->only(['search', 'status', 'payment_status', 'from_date', 'to_date']),
             'statuses' => ['pending', 'confirmed', 'processing', 'shipping', 'delivered', 'cancelled'],
-            'paymentStatuses' => ['unpaid', 'paid', 'refunded'],
+            'paymentStatuses' => ['unpaid', 'deposited', 'paid', 'refunded'],
         ]);
     }
 
     public function show(Order $order, KiotConfigurationResolver $resolver)
     {
-        $order->load(['user', 'items.product', 'transaction']);
+        $order->load(['user', 'items.product', 'transactions']);
         $runtime = $resolver->resolve();
         $orderSyncEnabled = $runtime->enabled && $runtime->orderSyncEnabled;
 
@@ -115,18 +115,24 @@ class OrderController extends Controller
     public function updatePaymentStatus(Request $request, Order $order)
     {
         $validated = $request->validate([
-            'payment_status' => 'required|in:unpaid,paid,refunded',
+            'payment_status' => 'required|in:unpaid,deposited,paid,refunded',
         ]);
 
-        if ($validated['payment_status'] === 'paid'
+        if (in_array($validated['payment_status'], ['paid', 'deposited'], true)
             && $order->payment_method === 'sepay'
-            && $order->kiot_sync_status !== 'synced') {
+            && ! $order->acceptsPayments()) {
             return back()->with('error', 'Chỉ có thể xác nhận thanh toán sau khi KIOT chấp nhận đơn hàng.');
         }
 
         $data = $validated;
-        if ($validated['payment_status'] === 'paid' && ! $order->paid_at) {
-            $data['paid_at'] = now();
+        if ($validated['payment_status'] === 'paid') {
+            // Marked paid by hand (cash on delivery, transfer outside SePay):
+            // the whole order is now settled.
+            $data['paid_at'] = $order->paid_at ?? now();
+            $data['amount_paid'] = max((int) $order->amount_paid, (int) $order->total);
+        }
+        if ($validated['payment_status'] === 'deposited' && ! $order->deposit_paid_at) {
+            $data['deposit_paid_at'] = now();
         }
 
         $order->update($data);

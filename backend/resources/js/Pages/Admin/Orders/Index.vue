@@ -19,8 +19,8 @@ function formatDate(d) { return new Date(d).toLocaleDateString('vi-VN', { day: '
 
 const statusLabel = { pending: 'Chờ xử lý', confirmed: 'Đã xác nhận', shipping: 'Đang giao', delivered: 'Đã giao', cancelled: 'Đã hủy' };
 const statusColor = { pending: 'bg-yellow-100 text-yellow-700', confirmed: 'bg-blue-100 text-blue-700', shipping: 'bg-purple-100 text-purple-700', delivered: 'bg-green-100 text-emerald-400', cancelled: 'bg-red-100 text-red-700' };
-const payLabel = { pending: 'Chưa TT', paid: 'Đã TT', failed: 'Thất bại', refunded: 'Hoàn tiền' };
-const payColor = { pending: 'bg-yellow-100 text-yellow-700', paid: 'bg-green-100 text-emerald-400', failed: 'bg-red-100 text-red-700', refunded: 'bg-slate-800/60 text-slate-400' };
+const payLabel = { unpaid: 'Chưa TT', deposited: 'Đã cọc', paid: 'Đã TT', refunded: 'Hoàn tiền' };
+const payColor = { unpaid: 'bg-yellow-100 text-yellow-700', deposited: 'bg-blue-100 text-blue-700', paid: 'bg-green-100 text-emerald-400', refunded: 'bg-slate-800/60 text-slate-400' };
 </script>
 <template>
 <AdminLayout title="Đơn hàng">

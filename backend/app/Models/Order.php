@@ -29,6 +29,10 @@ class Order extends Model
         'total',
         'payment_status',
         'payment_method',
+        'payment_option',
+        'deposit_amount',
+        'amount_paid',
+        'deposit_paid_at',
         'checkout_mode',
         'order_status',
         'shipping_name',
@@ -63,7 +67,10 @@ class Order extends Model
         'discount' => 'decimal:0',
         'shipping_fee' => 'decimal:0',
         'total' => 'decimal:0',
+        'deposit_amount' => 'decimal:0',
+        'amount_paid' => 'decimal:0',
         'paid_at' => 'datetime',
+        'deposit_paid_at' => 'datetime',
         'shipped_at' => 'datetime',
         'delivered_at' => 'datetime',
         'kiot_order_id' => 'integer',
@@ -88,17 +95,47 @@ class Order extends Model
         return $this->hasOne(Transaction::class);
     }
 
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class)->orderBy('id');
+    }
+
     public static function generateOrderNumber(): string
     {
         return 'DH'.date('Ymd').str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * A transfer can be taken once KIOT has accepted the order, or right away
+     * when the order never goes to KIOT. A deposited order stays payable so
+     * the customer can transfer the rest instead of paying on delivery.
+     */
     public function canPay(): bool
     {
-        return $this->kiot_sync_status === 'synced'
+        return $this->acceptsPayments()
             && $this->payment_method === 'sepay'
-            && $this->payment_status === 'unpaid'
+            && in_array($this->payment_status, ['unpaid', 'deposited'], true)
             && $this->order_status !== 'cancelled';
+    }
+
+    public function acceptsPayments(): bool
+    {
+        return in_array($this->kiot_sync_status, ['synced', 'not_required'], true);
+    }
+
+    public function remainingAmount(): int
+    {
+        return max((int) $this->total - (int) $this->amount_paid, 0);
+    }
+
+    /** What the next transfer should be: the deposit first if one was chosen, otherwise the rest. */
+    public function amountDue(): int
+    {
+        if ($this->payment_status === 'unpaid' && $this->payment_option === 'deposit' && (int) $this->deposit_amount > 0) {
+            return max((int) $this->deposit_amount - (int) $this->amount_paid, 0) ?: $this->remainingAmount();
+        }
+
+        return $this->remainingAmount();
     }
 
     public function canCancel(): bool

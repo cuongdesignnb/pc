@@ -69,6 +69,7 @@ class OrderController extends Controller
             'shipping_ward_code' => 'nullable|string|max:20',
             'notes' => 'nullable|string|max:1000',
             'payment_method' => 'required|in:sepay,cod',
+            'payment_option' => 'nullable|in:full,deposit',
             'shipping_method' => 'nullable|in:standard',
             'quote_id' => 'nullable|uuid',
             'checkout_mode' => 'nullable|in:cart,buy_now',
@@ -151,7 +152,10 @@ class OrderController extends Controller
 
         return response()->json([
             'paid' => $order->payment_status === 'paid',
+            'deposited' => $order->payment_status === 'deposited',
             'payment_status' => $order->payment_status, 'order_status' => $order->order_status,
+            'payment_option' => $order->payment_option, 'deposit_amount' => $order->deposit_amount,
+            'amount_paid' => $order->amount_paid, 'remaining_amount' => $order->remainingAmount(),
             'kiot_sync_status' => $order->kiot_sync_status, 'kiot_order_code' => $order->kiot_order_code,
             'kiot_sync_error_code' => $order->kiot_sync_error_code,
             'can_pay' => $order->canPay(), 'can_cancel' => $order->canCancel(),
@@ -166,8 +170,10 @@ class OrderController extends Controller
         $request->validate([
             'id' => 'required|integer',
             'transferAmount' => 'required|numeric|min:0',
+            'transferType' => 'nullable|string|max:10',
             'content' => 'nullable|string',
             'gateway' => 'nullable|string|max:100',
+            'referenceCode' => 'nullable|string|max:255',
             'referenceNumber' => 'nullable|string|max:255',
             'transactionDate' => 'nullable|date',
         ]);
@@ -186,6 +192,11 @@ class OrderController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
         }
 
+        // Money leaving the account never pays an order.
+        if ($request->input('transferType') === 'out') {
+            return response()->json(['success' => true, 'message' => 'Outgoing transfer ignored']);
+        }
+
         $transactionId = (int) $request->input('id');
         $content = (string) $request->input('content', '');
         if (! preg_match('/DH\d{12}/', $content, $matches)) {
@@ -197,13 +208,16 @@ class OrderController extends Controller
             $transactionId,
             $matches[0],
             (int) $request->input('transferAmount'),
-            $request->input('referenceNumber'),
+            // SePay sends referenceCode; referenceNumber is kept for older payloads.
+            $request->input('referenceCode') ?? $request->input('referenceNumber'),
         );
 
         return response()->json([
             'success' => true,
             'duplicate' => $result['duplicate'],
-            'payment_status' => $result['processed'] ? 'paid' : 'pending_reconciliation',
+            'payment_status' => $result['processed']
+                ? $result['event']->order?->payment_status
+                : 'pending_reconciliation',
         ]);
     }
 
@@ -239,6 +253,10 @@ class OrderController extends Controller
             'total' => $order->total,
             'payment_status' => $order->payment_status,
             'payment_method' => $order->payment_method,
+            'payment_option' => $order->payment_option,
+            'deposit_amount' => $order->deposit_amount,
+            'amount_paid' => $order->amount_paid,
+            'remaining_amount' => $order->remainingAmount(),
             'checkout_mode' => $order->checkout_mode,
             'order_status' => $order->order_status,
             'shipping_name' => $order->shipping_name,
@@ -372,11 +390,17 @@ class OrderController extends Controller
         $bankCode = $this->stringSetting('payment_bank_name', (string) ($sepay['bank_code'] ?? ''));
         $bankAccount = $this->stringSetting('payment_bank_account', (string) ($sepay['bank_account'] ?? ''));
         $accountName = $this->stringSetting('payment_bank_holder', (string) ($sepay['account_name'] ?? ''));
+        $amount = $order->amountDue();
+        $purpose = match (true) {
+            $order->payment_status === 'deposited' => 'remaining',
+            $order->payment_option === 'deposit' && $amount < $order->remainingAmount() => 'deposit',
+            default => 'full',
+        };
 
         return [
-            'qr_url' => "https://img.vietqr.io/image/{$bankCode}-{$bankAccount}-qr_only.png?amount={$order->total}&addInfo=".urlencode($order->order_number).'&accountName='.urlencode($accountName),
+            'qr_url' => "https://img.vietqr.io/image/{$bankCode}-{$bankAccount}-qr_only.png?amount={$amount}&addInfo=".urlencode($order->order_number).'&accountName='.urlencode($accountName),
             'bank_code' => $bankCode, 'bank_account' => $bankAccount,
-            'account_name' => $accountName, 'amount' => (int) $order->total,
+            'account_name' => $accountName, 'amount' => $amount, 'purpose' => $purpose,
             'transfer_content' => $order->order_number, 'order_number' => $order->order_number,
         ];
     }

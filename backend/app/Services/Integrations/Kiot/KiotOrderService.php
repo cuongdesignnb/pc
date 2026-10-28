@@ -9,9 +9,11 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Catalog\ProductPurchasabilityService;
 use App\Services\Checkout\ShippingCalculator;
+use App\Services\Payments\DepositPolicy;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class KiotOrderService
 {
@@ -20,6 +22,7 @@ class KiotOrderService
         private readonly KiotConfigurationResolver $resolver,
         private readonly ProductPurchasabilityService $purchasability,
         private readonly ShippingCalculator $shippingCalculator,
+        private readonly DepositPolicy $deposits,
     ) {}
 
     public function create(array $data, ?int $userId): array
@@ -101,6 +104,15 @@ class KiotOrderService
                 }
 
                 $shippingFee = $this->shippingCalculator->quote($subtotal, $requested->sum('quantity'))['fee'];
+                $paymentOption = $data['payment_method'] === 'sepay' ? ($data['payment_option'] ?? 'full') : null;
+                $depositAmount = $paymentOption === 'deposit'
+                    ? $this->deposits->amountFor($subtotal + $shippingFee)
+                    : null;
+                if ($paymentOption === 'deposit' && $depositAmount === null) {
+                    throw ValidationException::withMessages([
+                        'payment_option' => 'Đơn hàng này không áp dụng đặt cọc, vui lòng chọn chuyển khoản toàn bộ.',
+                    ]);
+                }
                 $eventId = $enabled ? (string) Str::uuid() : null;
                 $idempotencyKey = $enabled ? (string) Str::uuid() : null;
                 $order = Order::create([
@@ -111,6 +123,8 @@ class KiotOrderService
                     'shipping_fee' => $shippingFee,
                     'total' => $subtotal + $shippingFee,
                     'payment_method' => $data['payment_method'],
+                    'payment_option' => $paymentOption,
+                    'deposit_amount' => $depositAmount,
                     'checkout_mode' => $data['checkout_mode'] ?? 'cart',
                     'payment_status' => 'unpaid',
                     'order_status' => 'pending',
