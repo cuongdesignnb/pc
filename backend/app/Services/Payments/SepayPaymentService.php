@@ -80,33 +80,58 @@ class SepayPaymentService
         }, 3);
     }
 
+    /**
+     * Every confirmed transfer is added to the order's amount_paid. Reaching
+     * the deposit marks the order "deposited", reaching the total marks it
+     * "paid"; a smaller transfer is still recorded so admin sees the money.
+     */
     private function processLocked(SepayPaymentEvent $event, Order $order): bool
     {
-        if ($event->status !== 'pending' || $order->kiot_sync_status !== 'synced') {
+        if ($event->status !== 'pending' || ! $order->acceptsPayments()) {
             return false;
         }
-        if ((int) $event->amount < (int) $order->total) {
-            $event->update(['status' => 'rejected', 'failure_code' => 'AMOUNT_MISMATCH']);
-
-            return false;
-        }
-        if ($order->payment_status === 'paid' || Transaction::where('sepay_transaction_id', $event->external_transaction_id)->exists()) {
+        if (Transaction::where('sepay_transaction_id', $event->external_transaction_id)->exists()) {
             $event->update(['status' => 'processed', 'processed_at' => now()]);
 
             return false;
         }
 
-        $order->update(['payment_status' => 'paid', 'order_status' => 'confirmed', 'paid_at' => now()]);
+        $previousStatus = $order->payment_status;
+        $amountPaid = (int) $order->amount_paid + (int) $event->amount;
+        $deposit = (int) $order->deposit_amount;
+        $updates = ['amount_paid' => $amountPaid];
+        $kind = 'PARTIAL';
+
+        if (in_array($previousStatus, ['paid', 'refunded'], true)) {
+            $kind = 'EXTRA';
+        } elseif ($amountPaid >= (int) $order->total) {
+            $kind = $previousStatus === 'deposited' ? 'REMAINDER_PAID' : 'ORDER_PAID';
+            $updates += ['payment_status' => 'paid', 'paid_at' => now()];
+        } elseif ($deposit > 0 && $amountPaid >= $deposit) {
+            $kind = $previousStatus === 'deposited' ? 'PARTIAL' : 'DEPOSIT';
+            if ($previousStatus === 'unpaid') {
+                $updates += ['payment_status' => 'deposited', 'deposit_paid_at' => now()];
+            }
+        }
+        if (isset($updates['payment_status']) && $order->order_status === 'pending') {
+            $updates['order_status'] = 'confirmed';
+        }
+
+        $order->update($updates);
         Transaction::create([
             'order_id' => $order->id,
             'sepay_transaction_id' => $event->external_transaction_id,
             'gateway' => $event->source,
             'amount' => $event->amount,
             'reference_code' => $event->reference_code,
-            'content' => 'ORDER_PAID',
+            'content' => $kind,
             'transaction_date' => $event->received_at,
         ]);
-        $event->update(['status' => 'processed', 'failure_code' => null, 'processed_at' => now()]);
+        $event->update([
+            'status' => 'processed',
+            'failure_code' => $kind === 'PARTIAL' ? 'BELOW_REQUIRED_AMOUNT' : null,
+            'processed_at' => now(),
+        ]);
 
         return true;
     }

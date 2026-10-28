@@ -3,9 +3,12 @@
 namespace App\Services\Checkout;
 
 use App\Models\Setting;
+use App\Services\Payments\DepositPolicy;
 
 class PaymentMethodAvailability
 {
+    public function __construct(private readonly DepositPolicy $deposits) {}
+
     /**
      * @return array<int, array{key: string, label: string, provider: string}>
      */
@@ -31,9 +34,12 @@ class PaymentMethodAvailability
     }
 
     /**
-     * @return array<int, array{code: string, label: string, description: string, available: bool, disabled_reason: string|null}>
+     * $total is the quoted order total; when known, SePay also carries the
+     * deposit the customer could transfer instead of the full amount.
+     *
+     * @return array<int, array{code: string, label: string, description: string, available: bool, disabled_reason: string|null, deposit_amount?: int|null}>
      */
-    public function checkoutMethods(): array
+    public function checkoutMethods(?int $total = null): array
     {
         $methods = [];
         if ($this->codAvailable()) {
@@ -52,6 +58,7 @@ class PaymentMethodAvailability
                 'description' => 'Quét mã QR sau khi đơn hàng được ghi nhận.',
                 'available' => true,
                 'disabled_reason' => null,
+                'deposit_amount' => $total === null ? null : $this->deposits->amountFor($total),
             ];
         }
 

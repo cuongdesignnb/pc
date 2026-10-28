@@ -60,7 +60,6 @@ class CheckoutQuoteService
         }
 
         $paymentMethod = $this->nullableString($data['payment_method'] ?? null);
-        $paymentMethods = $this->paymentAvailability->checkoutMethods();
         if ($paymentMethod !== null && ! $this->paymentAvailability->isAvailable($paymentMethod)) {
             $issues[] = $this->issue('payment_method', 'PAYMENT_METHOD_UNAVAILABLE', 'Phương thức thanh toán này hiện không khả dụng.');
         }
@@ -82,6 +81,7 @@ class CheckoutQuoteService
         if ($summary['total_quantity'] === 0) {
             $issues[] = $this->issue('items', 'EMPTY_CHECKOUT', 'Không có sản phẩm hợp lệ để thanh toán.');
         }
+        $paymentMethods = $this->paymentAvailability->checkoutMethods($summary['total']);
 
         $quoteId = (string) Str::uuid();
         $expiresAt = now()->addMinutes(self::TTL_MINUTES);
