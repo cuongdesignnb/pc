@@ -8,6 +8,7 @@ use App\Models\PostCategory;
 use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\SiteTimezone;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -16,14 +17,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PostController extends Controller
 {
-    /**
-     * The admin's date-time inputs carry no offset and the shop works in
-     * Vietnam time, while the app stores UTC. Without this conversion 23:00
-     * was saved as 23:00 UTC (06:00 next day locally) and the post stayed
-     * hidden until then.
-     */
-    private const ADMIN_TIMEZONE = 'Asia/Ho_Chi_Minh';
-
     public function index(Request $request)
     {
         $query = Post::with(['author', 'category'])->latest();
@@ -107,7 +100,7 @@ class PostController extends Controller
 
         return Inertia::render('Admin/Posts/Edit', [
             'post' => $post,
-            'publishedAtLocal' => $post->published_at?->copy()->timezone(self::ADMIN_TIMEZONE)->format('Y-m-d\TH:i'),
+            'publishedAtLocal' => $post->published_at?->copy()->timezone(SiteTimezone::get())->format('Y-m-d\TH:i'),
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
         ]);
     }
@@ -308,12 +301,18 @@ class PostController extends Controller
         return back()->with('success', $msg);
     }
 
+    /**
+     * The admin's date-time inputs carry no offset and the shop works in its
+     * own time zone (Cài đặt → Chung, Vietnam by default), while the app
+     * stores UTC. Without this conversion 23:00 was saved as 23:00 UTC
+     * (06:00 next day locally) and the post stayed hidden until then.
+     */
     private function publishedAtFromAdmin(mixed $value): ?Carbon
     {
         if (blank($value)) {
             return null;
         }
 
-        return Carbon::parse((string) $value, self::ADMIN_TIMEZONE)->utc();
+        return Carbon::parse((string) $value, SiteTimezone::get())->utc();
     }
 }

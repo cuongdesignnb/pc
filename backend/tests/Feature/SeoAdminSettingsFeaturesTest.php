@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Brand;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Models\User;
@@ -9,6 +10,7 @@ use App\Services\Ai\ProductContactFooterService;
 use App\Support\FaqExtractor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class SeoAdminSettingsFeaturesTest extends TestCase
@@ -68,6 +70,41 @@ class SeoAdminSettingsFeaturesTest extends TestCase
         $this->assertSame('2026-10-27 16:00:00', $post->fresh()->published_at->utc()->format('Y-m-d H:i:s'));
         $this->actingAs($admin)->get("/admin/posts/{$post->id}/edit")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('publishedAtLocal', '2026-10-27T23:00'));
+    }
+
+    public function test_site_timezone_setting_drives_admin_post_times(): void
+    {
+        $this->assertSame('Asia/Ho_Chi_Minh', Setting::query()->where('key', 'site_timezone')->value('value'));
+
+        Setting::set('site_timezone', 'Asia/Tokyo');
+        $admin = User::factory()->create(['role' => 'admin']);
+        $post = Post::create([
+            'title' => 'Bài viết', 'slug' => 'bai-viet', 'body' => '<p>Nội dung</p>', 'status' => 'draft', 'user_id' => $admin->id,
+        ]);
+
+        $this->actingAs($admin)->put("/admin/posts/{$post->id}", [
+            'title' => 'Bài viết', 'slug' => 'bai-viet', 'body' => '<p>Nội dung</p>', 'status' => 'published',
+            'published_at' => '2026-10-27T23:00',
+        ])->assertSessionHasNoErrors();
+        $this->assertSame('2026-10-27 14:00:00', $post->fresh()->published_at->utc()->format('Y-m-d H:i:s'));
+
+        Setting::set('site_timezone', 'Not/AZone');
+        $this->actingAs($admin)->get("/admin/posts/{$post->id}/edit")
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('publishedAtLocal', '2026-10-27T21:00'));
+    }
+
+    public function test_brand_slug_can_be_renamed_with_a_301_from_the_edit_page(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $admin->givePermissionTo(Permission::firstOrCreate(['name' => 'seo.slugs.manage', 'guard_name' => 'web']));
+        $brand = Brand::create(['name' => 'Dell', 'slug' => 'delldell', 'is_active' => true, 'slug_locked_at' => now()]);
+
+        $this->actingAs($admin)->get("/admin/brands/{$brand->id}/edit")->assertOk();
+        $this->actingAs($admin)->getJson("/admin/seo/slugs/brand/{$brand->id}/preview?new_slug=dell")->assertOk();
+        $this->actingAs($admin)->postJson("/admin/seo/slugs/brand/{$brand->id}/change", ['new_slug' => 'dell', 'reason' => 'Sửa slug lặp'])
+            ->assertOk();
+
+        $this->assertSame('dell', $brand->fresh()->slug);
     }
 
     public function test_contact_footer_lists_the_settings_still_missing(): void
