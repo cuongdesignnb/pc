@@ -70,7 +70,7 @@ class PublicPagesTest extends TestCase
         $body = $response->json('page.body');
         $this->assertStringContainsString('<table>', $body);
         $this->assertStringContainsString('href="tel:0123456789"', $body);
-        $this->assertStringContainsString('rel="noopener noreferrer"', $body);
+        $this->assertStringContainsString('rel="noopener noreferrer nofollow"', $body);
         foreach (['<script', 'onclick', 'javascript:', '<h1'] as $unsafe) {
             $this->assertStringNotContainsString($unsafe, $body);
         }

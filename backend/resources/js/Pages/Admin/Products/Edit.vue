@@ -42,7 +42,7 @@ const form = useForm({
     is_active: props.product.is_active ?? true,
     is_featured: props.product.is_featured || false,
     show_on_pc_website: props.product.show_on_pc_website ?? true,
-    warranty_months: props.product.warranty_months || 12,
+    warranty_months: props.product.warranty_months ?? 0,
     meta_title: props.product.meta_title || '',
     meta_description: props.product.meta_description || '',
     video_url: props.product.video_url || '',
@@ -249,7 +249,7 @@ function removeVariant(index) {
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá gốc *</label><input v-model="form.price" :disabled="isKiot" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Giá sale</label><input v-model="form.sale_price" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label><input v-model="form.stock_quantity" :disabled="isKiot" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"></div>
-                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
+                    <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" min="0" step="1" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 </div>
                 <dl v-if="isKiot" class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm md:grid-cols-4">
                     <div><dt class="text-slate-500">Barcode</dt><dd class="mt-1 text-slate-200">{{ product.barcode || '—' }}</dd></div>

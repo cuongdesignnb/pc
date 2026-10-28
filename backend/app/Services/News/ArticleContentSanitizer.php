@@ -66,8 +66,8 @@ final class ArticleContentSanitizer
     }
 
     /**
-     * @param list<array{id: string, level: int, title: string}> $toc
-     * @param array<string, int> $usedIds
+     * @param  list<array{id: string, level: int, title: string}>  $toc
+     * @param  array<string, int>  $usedIds
      */
     private function sanitizeChildren(DOMNode $parent, array &$toc, array &$usedIds, ?string $imageAltFallback): void
     {
@@ -79,6 +79,7 @@ final class ArticleContentSanitizer
             $tag = strtolower($child->tagName);
             if (in_array($tag, self::DROP_TAGS, true)) {
                 $parent->removeChild($child);
+
                 continue;
             }
 
@@ -88,15 +89,18 @@ final class ArticleContentSanitizer
                     $parent->insertBefore($child->firstChild, $child);
                 }
                 $parent->removeChild($child);
+
                 continue;
             }
 
             if ($tag === 'img' && ! $this->sanitizeImage($child, $imageAltFallback)) {
                 $parent->removeChild($child);
+
                 continue;
             }
             if ($tag === 'iframe' && ! $this->sanitizeIframe($child)) {
                 $parent->removeChild($child);
+
                 continue;
             }
 
@@ -145,12 +149,17 @@ final class ArticleContentSanitizer
                 $element->setAttribute('href', $href);
             }
 
-            $target = $element->getAttribute('target');
-            if ($target !== '_blank') {
+            $blank = $element->getAttribute('target') === '_blank';
+            if (! $blank) {
                 $element->removeAttribute('target');
+            }
+
+            // Only links leaving the store are nofollow; internal links pass link equity.
+            $rel = $this->safeRel($element->getAttribute('rel'), $blank, $href !== null && ! $this->isInternalUrl($href));
+            if ($rel === '') {
                 $element->removeAttribute('rel');
             } else {
-                $element->setAttribute('rel', $this->safeRel($element->getAttribute('rel')));
+                $element->setAttribute('rel', $rel);
             }
         }
 
@@ -235,13 +244,33 @@ final class ArticleContentSanitizer
         return $image ? (PublicAssetUrl::normalize($value) ?? $value) : $value;
     }
 
-    private function safeRel(?string $value): string
+    private function safeRel(?string $value, bool $blank, bool $external): string
     {
         $tokens = preg_split('/\s+/', strtolower(trim((string) $value))) ?: [];
-        $tokens = array_values(array_intersect($tokens, ['noopener', 'noreferrer', 'nofollow']));
-        $tokens = array_values(array_unique(array_merge($tokens, ['noopener', 'noreferrer'])));
+        $tokens = array_intersect($tokens, ['noopener', 'noreferrer', 'nofollow']);
+        $tokens = array_merge(
+            array_diff($tokens, ['nofollow']),
+            $blank ? ['noopener', 'noreferrer'] : [],
+            $external ? ['nofollow'] : [],
+        );
 
-        return implode(' ', $tokens);
+        return implode(' ', array_values(array_unique($tokens)));
+    }
+
+    private function isInternalUrl(string $href): bool
+    {
+        $scheme = strtolower((string) parse_url($href, PHP_URL_SCHEME));
+        if ($scheme === '') {
+            return true;
+        }
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return true;
+        }
+
+        $host = preg_replace('/^www\./', '', strtolower((string) parse_url($href, PHP_URL_HOST)));
+        $own = preg_replace('/^www\./', '', strtolower((string) parse_url((string) config('app.frontend_url'), PHP_URL_HOST)));
+
+        return $host !== '' && $host === $own;
     }
 
     /** @param array<string, int> $usedIds */

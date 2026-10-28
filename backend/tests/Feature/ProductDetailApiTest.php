@@ -58,17 +58,23 @@ class ProductDetailApiTest extends TestCase
 
     public function test_detail_endpoint_keeps_safe_description_links_as_html(): void
     {
+        config()->set('app.frontend_url', 'https://laptopplus.vn');
         $product = $this->product([
-            'description' => '<p onclick="x()">Xem <a href="https://laptopplus.vn/dell" target="_blank">Dell</a>'
+            'description' => '<p onclick="x()">Xem <a href="https://laptopplus.vn/dell" target="_blank" rel="noopener noreferrer nofollow">Dell</a>'
+                .' <a href="https://www.laptopplus.vn/msi" rel="nofollow">MSI</a> <a href="/asus">Asus</a>'
+                .' <a href="https://hang.example.test/dell">Hãng</a>'
                 .' và <a href="javascript:alert(1)">mã độc</a></p><script>alert(1)</script>',
         ]);
 
         $html = $this->getJson('/api/v1/products/'.$product->slug)
             ->assertOk()
-            ->assertJsonPath('product.description', 'Xem Dell và mã độc')
+            ->assertJsonPath('product.description', 'Xem Dell MSI Asus Hãng và mã độc')
             ->json('product.description_html');
 
         $this->assertStringContainsString('<a href="https://laptopplus.vn/dell" target="_blank" rel="noopener noreferrer">Dell</a>', $html);
+        $this->assertStringContainsString('<a href="https://www.laptopplus.vn/msi">MSI</a>', $html);
+        $this->assertStringContainsString('<a href="/asus">Asus</a>', $html);
+        $this->assertStringContainsString('<a href="https://hang.example.test/dell" rel="nofollow">Hãng</a>', $html);
         $this->assertStringNotContainsString('javascript:', $html);
         $this->assertStringNotContainsString('<script', $html);
         $this->assertStringNotContainsString('onclick', $html);
