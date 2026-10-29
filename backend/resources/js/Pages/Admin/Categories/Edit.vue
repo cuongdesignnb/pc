@@ -3,6 +3,7 @@ import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
+import AffiliateCommissionField, { commissionForm } from '@/Components/AffiliateCommissionField.vue';
 
 const props = defineProps({ category: Object, categories: Array, componentTypes: Array });
 const form = useForm({
@@ -11,6 +12,7 @@ const form = useForm({
     image: props.category.image || '', icon: props.category.icon || '', sort_order: props.category.sort_order || 0,
     is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '', technical_heading: props.category.technical_heading || 'auto',
     warranty_packages: (props.category.warranty_packages || []).map(p => ({ months: p.months, price: p.price ?? 0 })),
+    affiliate_commission: commissionForm(props.category.affiliate_commission),
 });
 function addWarrantyPackage() { form.warranty_packages.push({ months: '', price: 0 }); }
 function submit() { form.put(`/admin/categories/${props.category.id}`); }
@@ -57,6 +59,8 @@ function submit() { form.put(`/admin/categories/${props.category.id}`); }
                 <p v-else class="text-xs text-slate-500">Áp dụng cho sản phẩm thuộc danh mục này và các danh mục con chưa có gói riêng. Giá cộng thêm có thể để 0đ.</p>
                 <div v-for="(msg, key) in form.errors" :key="key"><p v-if="String(key).startsWith('warranty_packages')" class="text-red-400 text-xs mt-1">{{ msg }}</p></div>
             </div>
+            <AffiliateCommissionField v-model="form.affiliate_commission" :errors="form.errors" />
+
             <div class="flex justify-end gap-3 pt-2">
                 <Link href="/admin/categories" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>
                 <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium disabled:opacity-50">Lưu thay đổi</button>

@@ -22,6 +22,8 @@ class CheckoutQuoteController extends Controller
             'shipping_ward_code' => 'nullable|string|max:20',
             'shipping_method' => 'nullable|string|in:standard',
             'payment_method' => 'nullable|string|in:cod,sepay',
+            'customer_phone' => 'nullable|string|max:20',
+            'referral_code' => 'nullable|string|max:20',
         ]);
 
         return response()->json($quotes->create($request, $validated));

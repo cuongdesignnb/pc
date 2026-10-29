@@ -239,6 +239,28 @@ const remaining = computed(() =>
             </div>
         </div>
         <div
+            v-if="order.affiliate"
+            class="bg-amber-500/5 rounded-lg border border-amber-500/30 p-4 mb-6 flex flex-wrap items-center justify-between gap-3 text-sm"
+        >
+            <div class="space-y-1">
+                <p class="text-amber-300 font-semibold">
+                    Khách của CTV: {{ order.affiliate.user?.name }} – {{ order.affiliate.code }}
+                </p>
+                <p v-if="Number(order.referral_discount) > 0" class="text-slate-400">
+                    Khách được giảm giá giới thiệu {{ formatPrice(order.referral_discount) }}
+                </p>
+                <p v-if="order.affiliate_commission" class="text-slate-400">
+                    Hoa hồng {{ formatPrice(order.affiliate_commission.amount) }} ·
+                    {{ { pending: "Chờ duyệt", approved: "Được rút", cancelled: "Đã huỷ" }[order.affiliate_commission.status] }}
+                </p>
+            </div>
+            <Link
+                :href="`/admin/affiliates/commissions?affiliate_id=${order.affiliate.id}`"
+                class="text-cyan-500 hover:text-cyan-400"
+                >Xem hoa hồng CTV →</Link
+            >
+        </div>
+        <div
             v-if="kiot"
             class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-4 mb-6 flex flex-wrap items-center justify-between gap-3"
         >

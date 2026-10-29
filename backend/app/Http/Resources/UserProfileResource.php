@@ -21,6 +21,10 @@ class UserProfileResource extends JsonResource
             'date_of_birth' => $this->date_of_birth?->toDateString(),
             'gender' => $this->gender,
             'created_at' => $this->created_at?->toISOString(),
+            'affiliate' => $this->affiliate ? [
+                'code' => $this->affiliate->code,
+                'status' => $this->affiliate->status,
+            ] : null,
             'default_address' => $this->whenLoaded('defaultAddress', fn () => $this->defaultAddress
                 ? AccountAddressResource::make($this->defaultAddress)->resolve($request)
                 : null),

@@ -70,3 +70,8 @@ Schedule::command('ai:process-product-content-campaigns')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer();
+
+Schedule::command('affiliate:approve-commissions')
+    ->hourly()
+    ->withoutOverlapping()
+    ->onOneServer();

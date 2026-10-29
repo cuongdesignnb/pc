@@ -22,6 +22,7 @@ const groupLabels = {
     storefront: 'Trang chi tiết sản phẩm',
     smtp: 'Email / SMTP',
     ai: 'AI (ChatGPT / Gemini)',
+    affiliate: 'Cộng tác viên',
 };
 
 const groupIcons = {
@@ -74,6 +75,10 @@ watch(featuredSections, rows => {
 const sidebarCategories = ref(parseList(formData.value.homepage_sidebar_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
 watch(sidebarCategories, rows => {
     formData.value.homepage_sidebar_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
+}, { deep: true });
+const laptopCategories = ref(parseList(formData.value.affiliate_laptop_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
+watch(laptopCategories, rows => {
+    formData.value.affiliate_laptop_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
 }, { deep: true });
 const categoryOptions = computed(() => {
     const byParent = {};
@@ -273,6 +278,19 @@ function sendSmtpTest() {
                                         </div>
                                         <button v-if="sidebarCategories.length < 13" type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="sidebarCategories.push({ slug: '' })">+ Thêm danh mục</button>
                                         <p class="text-xs text-slate-500">Để trống thì menu dọc tự hiện các danh mục cấp 1 theo thứ tự trong Danh mục. Tối đa 13 danh mục.</p>
+                                    </div>
+
+                                    <!-- CTV: laptop categories that always get the referral discount -->
+                                    <div v-else-if="item.key === 'affiliate_laptop_category_slugs'" class="space-y-2">
+                                        <div v-for="(row, index) in laptopCategories" :key="index" class="flex items-center gap-2">
+                                            <select v-model="row.slug" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn danh mục —</option>
+                                                <option v-for="option in categoryOptions" :key="option.slug" :value="option.slug">{{ option.label }}</option>
+                                            </select>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="laptopCategories.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="laptopCategories.push({ slug: '' })">+ Thêm danh mục</button>
+                                        <p class="text-xs text-slate-500">Tính cả danh mục con. Để trống thì hệ thống dùng các danh mục cấp 1 có tên bắt đầu bằng "Laptop".</p>
                                     </div>
 
                                     <!-- Colour: picker + hex code -->

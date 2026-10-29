@@ -8,6 +8,7 @@ use App\Models\ComponentType;
 use App\Models\Filter;
 use App\Models\Page;
 use App\Models\Product;
+use App\Services\Affiliate\CommissionRules;
 use App\Services\Catalog\WarrantyPackages;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
@@ -73,9 +74,12 @@ class CategoryController extends Controller
             'warranty_packages' => 'nullable|array|max:10',
             'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
             'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
-        ]);
+        ] + CommissionRules::validationRules());
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
+        }
+        if (array_key_exists('affiliate_commission', $validated)) {
+            $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
         }
 
         $validated['technical_heading'] = $validated['technical_heading'] ?? 'auto';
@@ -146,9 +150,12 @@ class CategoryController extends Controller
             'warranty_packages' => 'nullable|array|max:10',
             'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
             'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
-        ]);
+        ] + CommissionRules::validationRules());
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
+        }
+        if (array_key_exists('affiliate_commission', $validated)) {
+            $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
         }
 
         $validated['technical_heading'] = $validated['technical_heading'] ?? $category->technical_heading ?? 'auto';
