@@ -39,14 +39,10 @@ class BannerController extends Controller
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
             'metadata' => 'nullable|array',
-            'metadata.gradient' => 'nullable|string',
-            'metadata.cta_label' => 'nullable|string',
-            'metadata.cta_link' => 'nullable|string',
-            'metadata.cta2_label' => 'nullable|string',
-            'metadata.cta2_link' => 'nullable|string',
+            'metadata.text_in_image' => 'nullable|in:true,false',
+            'metadata.cta_label' => 'nullable|string|max:100',
+            'metadata.cta_link' => 'nullable|string|max:500',
             'metadata.category_slug' => 'nullable|string|max:255',
-            'metadata.glow_a' => 'nullable|string',
-            'metadata.glow_b' => 'nullable|string',
         ]);
 
         Banner::create($validated);
@@ -76,14 +72,10 @@ class BannerController extends Controller
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
             'metadata' => 'nullable|array',
-            'metadata.gradient' => 'nullable|string',
-            'metadata.cta_label' => 'nullable|string',
-            'metadata.cta_link' => 'nullable|string',
-            'metadata.cta2_label' => 'nullable|string',
-            'metadata.cta2_link' => 'nullable|string',
+            'metadata.text_in_image' => 'nullable|in:true,false',
+            'metadata.cta_label' => 'nullable|string|max:100',
+            'metadata.cta_link' => 'nullable|string|max:500',
             'metadata.category_slug' => 'nullable|string|max:255',
-            'metadata.glow_a' => 'nullable|string',
-            'metadata.glow_b' => 'nullable|string',
         ]);
 
         $banner->update($validated);

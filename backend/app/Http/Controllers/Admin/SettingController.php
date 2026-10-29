@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\SmtpConfigurationException;
 use App\Http\Controllers\Controller;
+use App\Models\Category;
 use App\Models\Setting;
 use App\Services\Mail\StorefrontSmtpMailer;
 use App\Support\GoogleMapsEmbed;
@@ -34,6 +35,8 @@ class SettingController extends Controller
 
         return Inertia::render('Admin/Settings/Index', [
             'settings' => $settings,
+            // Choices for the homepage product tabs.
+            'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'slug', 'parent_id']),
         ]);
     }
 
@@ -66,6 +69,15 @@ class SettingController extends Controller
                     ]);
                 }
             }
+            if ($setting && $setting->type === 'color' && filled($item['value'] ?? null)) {
+                $item['value'] = strtoupper(trim((string) $item['value']));
+                if (! preg_match('/^#[0-9A-F]{6}$/', $item['value'])) {
+                    throw ValidationException::withMessages([$setting->key => "{$setting->label}: mã màu phải có dạng #RRGGBB."]);
+                }
+            }
+            if ($setting && $setting->key === 'homepage_product_tabs') {
+                $item['value'] = $this->productTabs($item['value'] ?? null);
+            }
             if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'], ['', '********'], true))) {
                 Setting::set($setting->key, $item['value']);
             }
@@ -75,6 +87,32 @@ class SettingController extends Controller
 
         return redirect()->route('admin.settings.index')
             ->with('success', 'Cập nhật cài đặt thành công');
+    }
+
+    /** Normalise the homepage product tabs to a JSON list of {label, category_slug}. */
+    private function productTabs(mixed $value): string
+    {
+        $tabs = is_string($value) ? json_decode($value, true) : $value;
+        if ($value !== null && $value !== '' && ! is_array($tabs)) {
+            throw ValidationException::withMessages(['homepage_product_tabs' => 'Danh sách tab sản phẩm không hợp lệ.']);
+        }
+
+        $tabs = collect(is_array($tabs) ? $tabs : [])
+            ->filter(fn ($tab): bool => is_array($tab) && filled($tab['category_slug'] ?? null))
+            ->map(fn (array $tab): array => [
+                'label' => mb_substr(trim((string) ($tab['label'] ?? '')), 0, 60),
+                'category_slug' => trim((string) $tab['category_slug']),
+            ])
+            ->values();
+        if ($tabs->count() > 6) {
+            throw ValidationException::withMessages(['homepage_product_tabs' => 'Khối sản phẩm có tối đa 6 tab.']);
+        }
+        $unknown = $tabs->pluck('category_slug')->diff(Category::whereIn('slug', $tabs->pluck('category_slug'))->pluck('slug'));
+        if ($unknown->isNotEmpty()) {
+            throw ValidationException::withMessages(['homepage_product_tabs' => 'Danh mục không tồn tại: '.$unknown->implode(', ')]);
+        }
+
+        return $tabs->toJson(JSON_UNESCAPED_UNICODE);
     }
 
     public function sendSmtpTest(Request $request, StorefrontSmtpMailer $mailer)

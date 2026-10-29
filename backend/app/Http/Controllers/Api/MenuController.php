@@ -58,9 +58,10 @@ class MenuController extends Controller
                     'name' => $menu?->name ?? 'Danh mục sản phẩm',
                     'slug' => $menu?->slug ?? 'synced-categories',
                 ],
-                // Only the header falls back to categories. Footer policies
-                // come from published CMS records without creating menu rows.
-                'items' => $location === 'header' ? $this->syncedCategoryItems() : $footerItems,
+                // Header and sidebar (the "Danh mục sản phẩm" dropdown) fall
+                // back to categories. Footer policies come from published CMS
+                // records without creating menu rows.
+                'items' => in_array($location, ['header', 'sidebar'], true) ? $this->syncedCategoryItems() : $footerItems,
             ]);
         }
 

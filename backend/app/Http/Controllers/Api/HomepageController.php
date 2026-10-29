@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Models\Product;
 use App\Models\Review;
 use App\Models\Setting;
+use App\Models\StoreActivity;
 use App\Services\Seo\PublicUrlResolver;
 use App\Support\PublicAssetUrl;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,18 +27,10 @@ class HomepageController extends Controller
             'hero_banners' => $this->banners('hero'),
             'sidebar_banners' => $this->banners('sidebar'),
             'category_sidebar' => $this->categorySidebar(),
-            'featured_categories' => $this->featuredCategories(),
             'category_sections' => $this->featuredCategorySections(),
             'flash_sale' => $this->flashSale(),
-            'best_sellers' => [
-                'laptop' => $this->productsForCategory('laptop', 5),
-                'pc_gaming' => $this->productsForCategory('pc-gaming', 5),
-                'components' => $this->productsForCategory('linh-kien-pc', 5),
-            ],
-            'pc_builder_banner' => $this->banners('pc_builder')->first(),
-            'combo_banners' => $this->banners('combo'),
-            'setup_banners' => $this->banners('setup_inspiration'),
-            'featured_accessories' => $this->featuredAccessories(),
+            'product_tabs' => $this->productTabs(),
+            'store_activities' => $this->storeActivities(),
             'posts' => $this->posts(),
             'testimonials' => $this->testimonials(),
         ];
@@ -70,94 +63,29 @@ class HomepageController extends Controller
     /** @return list<array<string, mixed>> */
     private function categorySidebar(): array
     {
-        $preferredSlugs = [
-            'pc-gaming',
-            'pc-do-hoa-render',
-            'laptop',
-            'vga',
-            'cpu',
-            'mainboard',
-            'ram',
-            'ssd',
-            'psu',
-            'man-hinh',
-            'phu-kien',
-            'ghe-gaming',
-        ];
-
-        $categories = Category::query()
+        // Order follows "Thứ tự" set on each category in admin.
+        return Category::query()
             ->visibleOnStorefront()
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get();
-
-        // Keep the merchandising order where the slugs exist, then append the
-        // rest of the synced public catalogue. A single matching slug must not
-        // hide every other category returned by the integration.
-        $preferred = $categories
-            ->filter(fn (Category $category): bool => in_array($category->slug, $preferredSlugs, true))
-            ->sortBy(fn (Category $category): int => array_search($category->slug, $preferredSlugs, true))
-            ->values();
-        $remaining = $categories
-            ->reject(fn (Category $category): bool => in_array($category->slug, $preferredSlugs, true))
-            ->values();
-
-        return $preferred
-            ->concat($remaining)
-            ->take(13)
-            ->map(fn (Category $category) => [
-                'id' => $category->id,
-                'name' => $category->name,
-                'slug' => $category->slug,
-                'canonical_path' => $this->urls->categoryPath($category),
-                'image' => PublicAssetUrl::normalize($category->image),
-                'icon' => PublicAssetUrl::normalize($category->icon),
-            ])
+            ->limit(13)
+            ->get()
+            ->map(fn (Category $category) => $this->categoryCard($category))
             ->values()
             ->all();
     }
 
-    /** @return list<array<string, mixed>> */
-    private function featuredCategories(): array
+    /** @return array<string, mixed> */
+    private function categoryCard(Category $category): array
     {
-        $slugs = $this->homepageFeaturedCategorySlugs();
-
-        $categories = Category::query()
-            ->visibleOnStorefront()
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get();
-        $configuredCategories = $categories
-            ->filter(fn (Category $category): bool => $slugs->contains($category->slug))
-            ->sortBy(fn (Category $category): int => $slugs->search($category->slug))
-            ->values();
-        $remainingCategories = $categories
-            ->reject(fn (Category $category): bool => $slugs->contains($category->slug))
-            ->values();
-
-        return $configuredCategories
-            ->concat($remainingCategories)
-            ->take(12)
-            ->map(function (Category $category): array {
-                $image = PublicAssetUrl::normalize($category->image);
-                if (! $image) {
-                    $image = $this->productQuery()
-                        ->whereIn('category_id', $this->categoryIds($category))
-                        ->orderByDesc('is_featured')
-                        ->orderByDesc('sold_count')
-                        ->first()?->images?->first()?->url;
-                    $image = PublicAssetUrl::normalize($image);
-                }
-
-                return [
-                    'id' => $category->id,
-                    'name' => $category->name,
-                    'slug' => $category->slug,
-                    'canonical_path' => $this->urls->categoryPath($category),
-                    'image' => $image,
-                    'icon' => PublicAssetUrl::normalize($category->icon),
-                ];
-            })->values()->all();
+        return [
+            'id' => $category->id,
+            'name' => $category->name,
+            'slug' => $category->slug,
+            'canonical_path' => $this->urls->categoryPath($category),
+            'image' => PublicAssetUrl::normalize($category->image),
+            'icon' => PublicAssetUrl::normalize($category->icon),
+        ];
     }
 
     /** @return list<array<string, mixed>> */
@@ -206,16 +134,22 @@ class HomepageController extends Controller
             $image = PublicAssetUrl::normalize($products->first()?->images?->first()?->url);
         }
 
+        $children = Category::query()
+            ->visibleOnStorefront()
+            ->where('parent_id', $category->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Category $child) => $this->categoryCard($child))
+            ->values()
+            ->all();
+
         return [
-            'category' => [
-                'id' => $category->id,
-                'name' => $category->name,
-                'slug' => $category->slug,
-                'canonical_path' => $this->urls->categoryPath($category),
+            'category' => array_merge($this->categoryCard($category), [
                 'description' => $category->description,
                 'image' => $image,
-                'icon' => PublicAssetUrl::normalize($category->icon),
-            ],
+            ]),
+            'children' => $children,
             'product_count' => (int) $productCount,
             'products' => ProductCardResource::collection($products)->resolve(),
         ];
@@ -244,17 +178,7 @@ class HomepageController extends Controller
             ->unique()
             ->values();
 
-        return $slugs->isNotEmpty() ? $slugs : collect([
-            'pc-gaming',
-            'laptop-gaming',
-            'vga',
-            'cpu',
-            'mainboard',
-            'ram',
-            'ssd',
-            'man-hinh',
-            'ghe-gaming',
-        ]);
+        return $slugs;
     }
 
     /** @return array<string, mixed> */
@@ -285,57 +209,76 @@ class HomepageController extends Controller
         ];
     }
 
-    /** @return list<array<string, mixed>> */
-    private function productsForCategory(string $slug, int $limit): array
+    /**
+     * Tabs of the homepage product block, each one a category chosen in
+     * Cài đặt → Trang chủ. Tabs whose category is hidden or empty are dropped.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function productTabs(): array
     {
-        $category = Category::query()->where('slug', $slug)->visibleOnStorefront()->first();
-        $products = $category
-            ? $this->productQuery()
+        $configured = Setting::get('homepage_product_tabs', []);
+        if (is_string($configured)) {
+            $configured = json_decode($configured, true) ?: [];
+        }
+
+        $tabs = collect(is_array($configured) ? $configured : [])
+            ->filter(fn ($tab): bool => is_array($tab) && is_string($tab['category_slug'] ?? null) && trim($tab['category_slug']) !== '')
+            ->take(6);
+        $categories = Category::query()
+            ->visibleOnStorefront()
+            ->whereIn('slug', $tabs->map(fn (array $tab) => trim($tab['category_slug']))->all())
+            ->get()
+            ->keyBy('slug');
+
+        return $tabs->map(function (array $tab) use ($categories): ?array {
+            $category = $categories->get(trim($tab['category_slug']));
+            if (! $category) {
+                return null;
+            }
+
+            $products = $this->productQuery()
                 ->whereIn('category_id', $this->categoryIds($category))
                 ->orderByDesc('sold_count')
                 ->orderByDesc('is_featured')
                 ->orderByDesc('created_at')
-                ->limit($limit)
-                ->get()
-            : collect();
-
-        // Kiot category names/slugs are configurable and may differ from the
-        // storefront's merchandising aliases. Keep the homepage populated from
-        // the public synced catalogue when an alias has no matching products.
-        if ($products->isEmpty()) {
-            $products = $this->productQuery()
-                ->orderByDesc('sold_count')
-                ->orderByDesc('is_featured')
-                ->orderByDesc('created_at')
-                ->limit($limit)
+                ->limit($this->homepageProductLimit())
                 ->get();
-        }
+            if ($products->isEmpty()) {
+                return null;
+            }
 
-        return ProductCardResource::collection($products)->resolve();
+            $label = is_string($tab['label'] ?? null) && trim($tab['label']) !== '' ? trim($tab['label']) : $category->name;
+
+            return [
+                'label' => $label,
+                'category' => $this->categoryCard($category),
+                'products' => ProductCardResource::collection($products)->resolve(),
+            ];
+        })->filter()->values()->all();
     }
 
     /** @return list<array<string, mixed>> */
-    private function featuredAccessories(): array
+    private function storeActivities(): array
     {
-        $category = Category::query()->where('slug', 'phu-kien')->visibleOnStorefront()->first();
-        if (! $category) {
-            return [];
-        }
-
-        $products = $this->productQuery()
-            ->whereIn('category_id', $this->categoryIds($category))
-            ->orderByDesc('is_featured')
-            ->orderByDesc('sold_count')
-            ->orderByDesc('created_at')
-            ->limit(3)
-            ->get();
-
-        return ProductCardResource::collection($products)->resolve();
+        return StoreActivity::active()
+            ->orderBy('sort_order')
+            ->orderByDesc('id')
+            ->limit(24)
+            ->get()
+            ->map(fn (StoreActivity $activity) => $activity->toStorefront())
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /** @return list<array<string, mixed>> */
     private function posts(): array
     {
+        if (! $this->toBoolean(Setting::get('homepage_show_posts', true), true)) {
+            return [];
+        }
+
         return Post::query()
             ->published()
             ->where('is_featured', true)

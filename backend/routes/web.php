@@ -27,6 +27,7 @@ use App\Http\Controllers\Admin\ReviewController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SeoSlugController;
 use App\Http\Controllers\Admin\SettingController;
+use App\Http\Controllers\Admin\StoreActivityController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\CatalogFeedController;
 use App\Http\Controllers\PaymentController;
@@ -133,6 +134,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
 
     // Banners
     Route::resource('banners', BannerController::class);
+    Route::resource('store-activities', StoreActivityController::class)->except(['show']);
 
     // Customers
     Route::get('customers', [CustomerController::class, 'index'])->name('customers.index');

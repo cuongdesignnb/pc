@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Banner;
 use App\Models\Category;
 use App\Models\NewsletterSubscriber;
+use App\Models\Post;
+use App\Models\PostCategory;
 use App\Models\Product;
 use App\Models\Review;
 use App\Models\Setting;
@@ -19,15 +21,13 @@ class HomepageApiTest extends TestCase
 
     public function test_homepage_returns_reference_sections_and_safe_product_cards(): void
     {
-        $pcGaming = $this->category('pc-gaming', 'PC Gaming');
-        $laptop = $this->category('laptop', 'Laptop');
-        $components = $this->category('linh-kien-pc', 'Linh kiện PC');
-        $product = $this->product($pcGaming, ['sold_count' => 120, 'is_featured' => true]);
+        $usedLaptops = $this->category('laptop-cu', 'Laptop cũ');
+        $product = $this->product($usedLaptops, ['sold_count' => 120, 'is_featured' => true]);
 
         Banner::create([
             'title' => 'Hero test',
             'image' => 'https://example.test/hero.webp',
-            'link' => '/cau-hinh',
+            'link' => '/laptop-cu',
             'position' => 'hero',
             'sort_order' => 0,
             'is_active' => true,
@@ -35,7 +35,7 @@ class HomepageApiTest extends TestCase
         Banner::create([
             'title' => 'Sidebar test',
             'image' => 'https://example.test/sidebar.webp',
-            'link' => '/categories/pc-gaming',
+            'link' => '/laptop-cu',
             'position' => 'sidebar',
             'sort_order' => 0,
             'is_active' => true,
@@ -47,26 +47,26 @@ class HomepageApiTest extends TestCase
                 'hero_banners',
                 'sidebar_banners',
                 'category_sidebar',
-                'featured_categories',
                 'category_sections',
                 'flash_sale' => ['enabled', 'ends_at', 'products'],
-                'best_sellers' => ['laptop', 'pc_gaming', 'components'],
-                'pc_builder_banner',
-                'combo_banners',
-                'setup_banners',
-                'featured_accessories',
+                'product_tabs',
+                'store_activities',
                 'posts',
                 'testimonials',
             ])
+            ->assertJsonMissingPath('best_sellers')
+            ->assertJsonMissingPath('pc_builder_banner')
+            ->assertJsonMissingPath('featured_categories')
             ->assertJsonPath('hero_banners.0.title', 'Hero test')
             ->assertJsonPath('sidebar_banners.0.title', 'Sidebar test')
-            ->assertJsonPath('best_sellers.pc_gaming.0.id', $product->id)
-            ->assertJsonPath('best_sellers.pc_gaming.0.sold_count', 120)
-            ->assertJsonMissingPath('best_sellers.pc_gaming.0.cost_price');
-
-        $this->assertTrue($pcGaming->exists);
-        $this->assertTrue($laptop->exists);
-        $this->assertTrue($components->exists);
+            // The default tabs point at laptop-cu / laptop-moi / linh-kien;
+            // only the one whose category exists and has products is shown.
+            ->assertJsonCount(1, 'product_tabs')
+            ->assertJsonPath('product_tabs.0.label', 'LAPTOP CŨ')
+            ->assertJsonPath('product_tabs.0.category.slug', 'laptop-cu')
+            ->assertJsonPath('product_tabs.0.products.0.id', $product->id)
+            ->assertJsonPath('product_tabs.0.products.0.sold_count', 120)
+            ->assertJsonMissingPath('product_tabs.0.products.0.cost_price');
     }
 
     public function test_homepage_returns_selected_category_sections_with_visible_products(): void
@@ -94,6 +94,25 @@ class HomepageApiTest extends TestCase
         $this->assertSame(2, $sections[1]['product_count']);
         $this->assertCount(2, $sections[1]['products']);
         $this->assertSame($gamingOtherProduct->id, $sections[1]['products'][1]['id']);
+        $this->assertSame([], $sections[0]['children']);
+    }
+
+    public function test_category_sections_list_child_categories_and_need_a_configured_slug(): void
+    {
+        $components = $this->category('linh-kien', 'Linh kiện');
+        $ram = $this->category('ram-laptop', 'RAM laptop', $components->id);
+        $this->category('an-di', 'Ẩn đi', $components->id)->update(['show_on_pc_website' => false]);
+        $this->product($ram, ['sold_count' => 5]);
+
+        Setting::set('homepage_featured_category_slugs', []);
+        $this->getJson('/api/v1/homepage')->assertOk()->assertJsonCount(0, 'category_sections');
+
+        Setting::set('homepage_featured_category_slugs', [$components->slug]);
+        $this->getJson('/api/v1/homepage')
+            ->assertOk()
+            ->assertJsonPath('category_sections.0.category.slug', 'linh-kien')
+            ->assertJsonCount(1, 'category_sections.0.children')
+            ->assertJsonPath('category_sections.0.children.0.slug', 'ram-laptop');
     }
 
     public function test_homepage_flash_sale_only_contains_visible_discounted_products(): void
@@ -150,48 +169,71 @@ class HomepageApiTest extends TestCase
         $this->assertSame('customer@example.com', NewsletterSubscriber::query()->value('email'));
     }
 
-    public function test_best_sellers_are_ordered_and_never_expose_internal_fields(): void
+    public function test_product_tabs_follow_settings_and_never_expose_internal_fields(): void
     {
-        foreach (['laptop' => 'laptop', 'pc_gaming' => 'pc-gaming', 'components' => 'linh-kien-pc'] as $tab => $slug) {
-            $parent = $this->category($slug, $slug);
-            $child = $this->category($slug.'-child', 'Child', $parent->id);
-            $low = $this->product($child, ['sold_count' => 1, 'is_featured' => true]);
-            $high = $this->product($child, ['sold_count' => 100, 'cost_price' => 123456]);
-            $this->product($child, ['sold_count' => 1000, 'show_on_pc_website' => false]);
-            $this->product($child, ['sold_count' => 2000, 'is_active' => false]);
-            $response = $this->getJson('/api/v1/homepage')->assertOk();
-            $cards = $response->json('best_sellers.'.$tab);
-            $this->assertSame([$high->id, $low->id], array_column($cards, 'id'));
-            foreach ($cards as $card) {
-                foreach (array_keys($card) as $key) {
-                    $this->assertFalse(str_starts_with($key, 'kiot_'), $key);
-                }
-                $this->assertArrayNotHasKey('cost_price', $card);
-                $this->assertArrayNotHasKey('inventory_source', $card);
+        $parent = $this->category('laptop-moi', 'Laptop mới');
+        $child = $this->category('laptop-moi-dell', 'Dell', $parent->id);
+        $low = $this->product($child, ['sold_count' => 1, 'is_featured' => true]);
+        $high = $this->product($child, ['sold_count' => 100, 'cost_price' => 123456]);
+        $this->product($child, ['sold_count' => 1000, 'show_on_pc_website' => false]);
+        $this->product($child, ['sold_count' => 2000, 'is_active' => false]);
+        $hidden = $this->category('an', 'Ẩn');
+        $hidden->update(['show_on_pc_website' => false]);
+        $this->product($hidden, ['sold_count' => 9]);
+
+        Setting::set('homepage_product_tabs', [
+            ['label' => '', 'category_slug' => 'laptop-moi'],
+            ['label' => 'Ẩn', 'category_slug' => 'an'],
+            ['label' => 'Không có', 'category_slug' => 'khong-ton-tai'],
+        ]);
+
+        $response = $this->getJson('/api/v1/homepage')->assertOk()->assertJsonCount(1, 'product_tabs');
+        $this->assertSame('Laptop mới', $response->json('product_tabs.0.label'));
+        $cards = $response->json('product_tabs.0.products');
+        $this->assertSame([$high->id, $low->id], array_column($cards, 'id'));
+        foreach ($cards as $card) {
+            foreach (array_keys($card) as $key) {
+                $this->assertFalse(str_starts_with($key, 'kiot_'), $key);
             }
+            $this->assertArrayNotHasKey('cost_price', $card);
+            $this->assertArrayNotHasKey('inventory_source', $card);
         }
+
+        Setting::set('homepage_product_tabs', []);
+        $this->getJson('/api/v1/homepage')->assertOk()->assertJsonCount(0, 'product_tabs');
     }
 
-    public function test_homepage_appends_visible_synced_categories_and_fills_missing_category_aliases(): void
+    public function test_category_sidebar_follows_admin_order_and_menus_fall_back_to_categories(): void
     {
         $accessories = $this->category('phu-kien', 'Phụ kiện');
-        $actualCategory = $this->category('thiet-bi-mang', 'Thiết bị mạng', null);
-        $product = $this->product($actualCategory, ['sold_count' => 77]);
+        $accessories->update(['sort_order' => 2]);
+        $usedLaptops = $this->category('laptop-cu', 'Laptop cũ');
+        $usedLaptops->update(['sort_order' => 1]);
 
         $response = $this->getJson('/api/v1/homepage')->assertOk();
+        $this->assertSame(['laptop-cu', 'phu-kien'], array_column($response->json('category_sidebar'), 'slug'));
 
-        $sidebarSlugs = array_column($response->json('category_sidebar'), 'slug');
-        $featuredSlugs = array_column($response->json('featured_categories'), 'slug');
+        foreach (['header', 'sidebar'] as $location) {
+            $this->getJson('/api/v1/menus/'.$location)
+                ->assertOk()
+                ->assertJsonPath('items.0.category.slug', 'laptop-cu')
+                ->assertJsonPath('items.1.category.slug', 'phu-kien');
+        }
+        $this->getJson('/api/v1/menus/mobile')->assertOk()->assertJsonCount(0, 'items');
+    }
 
-        $this->assertContains($accessories->slug, $sidebarSlugs);
-        $this->assertContains($actualCategory->slug, $sidebarSlugs);
-        $this->assertContains($actualCategory->slug, $featuredSlugs);
-        $this->assertSame($product->id, $response->json('best_sellers.laptop.0.id'));
+    public function test_posts_respect_the_homepage_setting(): void
+    {
+        $author = User::factory()->create();
+        $category = PostCategory::create(['name' => 'Tin', 'slug' => 'tin']);
+        Post::create([
+            'user_id' => $author->id, 'post_category_id' => $category->id, 'title' => 'Tin nổi bật', 'slug' => 'tin-noi-bat',
+            'body' => '<p>Nội dung</p>', 'status' => 'published', 'is_featured' => true, 'published_at' => now()->subHour(),
+        ]);
 
-        $this->getJson('/api/v1/menus/header')
-            ->assertOk()
-            ->assertJsonPath('items.0.category.slug', $accessories->slug)
-            ->assertJsonPath('items.1.category.slug', $actualCategory->slug);
+        $this->getJson('/api/v1/homepage')->assertOk()->assertJsonCount(1, 'posts');
+        Setting::set('homepage_show_posts', '0');
+        $this->getJson('/api/v1/homepage')->assertOk()->assertJsonCount(0, 'posts');
     }
 
     public function test_only_current_active_banners_are_returned(): void
