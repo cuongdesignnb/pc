@@ -71,6 +71,10 @@ const featuredSections = ref(parseList(formData.value.homepage_featured_category
 watch(featuredSections, rows => {
     formData.value.homepage_featured_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
 }, { deep: true });
+const sidebarCategories = ref(parseList(formData.value.homepage_sidebar_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
+watch(sidebarCategories, rows => {
+    formData.value.homepage_sidebar_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
+}, { deep: true });
 const categoryOptions = computed(() => {
     const byParent = {};
     for (const category of props.categories) (byParent[category.parent_id || 0] ||= []).push(category);
@@ -254,6 +258,21 @@ function sendSmtpTest() {
                                         </div>
                                         <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="featuredSections.push({ slug: '' })">+ Thêm khối danh mục</button>
                                         <p class="text-xs text-slate-500">Mỗi danh mục thành một khối sản phẩm trên trang chủ (ví dụ LAPTOP CŨ, LAPTOP MỚI, LINH KIỆN LAPTOP); danh mục con hiện thành nút lọc nhanh.</p>
+                                    </div>
+
+                                    <!-- Homepage left sidebar categories -->
+                                    <div v-else-if="item.key === 'homepage_sidebar_category_slugs'" class="space-y-2">
+                                        <div v-for="(row, index) in sidebarCategories" :key="index" class="flex items-center gap-2">
+                                            <select v-model="row.slug" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn danh mục —</option>
+                                                <option v-for="option in categoryOptions" :key="option.slug" :value="option.slug">{{ option.label }}</option>
+                                            </select>
+                                            <button type="button" class="px-2 text-slate-400 hover:text-slate-200" title="Lên" @click="moveRow(sidebarCategories, index, -1)">↑</button>
+                                            <button type="button" class="px-2 text-slate-400 hover:text-slate-200" title="Xuống" @click="moveRow(sidebarCategories, index, 1)">↓</button>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="sidebarCategories.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button v-if="sidebarCategories.length < 13" type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="sidebarCategories.push({ slug: '' })">+ Thêm danh mục</button>
+                                        <p class="text-xs text-slate-500">Để trống thì menu dọc tự hiện các danh mục cấp 1 theo thứ tự trong Danh mục. Tối đa 13 danh mục.</p>
                                     </div>
 
                                     <!-- Colour: picker + hex code -->

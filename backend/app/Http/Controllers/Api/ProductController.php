@@ -73,6 +73,16 @@ class ProductController extends Controller
             $query->where('is_featured', true);
         }
 
+        // On sale only (the /khuyen-mai page), biggest discount first
+        if ($request->boolean('on_sale')) {
+            $query->whereNotNull('sale_price')
+                ->where('sale_price', '>', 0)
+                ->whereColumn('sale_price', '<', 'price');
+            if (! $request->sort) {
+                $query->orderByRaw('(price - sale_price) * 1.0 / NULLIF(price, 0) DESC');
+            }
+        }
+
         // Sorting
         $sortField = in_array($request->sort, ['created_at', 'price', 'name'], true)
             ? $request->sort

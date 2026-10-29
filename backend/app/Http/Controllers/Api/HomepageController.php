@@ -63,13 +63,18 @@ class HomepageController extends Controller
     /** @return list<array<string, mixed>> */
     private function categorySidebar(): array
     {
-        // Order follows "Thứ tự" set on each category in admin.
-        return Category::query()
-            ->visibleOnStorefront()
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->limit(13)
-            ->get()
+        // The categories picked in Cài đặt, in that order; otherwise every
+        // top-level category in its admin "Thứ tự".
+        $slugs = $this->categorySlugsSetting('homepage_sidebar_category_slugs');
+        $query = Category::query()->visibleOnStorefront();
+
+        $categories = $slugs->isNotEmpty()
+            ? $query->whereIn('slug', $slugs)->get()
+                ->sortBy(fn (Category $category) => $slugs->search($category->slug))
+            : $query->whereNull('parent_id')->orderBy('sort_order')->orderBy('id')->get();
+
+        return $categories
+            ->take(13)
             ->map(fn (Category $category) => $this->categoryCard($category))
             ->values()
             ->all();
@@ -167,7 +172,13 @@ class HomepageController extends Controller
     /** @return Collection<int, string> */
     private function homepageFeaturedCategorySlugs(): Collection
     {
-        $configured = Setting::get('homepage_featured_category_slugs', []);
+        return $this->categorySlugsSetting('homepage_featured_category_slugs');
+    }
+
+    /** @return Collection<int, string> */
+    private function categorySlugsSetting(string $key): Collection
+    {
+        $configured = Setting::get($key, []);
         if (is_string($configured)) {
             $configured = json_decode($configured, true) ?: [];
         }

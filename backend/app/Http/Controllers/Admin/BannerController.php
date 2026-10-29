@@ -28,7 +28,7 @@ class BannerController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:500',
             'badge' => 'nullable|string|max:100',
             'image' => 'required|string',
@@ -44,6 +44,8 @@ class BannerController extends Controller
             'metadata.cta_link' => 'nullable|string|max:500',
             'metadata.category_slug' => 'nullable|string|max:255',
         ]);
+
+        $validated['title'] = (string) ($validated['title'] ?? '');
 
         Banner::create($validated);
 
@@ -61,7 +63,7 @@ class BannerController extends Controller
     public function update(Request $request, Banner $banner)
     {
         $validated = $request->validate([
-            'title' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:500',
             'badge' => 'nullable|string|max:100',
             'image' => 'required|string',
@@ -77,6 +79,8 @@ class BannerController extends Controller
             'metadata.cta_link' => 'nullable|string|max:500',
             'metadata.category_slug' => 'nullable|string|max:255',
         ]);
+
+        $validated['title'] = (string) ($validated['title'] ?? '');
 
         $banner->update($validated);
 

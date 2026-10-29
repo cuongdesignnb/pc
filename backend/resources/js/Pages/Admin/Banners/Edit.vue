@@ -18,7 +18,7 @@ function submit() { form.put(`/admin/banners/${b.id}`); }
     <div class="max-w-2xl">
         <div class="flex items-center justify-between mb-6"><h3 class="text-lg font-semibold text-slate-200">Sửa banner</h3><Link href="/admin/banners" class="text-sm text-slate-400 hover:text-slate-300">← Quay lại</Link></div>
         <form @submit.prevent="submit" class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-4">
-            <div><label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề *</label><input v-model="form.title" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.title" class="text-red-400 text-xs mt-1">{{ form.errors.title }}</div></div>
+            <div><label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề <span class="text-slate-500">(để trống nếu ảnh đã có chữ)</span></label><input v-model="form.title" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.title" class="text-red-400 text-xs mt-1">{{ form.errors.title }}</div></div>
             <div><label class="block text-sm font-medium text-slate-300 mb-1">Mô tả ngắn</label><textarea v-model="form.description" rows="2" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="Mô tả hiển thị trên banner"></textarea></div>
             <div class="grid grid-cols-2 gap-4">
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Badge</label><input v-model="form.badge" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="VD: Hot Deal, Flash Sale"></div>
