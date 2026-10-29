@@ -17,6 +17,7 @@ class CheckoutQuoteController extends Controller
             'items.*.product_id' => 'required|integer',
             'items.*.variant_id' => 'nullable|integer',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.warranty_months' => 'nullable|integer|min:1|max:120',
             'shipping_province_code' => 'nullable|string|max:20',
             'shipping_ward_code' => 'nullable|string|max:20',
             'shipping_method' => 'nullable|string|in:standard',

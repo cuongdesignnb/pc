@@ -9,7 +9,9 @@ use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Cart\CartService;
+use App\Services\Catalog\InvalidWarrantyPackage;
 use App\Services\Catalog\ProductPurchasabilityService;
+use App\Services\Catalog\WarrantyPackages;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,16 +40,17 @@ class CartController extends Controller
         ]));
     }
 
-    public function addItem(Request $request, ProductPurchasabilityService $purchasability): JsonResponse
+    public function addItem(Request $request, ProductPurchasabilityService $purchasability, WarrantyPackages $warranties): JsonResponse
     {
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'variant_id' => 'nullable|integer|exists:product_variants,id',
             'quantity' => 'required|integer|min:1',
+            'warranty_months' => 'nullable|integer|min:1|max:120',
         ]);
 
         $cart = $this->getOrCreateCart($request);
-        DB::transaction(function () use ($validated, $cart, $purchasability): void {
+        DB::transaction(function () use ($validated, $cart, $purchasability, $warranties): void {
             $product = Product::with('category')->lockForUpdate()->findOrFail($validated['product_id']);
             $variant = null;
             if (! empty($validated['variant_id'])) {
@@ -61,6 +64,12 @@ class CartController extends Controller
 
             if (! $product->isVisibleOnStorefront() || (($validated['variant_id'] ?? null) && ! $variant)) {
                 abort(422, 'Sản phẩm hoặc biến thể đã chọn không còn khả dụng.');
+            }
+
+            try {
+                $package = $warranties->select($product, $validated['warranty_months'] ?? null);
+            } catch (InvalidWarrantyPackage $exception) {
+                abort(422, $exception->getMessage());
             }
 
             $cartItem = $cart->items()
@@ -84,6 +93,8 @@ class CartController extends Controller
             $attributes = [
                 'quantity' => $requestedQuantity,
                 'price' => $variant?->display_price ?? $purchasability->unitPrice($product),
+                // One line per product: adding it again with another package switches the package.
+                'warranty_months' => $package['months'] ?? null,
             ];
             if ($cartItem) {
                 $cartItem->update($attributes);

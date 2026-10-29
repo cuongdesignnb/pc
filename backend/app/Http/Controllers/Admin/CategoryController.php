@@ -8,6 +8,7 @@ use App\Models\ComponentType;
 use App\Models\Filter;
 use App\Models\Page;
 use App\Models\Product;
+use App\Services\Catalog\WarrantyPackages;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
@@ -69,7 +70,13 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
+            'warranty_packages' => 'nullable|array|max:10',
+            'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
+            'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
         ]);
+        if (array_key_exists('warranty_packages', $validated)) {
+            $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
+        }
 
         $validated['technical_heading'] = $validated['technical_heading'] ?? 'auto';
         try {
@@ -136,7 +143,13 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
+            'warranty_packages' => 'nullable|array|max:10',
+            'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
+            'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
         ]);
+        if (array_key_exists('warranty_packages', $validated)) {
+            $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
+        }
 
         $validated['technical_heading'] = $validated['technical_heading'] ?? $category->technical_heading ?? 'auto';
         try {

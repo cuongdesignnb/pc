@@ -319,6 +319,13 @@ const remaining = computed(() =>
                     <tr v-for="item in order.items" :key="item.id">
                         <td class="px-4 py-3 text-sm text-slate-200">
                             {{ item.product?.name || item.product_name || "—" }}
+                            <div
+                                v-if="Number(item.warranty_price) > 0 || item.warranty_months"
+                                class="text-xs text-slate-500 mt-0.5"
+                            >
+                                Bảo hành {{ item.warranty_months }} tháng
+                                <span v-if="Number(item.warranty_price) > 0">(+{{ formatPrice(item.warranty_price) }}/sp)</span>
+                            </div>
                         </td>
                         <td class="px-4 py-3 text-sm text-slate-400 text-right">
                             {{ formatPrice(item.price) }}

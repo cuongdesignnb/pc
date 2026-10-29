@@ -8,7 +8,9 @@ use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Setting;
+use App\Services\Catalog\InvalidWarrantyPackage;
 use App\Services\Catalog\ProductPurchasabilityService;
+use App\Services\Catalog\WarrantyPackages;
 use App\Services\Locations\LocationDirectory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -23,6 +25,7 @@ class CheckoutQuoteService
         private readonly PaymentMethodAvailability $paymentAvailability,
         private readonly ShippingCalculator $shippingCalculator,
         private readonly ProductPurchasabilityService $purchasability,
+        private readonly WarrantyPackages $warranties,
     ) {}
 
     /** @return array<string, mixed> */
@@ -196,18 +199,20 @@ class CheckoutQuoteService
             ->map(fn (CartItem $item): array => [
                 'product_id' => (int) $item->product_id,
                 'variant_id' => $item->variant_id === null ? null : (int) $item->variant_id,
+                'warranty_months' => $item->warranty_months === null ? null : (int) $item->warranty_months,
                 'quantity' => (int) $item->quantity,
             ])
             ->all();
     }
 
-    /** @return array<int, array{product_id: int, variant_id: int|null, quantity: int}> */
+    /** @return array<int, array{product_id: int, variant_id: int|null, warranty_months: int|null, quantity: int}> */
     private function normaliseItems(array $items): array
     {
         return collect($items)
             ->map(fn (array $item): array => [
                 'product_id' => (int) $item['product_id'],
                 'variant_id' => empty($item['variant_id']) ? null : (int) $item['variant_id'],
+                'warranty_months' => empty($item['warranty_months']) ? null : (int) $item['warranty_months'],
                 'quantity' => (int) $item['quantity'],
             ])
             ->groupBy(fn (array $item): string => $item['product_id'].':'.($item['variant_id'] ?? 0))
@@ -217,6 +222,7 @@ class CheckoutQuoteService
                 return [
                     'product_id' => $first['product_id'],
                     'variant_id' => $first['variant_id'],
+                    'warranty_months' => $first['warranty_months'],
                     'quantity' => (int) $rows->sum('quantity'),
                 ];
             })
@@ -229,7 +235,7 @@ class CheckoutQuoteService
     {
         $products = Product::query()
             ->whereIn('id', collect($requested)->pluck('product_id')->all())
-            ->with('images')
+            ->with(['images', 'category.parent'])
             ->get()
             ->keyBy('id');
         $variants = ProductVariant::query()
@@ -258,6 +264,16 @@ class CheckoutQuoteService
             } elseif ($valid) {
                 $valid = $this->purchasability->isPurchasable($product, $itemQuantity);
             }
+            $warranty = null;
+            if ($valid) {
+                try {
+                    $warranty = $this->warranties->select($product, $item['warranty_months'] ?? null);
+                } catch (InvalidWarrantyPackage $exception) {
+                    $issues[] = $this->issue('items', 'WARRANTY_PACKAGE_UNAVAILABLE', $exception->getMessage());
+
+                    continue;
+                }
+            }
             if (! $valid) {
                 $issues[] = $this->issue('items', 'ITEM_UNAVAILABLE', $product
                     ? "Sản phẩm {$product->name} hoặc biến thể đã chọn không còn khả dụng."
@@ -266,8 +282,9 @@ class CheckoutQuoteService
                 continue;
             }
 
-            $unitPrice = $variant?->display_price ?? $this->purchasability->unitPrice($product);
-            $originalUnitPrice = (int) ($variant?->price ?? $product->price);
+            $warrantyPrice = $warranty['price'] ?? 0;
+            $unitPrice = ($variant?->display_price ?? $this->purchasability->unitPrice($product)) + $warrantyPrice;
+            $originalUnitPrice = (int) ($variant?->price ?? $product->price) + $warrantyPrice;
             $lineTotal = $unitPrice * $itemQuantity;
             $lineOriginal = $originalUnitPrice * $itemQuantity;
             $saving = max(0, $lineOriginal - $lineTotal);
@@ -281,6 +298,7 @@ class CheckoutQuoteService
                 'variant_id' => $variant?->id === null ? null : (int) $variant->id,
                 'name' => $product->name,
                 'variant_name' => $variant?->name,
+                'warranty' => $warranty,
                 'sku' => $variant?->sku ?: $product->sku,
                 'quantity' => $itemQuantity,
                 'unit_price' => (int) $unitPrice,
@@ -304,13 +322,14 @@ class CheckoutQuoteService
         ];
     }
 
-    /** @return array<int, array{product_id: int, variant_id: int|null, quantity: int}> */
+    /** @return array<int, array{product_id: int, variant_id: int|null, warranty_months: int|null, quantity: int}> */
     private function canonicalItems(array $items): array
     {
         return collect($items)
             ->map(fn (array $item): array => [
                 'product_id' => (int) $item['product_id'],
                 'variant_id' => empty($item['variant_id']) ? null : (int) $item['variant_id'],
+                'warranty_months' => empty($item['warranty_months']) ? null : (int) $item['warranty_months'],
                 'quantity' => (int) $item['quantity'],
             ])
             ->sortBy(fn (array $item): string => $item['product_id'].':'.($item['variant_id'] ?? 0))
