@@ -1,21 +1,15 @@
 <script setup>
 import { useForm, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 const props = defineProps({ banner: Object });
 const b = props.banner;
 const meta = b.metadata || {};
-const showMeta = ref(!!meta.gradient);
 const form = useForm({
     title: b.title || '', description: b.description || '', badge: b.badge || '',
     image: b.image || '', link: b.link || '',
     position: b.position || 'hero', sort_order: b.sort_order || 0, is_active: b.is_active ?? true,
     starts_at: b.starts_at ? b.starts_at.slice(0,16) : '', ends_at: b.ends_at ? b.ends_at.slice(0,16) : '',
-    metadata: {
-        gradient: meta.gradient || '', cta_label: meta.cta_label || '', cta_link: meta.cta_link || '',
-        cta2_label: meta.cta2_label || '', cta2_link: meta.cta2_link || '',
-        glow_a: meta.glow_a || '', glow_b: meta.glow_b || '',
-    },
+    metadata: { text_in_image: meta.text_in_image === 'true' ? 'true' : 'false', cta_label: meta.cta_label || '', cta_link: meta.cta_link || '' },
 });
 function submit() { form.put(`/admin/banners/${b.id}`); }
 </script>
@@ -33,7 +27,7 @@ function submit() { form.put(`/admin/banners/${b.id}`); }
             <div v-if="form.image" class="mt-1"><img :src="form.image" class="w-40 h-24 object-cover rounded border" /></div>
             <div class="grid grid-cols-2 gap-4">
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Link</label><input v-model="form.link" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
-                <div><label class="block text-sm font-medium text-slate-300 mb-1">Vị trí *</label><select v-model="form.position" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="hero">Hero</option><option value="sidebar">Sidebar</option><option value="footer">Footer</option><option value="popup">Popup</option><option value="category">Danh mục</option></select></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Vị trí *</label><select v-model="form.position" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="hero">Hero</option><option value="sidebar">Sidebar</option><option value="footer">Footer</option><option value="popup">Popup</option><option value="category">Danh mục</option></select><p v-if="form.position === 'hero'" class="mt-1 text-xs text-slate-500">Ảnh chuẩn 1688 × 920 px (tỉ lệ khoảng 1,83 : 1; trên máy tính hiển thị 844 × 460). Ô Hero luôn giữ đúng tỉ lệ này nên ảnh không bị cắt.</p><p v-else-if="form.position === 'sidebar'" class="mt-1 text-xs text-slate-500">Ảnh chuẩn 600 × 448 px (hiển thị 300 × 224). Trang chủ hiện 2 banner Sidebar xếp dọc bên phải ô Hero; trên màn hình nhỏ ảnh có thể bị cắt nhẹ ở mép, nên đặt chữ cách mép khoảng 30 px.</p></div>
             </div>
             <div class="grid grid-cols-3 gap-4">
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Thứ tự</label><input v-model="form.sort_order" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
@@ -42,26 +36,12 @@ function submit() { form.put(`/admin/banners/${b.id}`); }
             </div>
             <label class="flex items-center gap-2 text-sm"><input v-model="form.is_active" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Hiện banner</label>
 
-            <!-- Metadata section (collapsible) -->
-            <div class="border-t border-slate-800/60 pt-4 mt-4">
-                <button type="button" @click="showMeta = !showMeta" class="flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-cyan-500">
-                    <svg :class="showMeta ? 'rotate-90' : ''" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                    Tùy chỉnh nâng cao (Hero Banner)
-                </button>
-                <div v-show="showMeta" class="mt-3 space-y-3 pl-4 border-l-2 border-indigo-100">
-                    <div><label class="block text-xs font-medium text-slate-400 mb-1">Gradient CSS</label><input v-model="form.metadata.gradient" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="from-indigo-600 via-purple-600 to-pink-500"></div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div><label class="block text-xs font-medium text-slate-400 mb-1">CTA chính - Label</label><input v-model="form.metadata.cta_label" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="Build PC ngay"></div>
-                        <div><label class="block text-xs font-medium text-slate-400 mb-1">CTA chính - Link</label><input v-model="form.metadata.cta_link" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="/configurator"></div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div><label class="block text-xs font-medium text-slate-400 mb-1">CTA phụ - Label</label><input v-model="form.metadata.cta2_label" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="Xem sản phẩm"></div>
-                        <div><label class="block text-xs font-medium text-slate-400 mb-1">CTA phụ - Link</label><input v-model="form.metadata.cta2_link" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="/products"></div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div><label class="block text-xs font-medium text-slate-400 mb-1">Glow A CSS</label><input v-model="form.metadata.glow_a" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="bg-slate-900"></div>
-                        <div><label class="block text-xs font-medium text-slate-400 mb-1">Glow B CSS</label><input v-model="form.metadata.glow_b" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="bg-yellow-300"></div>
-                    </div>
+            <!-- Display options -->
+            <div class="border-t border-slate-800/60 pt-4 mt-4 space-y-3">
+                <label class="flex items-center gap-2 text-sm text-slate-300"><input v-model="form.metadata.text_in_image" type="checkbox" true-value="true" false-value="false" class="rounded border-slate-700/50 text-cyan-500"> Ảnh đã có sẵn chữ (không phủ tiêu đề, mô tả lên ảnh)</label>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-medium text-slate-400 mb-1">Chữ trên nút (banner danh mục)</label><input v-model="form.metadata.cta_label" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="Xem ngay"></div>
+                    <div><label class="block text-xs font-medium text-slate-400 mb-1">Link khi bấm (để trống = dùng Link ở trên)</label><input v-model="form.metadata.cta_link" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm" placeholder="/laptop-cu"></div>
                 </div>
             </div>
 

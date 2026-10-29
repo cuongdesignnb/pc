@@ -1,16 +1,18 @@
 <script setup>
 import { useForm, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 
 const props = defineProps({
     settings: Object,
+    categories: { type: Array, default: () => [] },
 });
 
 // Group labels in Vietnamese
 const groupLabels = {
     general: 'Thông tin chung',
+    appearance: 'Giao diện',
     contact: 'Liên hệ',
     social: 'Mạng xã hội',
     seo: 'SEO',
@@ -24,6 +26,7 @@ const groupLabels = {
 
 const groupIcons = {
     general: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+    appearance: 'M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01',
     contact: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
     social: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
     seo: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
@@ -49,6 +52,41 @@ function buildFormData() {
 }
 
 const formData = ref(buildFormData());
+
+// Homepage product tabs and category sections are stored as JSON but edited
+// as rows of "tab name + category".
+function parseList(value) {
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value || '[]') : value;
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+const productTabs = ref(parseList(formData.value.homepage_product_tabs).map(tab => ({ label: tab.label || '', category_slug: tab.category_slug || '' })));
+watch(productTabs, rows => {
+    formData.value.homepage_product_tabs = JSON.stringify(rows.filter(row => row.category_slug));
+}, { deep: true });
+const featuredSections = ref(parseList(formData.value.homepage_featured_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
+watch(featuredSections, rows => {
+    formData.value.homepage_featured_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
+}, { deep: true });
+const categoryOptions = computed(() => {
+    const byParent = {};
+    for (const category of props.categories) (byParent[category.parent_id || 0] ||= []).push(category);
+    const out = [];
+    const walk = (parentId, depth) => (byParent[parentId] || []).forEach(category => {
+        out.push({ slug: category.slug, label: `${'— '.repeat(depth)}${category.name}` });
+        walk(category.id, depth + 1);
+    });
+    walk(0, 0);
+    return out;
+});
+function moveRow(rows, index, offset) {
+    const target = index + offset;
+    if (target < 0 || target >= rows.length) return;
+    [rows[index], rows[target]] = [rows[target], rows[index]];
+}
 const processing = ref(false);
 const flash = ref(null);
 const saveErrors = ref([]);
@@ -187,8 +225,45 @@ function sendSmtpTest() {
                                         <span v-if="!item.is_public" class="text-xs text-slate-500 ml-1">(nội bộ)</span>
                                     </label>
 
+                                    <!-- Homepage product tabs: tab name + category -->
+                                    <div v-if="item.key === 'homepage_product_tabs'" class="space-y-2">
+                                        <div v-for="(tab, index) in productTabs" :key="index" class="flex items-center gap-2">
+                                            <input v-model="tab.label" type="text" maxlength="60" placeholder="Tên tab (để trống = tên danh mục)" class="w-56 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                            <select v-model="tab.category_slug" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn danh mục —</option>
+                                                <option v-for="option in categoryOptions" :key="option.slug" :value="option.slug">{{ option.label }}</option>
+                                            </select>
+                                            <button type="button" class="px-2 text-slate-400 hover:text-slate-200" title="Lên" @click="moveRow(productTabs, index, -1)">↑</button>
+                                            <button type="button" class="px-2 text-slate-400 hover:text-slate-200" title="Xuống" @click="moveRow(productTabs, index, 1)">↓</button>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="productTabs.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button v-if="productTabs.length < 6" type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="productTabs.push({ label: '', category_slug: '' })">+ Thêm tab</button>
+                                        <p class="text-xs text-slate-500">Mỗi tab hiện sản phẩm bán chạy của một danh mục (gồm cả danh mục con). Không có tab nào thì khối này được ẩn.</p>
+                                    </div>
+
+                                    <!-- Homepage category sections -->
+                                    <div v-else-if="item.key === 'homepage_featured_category_slugs'" class="space-y-2">
+                                        <div v-for="(row, index) in featuredSections" :key="index" class="flex items-center gap-2">
+                                            <select v-model="row.slug" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn danh mục —</option>
+                                                <option v-for="option in categoryOptions" :key="option.slug" :value="option.slug">{{ option.label }}</option>
+                                            </select>
+                                            <button type="button" class="px-2 text-slate-400 hover:text-slate-200" title="Lên" @click="moveRow(featuredSections, index, -1)">↑</button>
+                                            <button type="button" class="px-2 text-slate-400 hover:text-slate-200" title="Xuống" @click="moveRow(featuredSections, index, 1)">↓</button>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="featuredSections.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="featuredSections.push({ slug: '' })">+ Thêm khối danh mục</button>
+                                        <p class="text-xs text-slate-500">Mỗi danh mục thành một khối sản phẩm trên trang chủ (ví dụ LAPTOP CŨ, LAPTOP MỚI, LINH KIỆN LAPTOP); danh mục con hiện thành nút lọc nhanh.</p>
+                                    </div>
+
+                                    <!-- Colour: picker + hex code -->
+                                    <div v-else-if="item.type === 'color'" class="flex items-center gap-3">
+                                        <input v-model="formData[item.key]" type="color" class="h-10 w-16 border border-slate-700/50 rounded-lg p-1">
+                                        <input v-model="formData[item.key]" type="text" maxlength="7" placeholder="#RRGGBB" class="w-32 border border-slate-700/50 rounded-lg px-3 py-2 text-sm font-mono uppercase">
+                                    </div>
+
                                     <!-- Image picker (Logo, Favicon, etc.) -->
-                                    <template v-if="item.type === 'image'">
+                                    <template v-else-if="item.type === 'image'">
                                         <div class="flex items-start gap-4">
                                             <!-- Preview -->
                                             <div v-if="formData[item.key]" class="relative group flex-shrink-0">
@@ -220,15 +295,12 @@ function sendSmtpTest() {
                                     </template>
 
                                     <!-- Text / Color input -->
-                                    <template v-else-if="item.type === 'text' || item.type === 'color' || item.type === 'password'">
+                                    <template v-else-if="item.type === 'text' || item.type === 'password'">
                                         <input
                                             v-model="formData[item.key]"
-                                            :type="item.type === 'color' ? 'color' : item.type === 'password' ? 'password' : 'text'"
+                                            :type="item.type === 'password' ? 'password' : 'text'"
                                             :placeholder="item.label"
-                                            :class="[
-                                                'w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50',
-                                                item.type === 'color' ? 'h-10 p-1' : ''
-                                            ]"
+                                            class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
                                         />
                                         <p v-if="item.type === 'password'" class="text-xs text-slate-500 mt-1">Để trống để giữ key hiện tại. Key chỉ được dùng ở backend, không gửi ra trình duyệt.</p>
                                     </template>
@@ -288,7 +360,9 @@ function sendSmtpTest() {
                                     <p v-if="item.key === 'storefront_warehouse_addresses'" class="text-xs text-slate-500 mt-1">Mỗi kho một nhóm dòng; có thể dùng ký hiệu 📍 và ☎, xuống dòng sẽ được giữ nguyên ngoài trang sản phẩm.</p>
                                     <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
                                     <p v-else-if="item.key === 'ai_product_research_official_domains'" class="text-xs text-slate-500 mt-1">Mỗi dòng một thương hiệu: <code class="text-slate-300">NVIDIA=nvidia.com</code>. Chỉ URL thuộc domain này mới được lưu làm nguồn kiểm chứng.</p>
-                                    <p v-else-if="item.key === 'contact_map_embed_url'" class="text-xs text-slate-500 mt-1">Trên Google Maps chọn Chia sẻ → Nhúng bản đồ → Sao chép HTML rồi dán vào đây (dán cả thẻ iframe cũng được). Để trống để ẩn bản đồ ở trang Liên hệ.</p>
+                                    <p v-else-if="item.key === 'contact_map_embed_url'" class="text-xs text-slate-500 mt-1">Trên Google Maps chọn Chia sẻ → Nhúng bản đồ → Sao chép HTML rồi dán vào đây (dán cả thẻ iframe cũng được). Bản đồ hiện ở trang Liên hệ và cột "Bản đồ cửa hàng" ở chân trang; để trống để ẩn.</p>
+                                    <p v-else-if="item.key === 'social_facebook'" class="text-xs text-slate-500 mt-1">Link Fanpage (https://www.facebook.com/...) dùng cho khung Fanpage ở chân trang.</p>
+                                    <p v-else-if="item.key === 'social_youtube'" class="text-xs text-slate-500 mt-1">Link kênh YouTube dùng cho khung kênh ở chân trang và nút "Xem kênh YouTube" của khối Hoạt động tại cửa hàng.</p>
                                     <p v-else-if="item.key === 'storefront_product_contact_footer_website_url' || item.key === 'storefront_product_contact_footer_maps_url'" class="text-xs text-slate-500 mt-1">Dùng URL HTTPS đầy đủ. Footer mặc định tắt và chỉ được thêm vào sản phẩm khi campaign bật lựa chọn này.</p>
 
                                     <p class="text-xs text-slate-500 mt-1">{{ item.key }}</p>

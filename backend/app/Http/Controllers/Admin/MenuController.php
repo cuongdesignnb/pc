@@ -31,11 +31,11 @@ class MenuController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'        => 'required|string|max:255',
-            'slug'        => 'required|string|max:255|unique:menus',
-            'location'    => 'required|string',
+            'name' => 'required|string|max:255',
+            'slug' => 'required|string|max:255|unique:menus',
+            'location' => 'required|string',
             'description' => 'nullable|string',
-            'is_active'   => 'boolean',
+            'is_active' => 'boolean',
         ]);
 
         Menu::create($validated);
@@ -56,7 +56,7 @@ class MenuController extends Controller
                             'children' => function ($q3) {
                                 $q3->orderBy('sort_order')->with([
                                     'category',
-                                    'children' => fn($q4) => $q4->orderBy('sort_order')->with('category'),
+                                    'children' => fn ($q4) => $q4->orderBy('sort_order')->with('category'),
                                 ]);
                             },
                         ]);
@@ -66,8 +66,8 @@ class MenuController extends Controller
         ]);
 
         return Inertia::render('Admin/Menus/Edit', [
-            'menu'       => $menu,
-            'locations'  => $this->getLocations(),
+            'menu' => $menu,
+            'locations' => $this->getLocations(),
             'categories' => Category::with('children.children')
                 ->whereNull('parent_id')
                 ->where('is_active', true)
@@ -79,10 +79,10 @@ class MenuController extends Controller
     public function update(Request $request, Menu $menu)
     {
         $validated = $request->validate([
-            'name'        => 'required|string|max:255',
-            'location'    => 'required|string',
+            'name' => 'required|string|max:255',
+            'location' => 'required|string',
             'description' => 'nullable|string',
-            'is_active'   => 'boolean',
+            'is_active' => 'boolean',
         ]);
 
         $menu->update($validated);
@@ -104,22 +104,22 @@ class MenuController extends Controller
     public function storeItem(Request $request, Menu $menu)
     {
         $validated = $request->validate([
-            'parent_id'    => 'nullable|exists:menu_items,id',
-            'title'        => 'required|string|max:255',
-            'url'          => 'nullable|string|max:500',
-            'type'         => 'required|in:custom,category,page',
-            'category_id'  => 'nullable|exists:categories,id',
-            'icon'         => 'nullable|string|max:50',
-            'badge_text'   => 'nullable|string|max:20',
-            'badge_color'  => 'nullable|string|max:20',
-            'css_class'    => 'nullable|string|max:100',
-            'target'       => 'in:_self,_blank',
-            'sort_order'   => 'integer|min:0',
-            'is_active'    => 'boolean',
-            'is_mega'      => 'boolean',
+            'parent_id' => 'nullable|exists:menu_items,id',
+            'title' => 'required|string|max:255',
+            'url' => 'nullable|string|max:500',
+            'type' => 'required|in:custom,category,page',
+            'category_id' => 'nullable|exists:categories,id',
+            'icon' => 'nullable|string|max:50',
+            'badge_text' => 'nullable|string|max:20',
+            'badge_color' => 'nullable|string|max:20',
+            'css_class' => 'nullable|string|max:100',
+            'target' => 'in:_self,_blank',
+            'sort_order' => 'integer|min:0',
+            'is_active' => 'boolean',
+            'is_mega' => 'boolean',
             'mega_columns' => 'integer|min:1|max:6',
-            'description'  => 'nullable|string|max:500',
-            'image'        => 'nullable|string|max:500',
+            'description' => 'nullable|string|max:500',
+            'image' => 'nullable|string|max:500',
         ]);
 
         $validated['menu_id'] = $menu->id;
@@ -132,22 +132,22 @@ class MenuController extends Controller
     public function updateItem(Request $request, Menu $menu, MenuItem $item)
     {
         $validated = $request->validate([
-            'parent_id'    => 'nullable|exists:menu_items,id',
-            'title'        => 'required|string|max:255',
-            'url'          => 'nullable|string|max:500',
-            'type'         => 'required|in:custom,category,page',
-            'category_id'  => 'nullable|exists:categories,id',
-            'icon'         => 'nullable|string|max:50',
-            'badge_text'   => 'nullable|string|max:20',
-            'badge_color'  => 'nullable|string|max:20',
-            'css_class'    => 'nullable|string|max:100',
-            'target'       => 'in:_self,_blank',
-            'sort_order'   => 'integer|min:0',
-            'is_active'    => 'boolean',
-            'is_mega'      => 'boolean',
+            'parent_id' => 'nullable|exists:menu_items,id',
+            'title' => 'required|string|max:255',
+            'url' => 'nullable|string|max:500',
+            'type' => 'required|in:custom,category,page',
+            'category_id' => 'nullable|exists:categories,id',
+            'icon' => 'nullable|string|max:50',
+            'badge_text' => 'nullable|string|max:20',
+            'badge_color' => 'nullable|string|max:20',
+            'css_class' => 'nullable|string|max:100',
+            'target' => 'in:_self,_blank',
+            'sort_order' => 'integer|min:0',
+            'is_active' => 'boolean',
+            'is_mega' => 'boolean',
             'mega_columns' => 'integer|min:1|max:6',
-            'description'  => 'nullable|string|max:500',
-            'image'        => 'nullable|string|max:500',
+            'description' => 'nullable|string|max:500',
+            'image' => 'nullable|string|max:500',
         ]);
 
         $item->update($validated);
@@ -175,7 +175,7 @@ class MenuController extends Controller
 
         foreach ($request->items as $data) {
             MenuItem::where('id', $data['id'])->update([
-                'parent_id'  => $data['parent_id'],
+                'parent_id' => $data['parent_id'],
                 'sort_order' => $data['sort_order'],
             ]);
         }
@@ -187,9 +187,9 @@ class MenuController extends Controller
     private function getLocations(): array
     {
         return [
-            ['value' => 'header', 'label' => 'Header (Menu chính)'],
+            ['value' => 'header', 'label' => 'Header (Thanh menu ngang)'],
             ['value' => 'footer', 'label' => 'Footer (Chân trang)'],
-            ['value' => 'sidebar', 'label' => 'Sidebar (Thanh bên)'],
+            ['value' => 'sidebar', 'label' => 'Sidebar (Nút Danh mục sản phẩm)'],
             ['value' => 'mobile', 'label' => 'Mobile (Menu di động)'],
         ];
     }

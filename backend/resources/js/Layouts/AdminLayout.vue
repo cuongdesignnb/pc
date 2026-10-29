@@ -67,6 +67,7 @@ const navGroups = [
             { name: 'Lịch viết AI', href: '/admin/ai-writer', icon: 'ai', perm: 'ai-articles.create' },
             { name: 'Trang tĩnh', href: '/admin/pages', icon: 'page' },
             { name: 'Banner', href: '/admin/banners', icon: 'banner' },
+            { name: 'Hoạt động cửa hàng', href: '/admin/store-activities', icon: 'media' },
             { name: 'Thư viện Media', href: '/admin/media', icon: 'media' },
         ],
     },
