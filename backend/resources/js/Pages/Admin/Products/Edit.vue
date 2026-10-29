@@ -8,6 +8,7 @@ import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 import ProductFormErrors from '@/Components/ProductFormErrors.vue';
+import AffiliateCommissionField, { commissionForm } from '@/Components/AffiliateCommissionField.vue';
 
 const props = defineProps({
     product: Object,
@@ -43,6 +44,7 @@ const form = useForm({
     is_featured: props.product.is_featured || false,
     show_on_pc_website: props.product.show_on_pc_website ?? true,
     warranty_months: props.product.warranty_months ?? 0,
+    affiliate_commission: commissionForm(props.product.affiliate_commission),
     meta_title: props.product.meta_title || '',
     meta_description: props.product.meta_description || '',
     video_url: props.product.video_url || '',
@@ -251,6 +253,7 @@ function removeVariant(index) {
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Tồn kho *</label><input v-model="form.stock_quantity" :disabled="isKiot" type="number" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"></div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" min="0" step="1" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 </div>
+                <AffiliateCommissionField v-model="form.affiliate_commission" :errors="form.errors" inherit-hint="Để trống thì dùng mức hoa hồng của danh mục." />
                 <dl v-if="isKiot" class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm md:grid-cols-4">
                     <div><dt class="text-slate-500">Barcode</dt><dd class="mt-1 text-slate-200">{{ product.barcode || '—' }}</dd></div>
                     <div><dt class="text-slate-500">KIOT Product ID</dt><dd class="mt-1 text-slate-200">{{ product.kiot_product_id || '—' }}</dd></div>

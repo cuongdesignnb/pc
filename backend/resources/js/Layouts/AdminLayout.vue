@@ -81,6 +81,15 @@ const navGroups = [
         ],
     },
     {
+        label: 'Cộng tác viên',
+        key: 'affiliates',
+        items: [
+            { name: 'Danh sách CTV', href: '/admin/affiliates', icon: 'user', exact: true },
+            { name: 'Hoa hồng', href: '/admin/affiliates/commissions', icon: 'star' },
+            { name: 'Đơn ngoài web', href: '/admin/affiliates/external-orders', icon: 'post' },
+        ],
+    },
+    {
         label: 'Hệ thống',
         key: 'system',
         items: [

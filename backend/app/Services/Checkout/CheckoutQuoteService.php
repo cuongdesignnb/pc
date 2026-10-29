@@ -8,6 +8,7 @@ use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Setting;
+use App\Services\Affiliate\AffiliateCheckoutService;
 use App\Services\Catalog\InvalidWarrantyPackage;
 use App\Services\Catalog\ProductPurchasabilityService;
 use App\Services\Catalog\WarrantyPackages;
@@ -26,6 +27,7 @@ class CheckoutQuoteService
         private readonly ShippingCalculator $shippingCalculator,
         private readonly ProductPurchasabilityService $purchasability,
         private readonly WarrantyPackages $warranties,
+        private readonly AffiliateCheckoutService $affiliates,
     ) {}
 
     /** @return array<string, mixed> */
@@ -70,6 +72,12 @@ class CheckoutQuoteService
         $shippingFee = $location !== null && $shipping['available'] && $calculated['summary']['total_quantity'] > 0
             ? $shipping['fee']
             : null;
+        $referral = $this->affiliates->evaluate(
+            $data['customer_phone'] ?? null,
+            $data['referral_code'] ?? null,
+            array_column($calculated['lines'], 'product_id'),
+            $calculated['summary']['subtotal'],
+        );
         $summary = [
             'line_count' => $calculated['summary']['line_count'],
             'total_quantity' => $calculated['summary']['total_quantity'],
@@ -77,8 +85,9 @@ class CheckoutQuoteService
             'product_discount' => $calculated['summary']['product_discount'],
             'subtotal' => $calculated['summary']['subtotal'],
             'coupon_discount' => 0,
+            'referral_discount' => $referral['discount'],
             'shipping_fee' => $shippingFee,
-            'total' => $shippingFee === null ? null : $calculated['summary']['subtotal'] + $shippingFee,
+            'total' => $shippingFee === null ? null : $calculated['summary']['subtotal'] - $referral['discount'] + $shippingFee,
             'tax_label' => null,
         ];
         if ($summary['total_quantity'] === 0) {
@@ -106,6 +115,13 @@ class CheckoutQuoteService
             ]],
             'payment_methods' => $paymentMethods,
             'coupon' => null,
+            // Never blocks the order: a wrong code just means no discount.
+            'referral' => [
+                'code' => $referral['code'],
+                'affiliate_name' => $referral['affiliate']?->user?->name,
+                'discount' => $referral['discount'],
+                'message' => $referral['message'],
+            ],
             'capabilities' => [
                 'coupons' => false,
                 'saved_addresses' => false,

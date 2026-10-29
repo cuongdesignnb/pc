@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Affiliate\CommissionService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,6 +23,9 @@ class Order extends Model
 
     protected $fillable = [
         'user_id',
+        'affiliate_id',
+        'referral_code',
+        'referral_discount',
         'order_number',
         'subtotal',
         'discount',
@@ -65,6 +69,7 @@ class Order extends Model
     protected $casts = [
         'subtotal' => 'decimal:0',
         'discount' => 'decimal:0',
+        'referral_discount' => 'decimal:0',
         'shipping_fee' => 'decimal:0',
         'total' => 'decimal:0',
         'deposit_amount' => 'decimal:0',
@@ -83,6 +88,33 @@ class Order extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (Order $order): void {
+            if ($order->isDirty('order_status') && $order->order_status === 'shipping' && ! $order->shipped_at) {
+                $order->shipped_at = now();
+            }
+            if ($order->isDirty('order_status') && $order->order_status === 'delivered' && ! $order->delivered_at) {
+                $order->delivered_at = now();
+            }
+        });
+        static::updated(function (Order $order): void {
+            if ($order->affiliate_id && $order->wasChanged('order_status')) {
+                app(CommissionService::class)->syncWithOrder($order);
+            }
+        });
+    }
+
+    public function affiliate(): BelongsTo
+    {
+        return $this->belongsTo(Affiliate::class);
+    }
+
+    public function affiliateCommission(): HasOne
+    {
+        return $this->hasOne(AffiliateCommission::class);
     }
 
     public function items(): HasMany

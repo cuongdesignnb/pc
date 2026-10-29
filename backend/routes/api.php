@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AffiliateController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\BlogController;
@@ -123,6 +124,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/orders/{order}/check-payment', [OrderController::class, 'checkPayment']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
+    // CTV links: ?ref=CODE visits
+    Route::post('/affiliate/clicks', [AffiliateController::class, 'click'])->middleware('throttle:30,1');
+
     // Sepay webhook
     Route::post('/sepay/callback', [OrderController::class, 'sepayCallback']);
 
@@ -163,6 +167,12 @@ Route::prefix('v1')->group(function () {
         Route::patch('/account/addresses/{address}', [AccountController::class, 'updateAddress']);
         Route::delete('/account/addresses/{address}', [AccountController::class, 'destroyAddress']);
         Route::get('/account/warranties', [AccountController::class, 'warranties']);
+
+        // Cộng tác viên (CTV) program.
+        Route::post('/affiliate/register', [AffiliateController::class, 'register'])->middleware('throttle:10,1');
+        Route::get('/affiliate/me', [AffiliateController::class, 'me']);
+        Route::put('/affiliate/me/payout-schedule', [AffiliateController::class, 'updatePayoutSchedule']);
+        Route::get('/affiliate/products/{product}/commission', [AffiliateController::class, 'productCommission']);
 
         // User orders
         Route::get('/orders', [OrderController::class, 'index']);

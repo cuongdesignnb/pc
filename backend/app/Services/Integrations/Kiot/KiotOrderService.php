@@ -7,6 +7,7 @@ use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Affiliate\AffiliateCheckoutService;
 use App\Services\Catalog\InvalidWarrantyPackage;
 use App\Services\Catalog\ProductPurchasabilityService;
 use App\Services\Catalog\WarrantyPackages;
@@ -26,6 +27,7 @@ class KiotOrderService
         private readonly ShippingCalculator $shippingCalculator,
         private readonly DepositPolicy $deposits,
         private readonly WarrantyPackages $warranties,
+        private readonly AffiliateCheckoutService $affiliates,
     ) {}
 
     public function create(array $data, ?int $userId): array
@@ -117,9 +119,17 @@ class KiotOrderService
                 }
 
                 $shippingFee = $this->shippingCalculator->quote($subtotal, $requested->sum('quantity'))['fee'];
+                $referral = $this->affiliates->evaluate(
+                    $data['customer_phone'],
+                    $data['referral_code'] ?? null,
+                    array_column($snapshots, 'product_id'),
+                    $subtotal,
+                );
+                $discount = $referral['discount'];
+                $total = $subtotal - $discount + $shippingFee;
                 $paymentOption = $data['payment_method'] === 'sepay' ? ($data['payment_option'] ?? 'full') : null;
                 $depositAmount = $paymentOption === 'deposit'
-                    ? $this->deposits->amountFor($subtotal + $shippingFee)
+                    ? $this->deposits->amountFor($total)
                     : null;
                 if ($paymentOption === 'deposit' && $depositAmount === null) {
                     throw ValidationException::withMessages([
@@ -131,10 +141,13 @@ class KiotOrderService
                 $order = Order::create([
                     'order_number' => Order::generateOrderNumber(),
                     'user_id' => $userId,
+                    'affiliate_id' => $referral['affiliate']?->id,
+                    'referral_code' => $referral['code'],
                     'subtotal' => $subtotal,
-                    'discount' => 0,
+                    'discount' => $discount,
+                    'referral_discount' => $discount,
                     'shipping_fee' => $shippingFee,
-                    'total' => $subtotal + $shippingFee,
+                    'total' => $total,
                     'payment_method' => $data['payment_method'],
                     'payment_option' => $paymentOption,
                     'deposit_amount' => $depositAmount,
@@ -159,6 +172,7 @@ class KiotOrderService
                 foreach ($snapshots as $snapshot) {
                     $order->items()->create($snapshot);
                 }
+                $this->affiliates->recordOrder($order, $referral);
 
                 $outbox = $enabled ? $this->queueCreateEvent($order, $weight) : null;
 
@@ -291,7 +305,18 @@ class KiotOrderService
                 'quantity' => $item->quantity, 'unit_price' => (int) $item->price,
                 'discount' => 0, 'line_total' => (int) $item->total, 'bundle_ref' => null,
             ])->values()->all(),
-            'note' => $order->notes,
+            'note' => $this->kiotNote($order),
         ];
+    }
+
+    /** The customer's note, plus the CTV who brought the order so the shop sees it in KIOT. */
+    private function kiotNote(Order $order): ?string
+    {
+        $affiliate = $order->affiliate()->with('user')->first();
+        if (! $affiliate) {
+            return $order->notes;
+        }
+
+        return trim(($order->notes ?? '')."\nKhách của CTV: ".$affiliate->label());
     }
 }

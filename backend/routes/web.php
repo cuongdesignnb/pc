@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AffiliateController;
 use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Admin\AiProductContentCampaignController;
@@ -93,6 +94,17 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.updateStatus');
     Route::patch('orders/{order}/payment-status', [OrderController::class, 'updatePaymentStatus'])->name('orders.updatePaymentStatus');
     Route::post('orders/{order}/resend-kiot', [OrderController::class, 'resendToKiot'])->name('orders.resendKiot');
+
+    // Cộng tác viên (CTV)
+    Route::get('affiliates', [AffiliateController::class, 'index'])->name('affiliates.index');
+    Route::get('affiliates/commissions', [AffiliateController::class, 'commissions'])->name('affiliates.commissions');
+    Route::post('affiliates/commissions/{commission}/approve', [AffiliateController::class, 'approveCommission'])->name('affiliates.commissions.approve');
+    Route::post('affiliates/commissions/{commission}/cancel', [AffiliateController::class, 'cancelCommission'])->name('affiliates.commissions.cancel');
+    Route::get('affiliates/external-orders', [AffiliateController::class, 'externalOrders'])->name('affiliates.external-orders');
+    Route::post('affiliates/external-orders', [AffiliateController::class, 'storeExternalOrder'])->name('affiliates.external-orders.store');
+    Route::patch('affiliates/customers/{customer}', [AffiliateController::class, 'reassignCustomer'])->name('affiliates.customers.reassign');
+    Route::get('affiliates/{affiliate}', [AffiliateController::class, 'show'])->name('affiliates.show');
+    Route::patch('affiliates/{affiliate}/status', [AffiliateController::class, 'updateStatus'])->name('affiliates.status');
 
     // Coupons
     Route::resource('coupons', CouponController::class);

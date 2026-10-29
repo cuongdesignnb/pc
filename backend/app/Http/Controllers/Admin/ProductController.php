@@ -11,6 +11,7 @@ use App\Models\ProductDetailBlock;
 use App\Models\ProductRelation;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
+use App\Services\Affiliate\CommissionRules;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use App\Support\YouTubeVideo;
@@ -299,7 +300,10 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, true)), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, true), CommissionRules::validationRules()), $this->productValidationMessages(), $this->productValidationAttributes());
+        if (array_key_exists('affiliate_commission', $validated)) {
+            $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
+        }
 
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);

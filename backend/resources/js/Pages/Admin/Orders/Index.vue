@@ -3,16 +3,17 @@ import { ref, watch } from 'vue';
 import { router, Link, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 
-const props = defineProps({ orders: Object, filters: Object, statuses: Array, paymentStatuses: Array });
+const props = defineProps({ orders: Object, filters: Object, statuses: Array, paymentStatuses: Array, affiliates: Array });
 const flash = usePage().props.flash;
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || '');
 const paymentStatus = ref(props.filters?.payment_status || '');
+const affiliateId = ref(props.filters?.affiliate_id || '');
 
 let timer;
 watch(search, () => { clearTimeout(timer); timer = setTimeout(applyFilters, 400); });
 function applyFilters() {
-    router.get('/admin/orders', { search: search.value || undefined, status: status.value || undefined, payment_status: paymentStatus.value || undefined }, { preserveState: true, replace: true });
+    router.get('/admin/orders', { search: search.value || undefined, status: status.value || undefined, payment_status: paymentStatus.value || undefined, affiliate_id: affiliateId.value || undefined }, { preserveState: true, replace: true });
 }
 function formatPrice(p) { return new Intl.NumberFormat('vi-VN').format(p) + '₫'; }
 function formatDate(d) { return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
@@ -36,6 +37,10 @@ const payColor = { unpaid: 'bg-yellow-100 text-yellow-700', deposited: 'bg-blue-
                 <option value="">Thanh toán</option>
                 <option v-for="s in paymentStatuses" :value="s">{{ payLabel[s] || s }}</option>
             </select>
+            <select v-if="affiliates?.length" v-model="affiliateId" @change="applyFilters()" class="border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                <option value="">Tất cả CTV</option>
+                <option v-for="a in affiliates" :key="a.id" :value="a.id">{{ a.label }}</option>
+            </select>
         </div>
     </div>
     <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 overflow-hidden">
@@ -51,7 +56,7 @@ const payColor = { unpaid: 'bg-yellow-100 text-yellow-700', deposited: 'bg-blue-
             </tr></thead>
             <tbody class="divide-y divide-slate-800/40">
                 <tr v-for="o in orders.data" :key="o.id" class="hover:bg-slate-800/40">
-                    <td class="px-4 py-3 text-sm font-medium text-cyan-500">{{ o.order_number || o.order_code }}</td>
+                    <td class="px-4 py-3 text-sm font-medium text-cyan-500">{{ o.order_number || o.order_code }}<div v-if="o.affiliate" class="text-xs text-amber-400">Khách của CTV: {{ o.affiliate.user?.name }} – {{ o.affiliate.code }}</div></td>
                     <td class="px-4 py-3 text-sm text-slate-200">{{ o.shipping_name || o.customer_name || o.user?.name || '—' }}</td>
                     <td class="px-4 py-3 text-sm text-slate-200 text-right font-medium">{{ formatPrice(o.total) }}</td>
                     <td class="px-4 py-3 text-center"><span :class="statusColor[o.order_status || o.status] || 'bg-slate-800/60 text-slate-400'" class="px-2 py-0.5 rounded-full text-xs font-medium">{{ statusLabel[o.order_status || o.status] || o.order_status || o.status }}</span></td>

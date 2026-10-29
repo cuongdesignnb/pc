@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
+use App\Models\Affiliate;
 use App\Models\Order;
 use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
@@ -16,7 +17,7 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Order::with(['user', 'items'])
+        $query = Order::with(['user', 'items', 'affiliate.user:id,name'])
             ->latest();
 
         if ($request->search) {
@@ -35,6 +36,10 @@ class OrderController extends Controller
             $query->where('payment_status', $request->payment_status);
         }
 
+        if ($request->affiliate_id) {
+            $query->where('affiliate_id', (int) $request->affiliate_id);
+        }
+
         if ($request->from_date) {
             $query->whereDate('created_at', '>=', $request->from_date);
         }
@@ -47,7 +52,9 @@ class OrderController extends Controller
 
         return Inertia::render('Admin/Orders/Index', [
             'orders' => $orders,
-            'filters' => $request->only(['search', 'status', 'payment_status', 'from_date', 'to_date']),
+            'filters' => $request->only(['search', 'status', 'payment_status', 'from_date', 'to_date', 'affiliate_id']),
+            'affiliates' => Affiliate::with('user:id,name')->whereNotNull('code')->orderBy('code')->get(['id', 'code', 'user_id'])
+                ->map(fn (Affiliate $affiliate) => ['id' => $affiliate->id, 'label' => $affiliate->label()]),
             'statuses' => ['pending', 'confirmed', 'processing', 'shipping', 'delivered', 'cancelled'],
             'paymentStatuses' => ['unpaid', 'deposited', 'paid', 'refunded'],
         ]);
@@ -55,7 +62,7 @@ class OrderController extends Controller
 
     public function show(Order $order, KiotConfigurationResolver $resolver)
     {
-        $order->load(['user', 'items.product', 'transactions']);
+        $order->load(['user', 'items.product', 'transactions', 'affiliate.user:id,name', 'affiliateCommission']);
         $runtime = $resolver->resolve();
         $orderSyncEnabled = $runtime->enabled && $runtime->orderSyncEnabled;
 
