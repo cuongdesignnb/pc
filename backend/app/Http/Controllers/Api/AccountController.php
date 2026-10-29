@@ -15,8 +15,8 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\SavedBuild;
 use App\Services\Locations\LocationDirectory;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -103,6 +103,8 @@ class AccountController extends Controller
             'quantity' => (int) $item->quantity,
             'price' => (int) $item->price,
             'total' => (int) $item->total,
+            'warranty_months' => $item->warranty_months === null ? null : (int) $item->warranty_months,
+            'warranty_price' => (int) $item->warranty_price,
             'image' => $item->product?->images?->first() ? [
                 'url' => $item->product->images->first()->url,
                 'alt' => $item->product->images->first()->alt ?: $item->product_name,

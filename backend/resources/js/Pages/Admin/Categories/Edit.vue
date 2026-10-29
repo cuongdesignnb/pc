@@ -10,7 +10,9 @@ const form = useForm({
     component_type_id: props.category.component_type_id || '', description: props.category.description || '',
     image: props.category.image || '', icon: props.category.icon || '', sort_order: props.category.sort_order || 0,
     is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '', technical_heading: props.category.technical_heading || 'auto',
+    warranty_packages: (props.category.warranty_packages || []).map(p => ({ months: p.months, price: p.price ?? 0 })),
 });
+function addWarrantyPackage() { form.warranty_packages.push({ months: '', price: 0 }); }
 function submit() { form.put(`/admin/categories/${props.category.id}`); }
 </script>
 <template>
@@ -39,6 +41,22 @@ function submit() { form.put(`/admin/categories/${props.category.id}`); }
                 </div>
             </div>
             <div><label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề phần thông tin kỹ thuật</label><select v-model="form.technical_heading" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="auto">Tự động</option><option value="configuration">Cấu hình chi tiết</option><option value="specifications">Thông số kỹ thuật</option></select><p class="mt-1 text-xs text-slate-500">Dùng cho phần thông tin kỹ thuật trên trang sản phẩm thuộc danh mục này.</p></div>
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-sm font-medium text-slate-300">Gói bảo hành khách chọn khi mua</label>
+                    <button type="button" @click="addWarrantyPackage" class="text-xs text-cyan-500 hover:text-cyan-400">+ Thêm gói</button>
+                </div>
+                <div v-for="(pkg, i) in form.warranty_packages" :key="i" class="flex items-center gap-2 mb-2">
+                    <input v-model.number="pkg.months" type="number" min="1" max="120" placeholder="Số tháng" class="w-28 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                    <span class="text-sm text-slate-400">tháng, cộng thêm</span>
+                    <input v-model.number="pkg.price" type="number" min="0" step="1000" class="w-40 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                    <span class="text-sm text-slate-400">đ</span>
+                    <button type="button" @click="form.warranty_packages.splice(i, 1)" class="text-xs text-red-400 hover:text-red-300 ml-auto">Xóa</button>
+                </div>
+                <p v-if="!form.warranty_packages.length" class="text-xs text-slate-500">Chưa có gói: sản phẩm dùng thời hạn bảo hành mặc định của từng máy.</p>
+                <p v-else class="text-xs text-slate-500">Áp dụng cho sản phẩm thuộc danh mục này và các danh mục con chưa có gói riêng. Giá cộng thêm có thể để 0đ.</p>
+                <div v-for="(msg, key) in form.errors" :key="key"><p v-if="String(key).startsWith('warranty_packages')" class="text-red-400 text-xs mt-1">{{ msg }}</p></div>
+            </div>
             <div class="flex justify-end gap-3 pt-2">
                 <Link href="/admin/categories" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>
                 <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium disabled:opacity-50">Lưu thay đổi</button>

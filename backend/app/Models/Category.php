@@ -34,6 +34,7 @@ class Category extends Model
         'slug_source',
         'slug_policy_version',
         'slug_locked_at',
+        'warranty_packages',
     ];
 
     protected $casts = [
@@ -45,6 +46,7 @@ class Category extends Model
         'sort_order' => 'integer',
         'slug_locked_at' => 'datetime',
         'technical_heading' => 'string',
+        'warranty_packages' => 'array',
     ];
 
     /**

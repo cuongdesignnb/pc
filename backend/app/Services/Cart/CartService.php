@@ -42,8 +42,9 @@ class CartService
         foreach ($selected as $item) {
             $product = $item->product;
             $variant = $item->variant;
-            $unitPrice = (int) ($variant?->display_price ?? $product?->purchasableUnitPrice() ?? $item->price);
-            $originalUnitPrice = (int) ($variant?->price ?? $product?->price ?? $item->price);
+            $warrantyPrice = $item->warrantyPackage()['price'] ?? 0;
+            $unitPrice = (int) ($variant?->display_price ?? $product?->purchasableUnitPrice() ?? $item->price) + $warrantyPrice;
+            $originalUnitPrice = (int) ($variant?->price ?? $product?->price ?? $item->price) + $warrantyPrice;
             $itemQuantity = (int) $item->quantity;
             $originalSubtotal += $originalUnitPrice * $itemQuantity;
             $subtotal += $unitPrice * $itemQuantity;

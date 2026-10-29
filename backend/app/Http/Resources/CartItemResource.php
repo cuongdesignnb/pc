@@ -19,17 +19,25 @@ class CartItemResource extends JsonResource
         $availableQuantity = $variant
             ? max(0, (int) $variant->stock_quantity)
             : max(0, (int) ($product?->quantity ?? 0));
+        // A chosen warranty package is charged on top of the product price.
+        $warranty = $this->resource->warrantyPackage();
+        $warrantyWithdrawn = $this->warranty_months !== null && $warranty === null;
         $isPurchasable = $product !== null
+            && ! $warrantyWithdrawn
             && $product->isVisibleOnStorefront()
             && ($variant
                 ? $variant->is_active && $availableQuantity >= (int) $this->quantity
                 : $product->isSellableOnline() && $availableQuantity >= (int) $this->quantity);
-        $availabilityLabel = $product === null
-            ? 'Sản phẩm không còn tồn tại'
-            : ($variant && ! $variant->is_active
-                ? 'Ngừng kinh doanh'
-                : ($variant && $availableQuantity <= 0 ? 'Hết hàng' : $product->availability_label));
+        $availabilityLabel = match (true) {
+            $product === null => 'Sản phẩm không còn tồn tại',
+            $warrantyWithdrawn => 'Gói bảo hành không còn áp dụng',
+            $variant && ! $variant->is_active => 'Ngừng kinh doanh',
+            $variant && $availableQuantity <= 0 => 'Hết hàng',
+            default => $product->availability_label,
+        };
         $priceChanged = (int) $this->price !== (int) $unitPrice;
+        $unitPrice = (int) $unitPrice + ($warranty['price'] ?? 0);
+        $originalUnitPrice += $warranty['price'] ?? 0;
         $savingPerUnit = max(0, $originalUnitPrice - (int) $unitPrice);
         $lineOriginal = $originalUnitPrice * (int) $this->quantity;
         $lineTotal = (int) $unitPrice * (int) $this->quantity;
@@ -57,7 +65,8 @@ class CartItemResource extends JsonResource
             'line_subtotal' => $lineTotal,
             'line_discount' => $savingPerUnit * (int) $this->quantity,
             'price_changed' => $priceChanged,
-            'previous_unit_price' => $priceChanged ? (int) $this->price : null,
+            'previous_unit_price' => $priceChanged ? (int) $this->price + ($warranty['price'] ?? 0) : null,
+            'warranty' => $warranty,
             'pricing' => [
                 'original_unit_price' => $originalUnitPrice,
                 'unit_price' => (int) $unitPrice,

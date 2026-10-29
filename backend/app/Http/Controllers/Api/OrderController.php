@@ -77,6 +77,7 @@ class OrderController extends Controller
             'items.*.product_id' => 'required|integer|exists:products,id',
             'items.*.variant_id' => 'nullable|integer|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
+            'items.*.warranty_months' => 'nullable|integer|min:1|max:120',
         ]);
 
         $validated['checkout_mode'] = $validated['checkout_mode'] ?? 'cart';
@@ -284,6 +285,8 @@ class OrderController extends Controller
                 'quantity' => $item->quantity,
                 'price' => $item->price,
                 'total' => $item->total,
+                'warranty_months' => $item->warranty_months,
+                'warranty_price' => (int) $item->warranty_price,
             ])->values()->all();
         }
 
@@ -352,6 +355,7 @@ class OrderController extends Controller
         $validated['items'] = $selected->map(fn (CartItem $item): array => [
             'product_id' => (int) $item->product_id,
             'variant_id' => $item->variant_id === null ? null : (int) $item->variant_id,
+            'warranty_months' => $item->warranty_months === null ? null : (int) $item->warranty_months,
             'quantity' => (int) $item->quantity,
         ])->all();
     }

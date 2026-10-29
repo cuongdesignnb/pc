@@ -7,7 +7,9 @@ use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Services\Catalog\InvalidWarrantyPackage;
 use App\Services\Catalog\ProductPurchasabilityService;
+use App\Services\Catalog\WarrantyPackages;
 use App\Services\Checkout\ShippingCalculator;
 use App\Services\Payments\DepositPolicy;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -23,6 +25,7 @@ class KiotOrderService
         private readonly ProductPurchasabilityService $purchasability,
         private readonly ShippingCalculator $shippingCalculator,
         private readonly DepositPolicy $deposits,
+        private readonly WarrantyPackages $warranties,
     ) {}
 
     public function create(array $data, ?int $userId): array
@@ -51,6 +54,7 @@ class KiotOrderService
                         return [
                             'product_id' => (int) $first['product_id'],
                             'variant_id' => ! empty($first['variant_id']) ? (int) $first['variant_id'] : null,
+                            'warranty_months' => ! empty($first['warranty_months']) ? (int) $first['warranty_months'] : null,
                             'quantity' => $rows->sum('quantity'),
                         ];
                     });
@@ -81,7 +85,15 @@ class KiotOrderService
                             422,
                         );
                     }
-                    $unitPrice = $variant?->display_price ?? $this->purchasability->unitPrice($product);
+                    try {
+                        $warranty = $this->warranties->select($product, $line['warranty_months']);
+                    } catch (InvalidWarrantyPackage $exception) {
+                        throw ValidationException::withMessages(['items' => $exception->getMessage()]);
+                    }
+                    // The warranty package is part of the line price, so KIOT and
+                    // the order totals see one amount per unit.
+                    $warrantyPrice = $warranty['price'] ?? 0;
+                    $unitPrice = ($variant?->display_price ?? $this->purchasability->unitPrice($product)) + $warrantyPrice;
                     $lineTotal = $unitPrice * $quantity;
                     $subtotal += $lineTotal;
                     $weight += (int) ($product->weight ?? 0) * $quantity;
@@ -97,9 +109,10 @@ class KiotOrderService
                         // Warranty is a purchase-time snapshot. Account
                         // pages must not recalculate historical coverage
                         // from a product that may change later.
-                        'warranty_months' => $product->warranty_months === null
+                        'warranty_months' => $warranty['months'] ?? ($product->warranty_months === null
                             ? null
-                            : (int) $product->warranty_months,
+                            : (int) $product->warranty_months),
+                        'warranty_price' => $warrantyPrice,
                     ];
                 }
 
@@ -271,7 +284,10 @@ class KiotOrderService
                 'shipping_fee' => (int) $order->shipping_fee, 'total' => (int) $order->total,
             ],
             'items' => $order->items->map(fn ($item) => [
-                'sku' => $item->sku, 'product_name' => $item->product_name,
+                'sku' => $item->sku,
+                'product_name' => (int) $item->warranty_price > 0
+                    ? "{$item->product_name} (bảo hành {$item->warranty_months} tháng)"
+                    : $item->product_name,
                 'quantity' => $item->quantity, 'unit_price' => (int) $item->price,
                 'discount' => 0, 'line_total' => (int) $item->total, 'bundle_ref' => null,
             ])->values()->all(),
