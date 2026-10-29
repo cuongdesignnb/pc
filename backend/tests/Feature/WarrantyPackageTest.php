@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\Catalog\WarrantyPackages;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -25,7 +26,7 @@ class WarrantyPackageTest extends TestCase
             'name' => 'Laptop cũ', 'slug' => 'laptop-cu', 'sort_order' => 0,
             'warranty_packages' => [['months' => 6, 'price' => 700000], ['months' => 1, 'price' => null], ['months' => 3, 'price' => 300000]],
         ])->assertSessionHasNoErrors();
-        $this->assertSame(self::PACKAGES, $category->fresh()->warranty_packages);
+        $this->assertSame(self::PACKAGES, WarrantyPackages::normalise($category->fresh()->warranty_packages));
 
         $this->actingAs($admin)->put("/admin/categories/{$category->id}", [
             'name' => 'Laptop cũ', 'slug' => 'laptop-cu', 'sort_order' => 0,
