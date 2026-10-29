@@ -57,7 +57,7 @@ class MediaController extends Controller
     {
         $request->validate([
             'files' => 'required|array|max:20',
-            'files.*' => 'file|max:10240|mimes:jpg,jpeg,png,gif,webp,svg,mp4,webm,pdf,doc,docx,xls,xlsx,zip',
+            'files.*' => 'file|max:51200|mimes:jpg,jpeg,png,gif,webp,svg,mp4,webm,pdf,doc,docx,xls,xlsx,zip',
             'folder' => 'nullable|string|max:255',
         ]);
 

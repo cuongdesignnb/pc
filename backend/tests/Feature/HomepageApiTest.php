@@ -210,8 +210,17 @@ class HomepageApiTest extends TestCase
         $usedLaptops = $this->category('laptop-cu', 'Laptop cũ');
         $usedLaptops->update(['sort_order' => 1]);
 
+        $this->category('ram-laptop', 'RAM laptop', $accessories->id)->update(['sort_order' => 0]);
+
+        // Only top-level categories by default.
         $response = $this->getJson('/api/v1/homepage')->assertOk();
         $this->assertSame(['laptop-cu', 'phu-kien'], array_column($response->json('category_sidebar'), 'slug'));
+
+        // Categories picked in Cài đặt, in the picked order.
+        Setting::set('homepage_sidebar_category_slugs', ['ram-laptop', 'laptop-cu', 'khong-ton-tai']);
+        $response = $this->getJson('/api/v1/homepage')->assertOk();
+        $this->assertSame(['ram-laptop', 'laptop-cu'], array_column($response->json('category_sidebar'), 'slug'));
+        Setting::set('homepage_sidebar_category_slugs', []);
 
         foreach (['header', 'sidebar'] as $location) {
             $this->getJson('/api/v1/menus/'.$location)
@@ -220,6 +229,19 @@ class HomepageApiTest extends TestCase
                 ->assertJsonPath('items.1.category.slug', 'phu-kien');
         }
         $this->getJson('/api/v1/menus/mobile')->assertOk()->assertJsonCount(0, 'items');
+    }
+
+    public function test_product_listing_can_show_only_discounted_products(): void
+    {
+        $category = $this->category('laptop-cu', 'Laptop cũ');
+        $this->product($category, ['slug' => 'giam-it', 'price' => 10000000, 'sale_price' => 9500000]);
+        $this->product($category, ['slug' => 'giam-nhieu', 'price' => 10000000, 'sale_price' => 7000000]);
+        $this->product($category, ['slug' => 'khong-giam', 'price' => 10000000]);
+        $this->product($category, ['slug' => 'gia-sai', 'price' => 10000000, 'sale_price' => 12000000]);
+
+        $response = $this->getJson('/api/v1/products?on_sale=1')->assertOk();
+        $this->assertSame(['giam-nhieu', 'giam-it'], array_column($response->json('data'), 'slug'));
+        $this->getJson('/api/v1/products')->assertOk()->assertJsonCount(4, 'data');
     }
 
     public function test_posts_respect_the_homepage_setting(): void

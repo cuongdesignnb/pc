@@ -63,4 +63,29 @@ class MediaUploadTest extends TestCase
         $this->assertStringEndsWith('.webp', $media->path);
         Storage::disk('public')->assertExists($media->path);
     }
+
+    public function test_mp4_videos_up_to_50mb_are_accepted(): void
+    {
+        Storage::fake('public');
+        $this->withoutMiddleware();
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $video = UploadedFile::fake()->createWithContent('clip.mp4', $this->mp4Bytes(1024));
+        $this->actingAs($admin)->withHeader('Accept', 'application/json')
+            ->post('/admin/media/upload', ['files' => [$video], 'folder' => '/'])
+            ->assertCreated()
+            ->assertJsonPath('files.0.mime_type', 'video/mp4');
+
+        $tooLarge = UploadedFile::fake()->createWithContent('big.mp4', $this->mp4Bytes(1024))->size(51201);
+        $this->actingAs($admin)->withHeader('Accept', 'application/json')
+            ->post('/admin/media/upload', ['files' => [$tooLarge], 'folder' => '/'])
+            ->assertUnprocessable();
+    }
+
+    private function mp4Bytes(int $length): string
+    {
+        $ftyp = pack('N', 24).'ftypisom'.pack('N', 512).'isommp41';
+
+        return str_pad($ftyp.pack('N', 8).'free', $length, "\0");
+    }
 }
