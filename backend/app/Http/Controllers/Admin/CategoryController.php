@@ -18,6 +18,13 @@ use Inertia\Inertia;
 
 class CategoryController extends Controller
 {
+    /** Defaults for the product information required by Nghị định 37/2026. */
+    private const COMPLIANCE_RULES = [
+        'is_refurbished' => 'boolean',
+        'warning_info' => 'nullable|string|max:5000',
+        'usage_instructions' => 'nullable|string|max:10000',
+    ];
+
     public function index()
     {
         $categories = Category::with('parent', 'children', 'componentType')
@@ -74,7 +81,7 @@ class CategoryController extends Controller
             'warranty_packages' => 'nullable|array|max:10',
             'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
             'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
-        ] + CommissionRules::validationRules());
+        ] + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
         }
@@ -150,7 +157,7 @@ class CategoryController extends Controller
             'warranty_packages' => 'nullable|array|max:10',
             'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
             'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
-        ] + CommissionRules::validationRules());
+        ] + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
         }

@@ -25,6 +25,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProductController extends Controller
 {
+    /** Product information required by Nghị định 37/2026 (Phụ lục I). */
+    private const COMPLIANCE_RULES = [
+        'manufacture_year' => 'nullable|integer|min:1990|max:2100',
+        'is_refurbished' => 'nullable|boolean',
+        'warning_info' => 'nullable|string|max:5000',
+        'usage_instructions' => 'nullable|string|max:10000',
+    ];
+
     public function index(Request $request)
     {
         $query = Product::with(['category', 'brand', 'componentType', 'primaryImage'])
@@ -136,7 +144,7 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, false)), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
 
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
@@ -300,7 +308,7 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, true), CommissionRules::validationRules()), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), self::COMPLIANCE_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
         }
