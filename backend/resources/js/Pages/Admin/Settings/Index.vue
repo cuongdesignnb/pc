@@ -23,6 +23,7 @@ const groupLabels = {
     smtp: 'Email / SMTP',
     ai: 'AI (ChatGPT / Gemini)',
     affiliate: 'Cộng tác viên',
+    legal: 'Thông tin pháp lý',
 };
 
 const groupIcons = {

@@ -8,6 +8,7 @@ import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 import ProductFormErrors from '@/Components/ProductFormErrors.vue';
+import ProductComplianceFields from '@/Components/ProductComplianceFields.vue';
 
 const props = defineProps({
     categories: Array,
@@ -20,6 +21,7 @@ const form = useForm({
     name: '', slug: '', sku: '', category_id: '', brand_id: '', component_type_id: '',
     description: '', short_description: '', price: 0, sale_price: '', stock_quantity: 0,
     is_active: true, is_featured: false, show_on_pc_website: true, warranty_months: 12,
+    manufacture_year: '', is_refurbished: null, warning_info: '', usage_instructions: '',
     meta_title: '', meta_description: '', video_url: '',
     thumbnail: '',
     gallery: [],
@@ -219,6 +221,7 @@ function removeVariant(index) {
                         <div v-if="form.errors.warranty_months" class="text-red-400 text-xs mt-1">{{ form.errors.warranty_months }}</div>
                     </div>
                 </div>
+                <ProductComplianceFields :form="form" class="mt-4" />
             </div>
 
             <!-- Biến thể -->

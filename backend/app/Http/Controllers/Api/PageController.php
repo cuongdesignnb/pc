@@ -7,6 +7,7 @@ use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\PolicyPages;
 use Illuminate\Http\JsonResponse;
 
 class PageController extends Controller
@@ -33,9 +34,9 @@ class PageController extends Controller
                 'id' => $page->id,
                 'title' => $page->title,
                 'slug' => $page->slug,
-                'body' => $sanitizer->sanitize($page->body, $page->title),
-                'meta_title' => $page->meta_title,
-                'meta_description' => $page->meta_description,
+                'body' => $sanitizer->sanitize(PolicyPages::fill($page->body), $page->title),
+                'meta_title' => PolicyPages::fill($page->meta_title, false),
+                'meta_description' => PolicyPages::fill($page->meta_description, false),
                 'canonical_path' => $canonicalPath,
                 'updated_at' => $page->updated_at?->toIso8601String(),
             ],

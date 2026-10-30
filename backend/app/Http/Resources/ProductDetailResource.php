@@ -89,6 +89,7 @@ class ProductDetailResource extends JsonResource
             'availability_label' => $this->availability_label,
             'warranty_months' => $this->warranty_months,
             'warranty_packages' => app(\App\Services\Catalog\WarrantyPackages::class)->forProduct($this->resource),
+            'compliance' => app(\App\Services\Catalog\ProductCompliance::class)->forProduct($this->resource),
             'sold_count' => (int) $this->sold_count,
             'rating' => [
                 'average' => $reviewAverage,
