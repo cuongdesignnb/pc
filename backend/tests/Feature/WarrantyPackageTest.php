@@ -26,7 +26,8 @@ class WarrantyPackageTest extends TestCase
             'name' => 'Laptop cũ', 'slug' => 'laptop-cu', 'sort_order' => 0,
             'warranty_packages' => [['months' => 6, 'price' => 700000], ['months' => 1, 'price' => null], ['months' => 3, 'price' => 300000]],
         ])->assertSessionHasNoErrors();
-        $this->assertSame(self::PACKAGES, $category->fresh()->warranty_packages);
+        // MySQL JSON columns reorder object keys, so compare without key order.
+        $this->assertEquals(self::PACKAGES, $category->fresh()->warranty_packages);
 
         $this->actingAs($admin)->put("/admin/categories/{$category->id}", [
             'name' => 'Laptop cũ', 'slug' => 'laptop-cu', 'sort_order' => 0,
@@ -116,7 +117,7 @@ class WarrantyPackageTest extends TestCase
             'price' => 14_010_000, 'stock_quantity' => 5,
             'warranty_packages' => [['months' => 6, 'price' => 1_000_000], ['months' => 1, 'price' => 0], ['months' => 3, 'percent' => '2.5']],
         ])->assertSessionHasNoErrors();
-        $this->assertSame([['months' => 1, 'price' => 0], ['months' => 3, 'percent' => 2.5], ['months' => 6, 'price' => 1000000]], $product->fresh()->warranty_packages);
+        $this->assertEquals([['months' => 1, 'price' => 0], ['months' => 3, 'percent' => 2.5], ['months' => 6, 'price' => 1000000]], $product->fresh()->warranty_packages);
 
         $this->getJson('/api/v1/products/'.$product->slug)
             ->assertJsonPath('product.warranty_packages', [['months' => 1, 'price' => 0, 'percent' => null], ['months' => 3, 'price' => 351000, 'percent' => 2.5], ['months' => 6, 'price' => 1000000, 'percent' => null]]);
