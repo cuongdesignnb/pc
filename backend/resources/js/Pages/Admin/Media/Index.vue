@@ -219,6 +219,33 @@ function submitUpload() {
     });
 }
 
+// ---- Upload from links (F2) ----
+const showUrlModal = ref(false);
+const urlText = ref('');
+const urlUploading = ref(false);
+const urlErrors = ref([]);
+function submitUrlUpload() {
+    const urls = urlText.value.split(/\s+/).map(u => u.trim()).filter(Boolean);
+    if (!urls.length) return;
+    urlUploading.value = true;
+    urlErrors.value = [];
+    router.post('/admin/media/upload-url', { urls, folder: currentFolder.value }, {
+        preserveScroll: true,
+        onSuccess: (inertiaPage) => {
+            const errors = inertiaPage.props.errors?.urls;
+            urlErrors.value = errors ? [].concat(errors) : [];
+            if (!urlErrors.value.length) {
+                showUrlModal.value = false;
+                urlText.value = '';
+            }
+        },
+        onError: (errors) => {
+            urlErrors.value = Object.values(errors).flat();
+        },
+        onFinish: () => { urlUploading.value = false; },
+    });
+}
+
 // ---- Delete ----
 function deleteSelected() {
     if (!selectedItems.value.length) return;
@@ -289,6 +316,10 @@ function isImage(item) {
             {{ flash.success }}
         </div>
 
+        <div v-if="flash?.error" class="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-sm">
+            {{ flash.error }}
+        </div>
+
         <!-- Toolbar -->
         <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-4 mb-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -297,6 +328,10 @@ function isImage(item) {
                     <button @click="triggerFileInput" class="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm font-medium">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
                         Upload
+                    </button>
+                    <button @click="showUrlModal = true; urlErrors = []" class="inline-flex items-center gap-2 px-3 py-2 border border-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-800/40 transition-colors text-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                        Tải ảnh từ link
                     </button>
                     <input id="media-file-input" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip" class="hidden" @change="onFileSelected">
 
@@ -413,8 +448,16 @@ function isImage(item) {
                             <div class="px-2 py-1.5">
                                 <p class="text-xs text-slate-300 truncate font-medium">{{ item.name }}</p>
                                 <p class="text-[10px] text-slate-500">{{ item.human_size }}</p>
-                                <p v-if="missingAlt(item)" class="text-[10px] text-amber-400">Chưa có alt</p>
-                                <p v-else-if="isImage(item)" class="text-[10px] text-slate-500 truncate" :title="item.alt">Alt: {{ item.alt }}</p>
+                                <div v-if="isImage(item)" class="mt-1" @click.stop @dblclick.stop>
+                                    <input :value="item.alt === item.name ? '' : (item.alt || '')" @keydown.enter.prevent="$event.target.blur()"
+                                        @blur="saveAlt(item, $event.target.value)" placeholder="Nhập alt ảnh…" :title="item.alt || ''"
+                                        :class="missingAlt(item) ? 'border-amber-500/60 placeholder-amber-400/80' : 'border-slate-700/50'"
+                                        class="w-full bg-transparent border rounded px-1.5 py-0.5 text-[11px] text-slate-200 focus:ring-1 focus:ring-cyan-500/50">
+                                    <p v-if="savingAlt[item.id] === 'saving'" class="text-[10px] text-slate-500">Đang lưu…</p>
+                                    <p v-else-if="savingAlt[item.id] === 'saved'" class="text-[10px] text-emerald-400">Đã lưu alt</p>
+                                    <p v-else-if="savingAlt[item.id] === 'error'" class="text-[10px] text-red-400">Lưu alt lỗi</p>
+                                    <p v-else-if="missingAlt(item)" class="text-[10px] text-amber-400">Chưa có alt</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -621,6 +664,28 @@ function isImage(item) {
                             <button @click="saveDetail" class="flex-1 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium transition-colors">Lưu thay đổi</button>
                             <button @click="deleteSingle(detailItem)" class="px-4 py-2 text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 text-sm font-medium transition-colors">Xoá</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- ====== UPLOAD FROM LINKS MODAL ====== -->
+        <Teleport to="body">
+            <div v-if="showUrlModal" class="fixed inset-0 z-[60] flex items-center justify-center">
+                <div class="absolute inset-0 bg-black/50" @click="!urlUploading && (showUrlModal = false)"></div>
+                <div class="relative bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
+                    <h3 class="text-lg font-semibold text-slate-200 mb-1">Tải ảnh từ link</h3>
+                    <p class="text-xs text-slate-500 mb-3">Dán link trực tiếp tới file ảnh (JPG, PNG, GIF, WebP, tối đa 10 MB), mỗi dòng một link, tối đa 20 link. Ảnh được lưu vào thư mục đang mở và tự chuyển sang WebP.</p>
+                    <textarea v-model="urlText" rows="6" placeholder="https://example.com/anh-laptop.jpg"
+                        class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"></textarea>
+                    <ul v-if="urlErrors.length" class="mt-2 space-y-1 text-xs text-red-400 max-h-32 overflow-y-auto">
+                        <li v-for="(err, ei) in urlErrors" :key="ei" class="break-all">{{ err }}</li>
+                    </ul>
+                    <div class="flex justify-end gap-3 mt-4">
+                        <button @click="showUrlModal = false" :disabled="urlUploading" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg transition-colors disabled:opacity-50">Đóng</button>
+                        <button @click="submitUrlUpload" :disabled="urlUploading || !urlText.trim()" class="px-4 py-2 text-sm bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 transition-colors font-medium">
+                            {{ urlUploading ? 'Đang tải…' : 'Tải ảnh' }}
+                        </button>
                     </div>
                 </div>
             </div>

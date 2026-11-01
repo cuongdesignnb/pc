@@ -200,6 +200,11 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <div class="mt-4 space-y-4 text-sm">
                         <label class="flex items-center justify-between gap-4 text-slate-300"><span>Tích hợp chính</span><input v-model="flagsForm.is_enabled" :disabled="!configuration.connected" type="checkbox"></label>
                         <label class="flex items-center justify-between gap-4 text-slate-300"><span>Đồng bộ sản phẩm</span><input v-model="flagsForm.product_sync_enabled" :disabled="!flagsForm.is_enabled || !configuration.capabilities?.products" type="checkbox"></label>
+                        <p class="rounded-md border border-slate-700/60 bg-slate-800/40 p-3 text-xs text-slate-400">
+                            Sản phẩm đã có trên web: mỗi lần đồng bộ chỉ cập nhật giá, tồn kho, tên và trạng thái còn/hết hàng theo KIOT.
+                            <strong class="text-slate-200">Không ghi đè danh mục</strong> và ảnh đã sắp xếp trên web.
+                            Danh mục và ảnh KIOT chỉ dùng khi tạo sản phẩm mới (hoặc sản phẩm chưa có danh mục/ảnh).
+                        </p>
                         <label class="flex items-center justify-between gap-4 text-slate-300"><span>Đồng bộ đơn hàng</span><input v-model="flagsForm.order_sync_enabled" :disabled="!flagsForm.is_enabled || !configuration.capabilities?.orders" type="checkbox"></label>
                         <div v-if="flagsForm.order_sync_enabled && !configuration.order_sync_enabled" class="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
                             <p>Bật Order Sync sẽ cho phép website tạo và huỷ đơn tại KIOT.</p>

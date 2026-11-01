@@ -182,6 +182,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
     Route::get('media/browse', [MediaController::class, 'browse'])->name('media.browse');
     Route::post('media/upload', [MediaController::class, 'upload'])->name('media.upload');
+    Route::post('media/upload-url', [MediaController::class, 'uploadFromUrl'])->name('media.upload-url');
     Route::post('media/bulk-delete', [MediaController::class, 'bulkDestroy'])->name('media.bulk-delete');
     Route::post('media/folders', [MediaController::class, 'createFolder'])->name('media.create-folder');
     Route::put('media/{medium}', [MediaController::class, 'update'])->name('media.update');

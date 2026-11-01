@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Media;
+use App\Services\Media\RemoteImageDownloader;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -72,73 +74,7 @@ class MediaController extends Controller
         $uploaded = [];
 
         foreach ($request->file('files') as $file) {
-            $originalName = $file->getClientOriginalName();
-            $name = pathinfo($originalName, PATHINFO_FILENAME);
-            $extension = $file->getClientOriginalExtension();
-            $mime = $file->getMimeType();
-            $size = $file->getSize();
-
-            // Check if image needs WebP conversion
-            $shouldConvertToWebP = in_array(strtolower($extension), ['jpg', 'jpeg', 'png', 'gif'])
-                                   && str_starts_with($mime, 'image/');
-
-            // Convert to WebP if applicable
-            if ($shouldConvertToWebP) {
-                $webpPath = $this->convertToWebP($file);
-                if ($webpPath) {
-                    $file = new \Illuminate\Http\File($webpPath);
-                    $extension = 'webp';
-                    $mime = 'image/webp';
-                    $size = filesize($webpPath);
-                }
-            }
-
-            // Generate unique filename
-            $fileName = Str::slug($name).'-'.Str::random(6).'.'.$extension;
-            $storagePath = ltrim($folder, '/');
-            $storagePath = $storagePath === '' ? 'media' : 'media/'.$storagePath;
-
-            // Store file
-            $path = Storage::disk('public')->putFileAs($storagePath, $file, $fileName);
-
-            // Get image dimensions
-            $width = null;
-            $height = null;
-            if (str_starts_with($mime, 'image/') && $mime !== 'image/svg+xml') {
-                try {
-                    $dimensions = getimagesize($file->getRealPath());
-                    if ($dimensions) {
-                        $width = $dimensions[0];
-                        $height = $dimensions[1];
-                    }
-                } catch (\Exception $e) {
-                    // skip
-                }
-
-                // Generate thumbnail (300px wide)
-                $this->createThumbnail($file, $storagePath, $fileName);
-            }
-
-            $media = Media::create([
-                'name' => $name,
-                'file_name' => $originalName,
-                'path' => $path,
-                'disk' => 'public',
-                'mime_type' => $mime,
-                'size' => $size,
-                'width' => $width,
-                'height' => $height,
-                'alt' => $name,
-                'folder' => $folder,
-                'uploaded_by' => $request->user()?->id,
-            ]);
-
-            $uploaded[] = $media;
-
-            // Clean up temporary WebP file
-            if ($shouldConvertToWebP && isset($webpPath) && file_exists($webpPath)) {
-                @unlink($webpPath);
-            }
+            $uploaded[] = $this->storeFile($file, $folder, $request->user()?->id);
         }
 
         if (! $request->headers->has('X-Inertia') && ($request->wantsJson() || $request->ajax())) {
@@ -146,6 +82,119 @@ class MediaController extends Controller
         }
 
         return back()->with('success', count($uploaded).' file đã được upload.');
+    }
+
+    /**
+     * Download images from links (F2) and store them like uploaded files.
+     */
+    public function uploadFromUrl(Request $request, RemoteImageDownloader $downloader)
+    {
+        $validated = $request->validate([
+            'urls' => 'required|array|min:1|max:20',
+            'urls.*' => 'required|url:http,https|max:2048',
+            'folder' => 'nullable|string|max:255',
+        ], ['urls.*.url' => 'Link ảnh phải bắt đầu bằng http:// hoặc https://.']);
+
+        $folder = $validated['folder'] ?? '/';
+        $uploaded = [];
+        $failed = [];
+        foreach (array_unique($validated['urls']) as $url) {
+            try {
+                $file = $downloader->download($url);
+            } catch (\RuntimeException $e) {
+                $failed[] = ['url' => $url, 'message' => $e->getMessage()];
+
+                continue;
+            }
+            try {
+                $uploaded[] = $this->storeFile($file, $folder, $request->user()?->id);
+            } finally {
+                @unlink($file->getPathname());
+            }
+        }
+
+        if (! $request->headers->has('X-Inertia') && ($request->wantsJson() || $request->ajax())) {
+            return response()->json(['files' => $uploaded, 'failed' => $failed], $uploaded === [] ? 422 : 201);
+        }
+
+        $message = count($uploaded).' ảnh đã được tải từ link.';
+        if ($failed !== []) {
+            return back()->with($uploaded === [] ? 'error' : 'success', $message)
+                ->withErrors(['urls' => collect($failed)->map(fn (array $f) => $f['url'].': '.$f['message'])->all()]);
+        }
+
+        return back()->with('success', $message);
+    }
+
+    private function storeFile(UploadedFile $file, string $folder, ?int $userId): Media
+    {
+        $originalName = $file->getClientOriginalName();
+        $name = pathinfo($originalName, PATHINFO_FILENAME);
+        $extension = $file->getClientOriginalExtension();
+        $mime = $file->getMimeType();
+        $size = $file->getSize();
+
+        // Check if image needs WebP conversion
+        $shouldConvertToWebP = in_array(strtolower($extension), ['jpg', 'jpeg', 'png', 'gif'])
+                               && str_starts_with($mime, 'image/');
+
+        // Convert to WebP if applicable
+        if ($shouldConvertToWebP) {
+            $webpPath = $this->convertToWebP($file);
+            if ($webpPath) {
+                $file = new \Illuminate\Http\File($webpPath);
+                $extension = 'webp';
+                $mime = 'image/webp';
+                $size = filesize($webpPath);
+            }
+        }
+
+        // Generate unique filename
+        $fileName = Str::slug($name).'-'.Str::random(6).'.'.$extension;
+        $storagePath = ltrim($folder, '/');
+        $storagePath = $storagePath === '' ? 'media' : 'media/'.$storagePath;
+
+        // Store file
+        $path = Storage::disk('public')->putFileAs($storagePath, $file, $fileName);
+
+        // Get image dimensions
+        $width = null;
+        $height = null;
+        if (str_starts_with($mime, 'image/') && $mime !== 'image/svg+xml') {
+            try {
+                $dimensions = getimagesize($file->getRealPath());
+                if ($dimensions) {
+                    $width = $dimensions[0];
+                    $height = $dimensions[1];
+                }
+            } catch (\Exception $e) {
+                // skip
+            }
+
+            // Generate thumbnail (300px wide)
+            $this->createThumbnail($file, $storagePath, $fileName);
+        }
+
+        $media = Media::create([
+            'name' => $name,
+            'file_name' => $originalName,
+            'path' => $path,
+            'disk' => 'public',
+            'mime_type' => $mime,
+            'size' => $size,
+            'width' => $width,
+            'height' => $height,
+            'alt' => $name,
+            'folder' => $folder,
+            'uploaded_by' => $userId,
+        ]);
+
+        // Clean up temporary WebP file
+        if ($shouldConvertToWebP && isset($webpPath) && file_exists($webpPath)) {
+            @unlink($webpPath);
+        }
+
+        return $media;
     }
 
     /**
