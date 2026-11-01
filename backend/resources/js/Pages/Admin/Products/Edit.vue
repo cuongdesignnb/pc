@@ -9,6 +9,7 @@ import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 import ProductFormErrors from '@/Components/ProductFormErrors.vue';
 import ProductComplianceFields from '@/Components/ProductComplianceFields.vue';
+import WarrantyPackagesField, { warrantyRows, warrantyPayload } from '@/Components/WarrantyPackagesField.vue';
 import AffiliateCommissionField, { commissionForm } from '@/Components/AffiliateCommissionField.vue';
 
 const props = defineProps({
@@ -22,6 +23,8 @@ const props = defineProps({
 // Get thumbnail and gallery from product images
 const primaryImg = (props.product.images || []).find(i => i.is_primary);
 const galleryImgs = (props.product.images || []).filter(i => !i.is_primary).map(i => i.url);
+// Alt text per image URL, kept for images that stay in the gallery.
+const imageAlts = Object.fromEntries((props.product.images || []).filter(i => i.url).map(i => [i.url, i.alt || '']));
 
 // Build existing compatibility specs map
 const existingSpecs = {};
@@ -50,11 +53,13 @@ const form = useForm({
     warning_info: props.product.warning_info || '',
     usage_instructions: props.product.usage_instructions || '',
     affiliate_commission: commissionForm(props.product.affiliate_commission),
+    warranty_packages: warrantyRows(props.product.warranty_packages),
     meta_title: props.product.meta_title || '',
     meta_description: props.product.meta_description || '',
     video_url: props.product.video_url || '',
     thumbnail: primaryImg ? primaryImg.url : '',
     gallery: galleryImgs,
+    image_alts: imageAlts,
     variants: (props.product.variants || []).map(variant => ({
         id: variant.id,
         name: variant.name,
@@ -88,6 +93,10 @@ const form = useForm({
     specifications_text: props.product.specifications_text || '',
     compatibility_specs: [],
 });
+
+// Images in the order they are saved: thumbnail first, then the gallery.
+const pickedImages = computed(() => [...new Set([form.thumbnail, ...(form.gallery || [])].filter(Boolean))]);
+watch(pickedImages, urls => urls.forEach(url => { if (form.image_alts[url] === undefined) form.image_alts[url] = ''; }), { immediate: true });
 
 // Get spec keys for selected component type
 const selectedComponentType = computed(() => {
@@ -137,7 +146,11 @@ function normalizeVariantAttributes() {
 
 function submit() {
     if (!isKiot.value) normalizeVariantAttributes();
-    form.put(`/admin/products/${props.product.id}`, {
+    form.transform(data => ({
+        ...data,
+        warranty_packages: warrantyPayload(data.warranty_packages),
+        image_alts: pickedImages.value.map(url => ({ url, alt: data.image_alts[url] || '' })),
+    })).put(`/admin/products/${props.product.id}`, {
         preserveScroll: true,
         onError: () => formErrors.value?.reveal(),
     });
@@ -244,6 +257,15 @@ function removeVariant(index) {
                     <label class="block text-sm font-medium text-slate-300 mb-2">Thư viện ảnh sản phẩm</label>
                     <MediaPicker v-model="form.gallery" :multiple="true" label="Thêm ảnh vào thư viện" />
                 </div>
+                <div v-if="pickedImages.length">
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Mô tả ảnh (alt) cho SEO</label>
+                    <p class="text-xs text-slate-500 mb-2">Mô tả ngắn nội dung ảnh, ví dụ "Dell Latitude 7420 mặt trước". Để trống thì dùng tên sản phẩm.</p>
+                    <div v-for="url in pickedImages" :key="url" class="flex items-center gap-3 mb-2">
+                        <img :src="url" alt="" class="w-12 h-12 object-cover rounded border border-slate-700/50 shrink-0">
+                        <input v-model="form.image_alts[url]" maxlength="255" :placeholder="form.name" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div v-if="form.errors['image_alts']" class="text-red-400 text-xs mt-1">{{ form.errors['image_alts'] }}</div>
+                </div>
             </div>
 
             <!-- Giá & Kho -->
@@ -259,6 +281,7 @@ function removeVariant(index) {
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Bảo hành (tháng)</label><input v-model="form.warranty_months" type="number" min="0" step="1" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 </div>
                 <AffiliateCommissionField v-model="form.affiliate_commission" :errors="form.errors" inherit-hint="Để trống thì dùng mức hoa hồng của danh mục." />
+                <WarrantyPackagesField v-model="form.warranty_packages" :errors="form.errors" hint="Gói riêng cho sản phẩm này. Để trống thì dùng gói của danh mục, rồi gói mặc định trong Cài đặt → Bảo hành." />
                 <ProductComplianceFields :form="form" />
                 <dl v-if="isKiot" class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm md:grid-cols-4">
                     <div><dt class="text-slate-500">Barcode</dt><dd class="mt-1 text-slate-200">{{ product.barcode || '—' }}</dd></div>

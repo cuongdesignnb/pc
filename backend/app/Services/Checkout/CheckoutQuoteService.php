@@ -283,7 +283,7 @@ class CheckoutQuoteService
             $warranty = null;
             if ($valid) {
                 try {
-                    $warranty = $this->warranties->select($product, $item['warranty_months'] ?? null);
+                    $warranty = $this->warranties->select($product, $item['warranty_months'] ?? null, $variant?->display_price);
                 } catch (InvalidWarrantyPackage $exception) {
                     $issues[] = $this->issue('items', 'WARRANTY_PACKAGE_UNAVAILABLE', $exception->getMessage());
 

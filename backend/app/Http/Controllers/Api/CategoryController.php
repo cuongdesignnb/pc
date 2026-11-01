@@ -30,6 +30,8 @@ class CategoryController extends Controller
     {
         $categories = Category::with(['children' => function (Relation $query) {
             $query->visibleOnStorefront()->orderBy('sort_order');
+        }, 'children.children' => function (Relation $query) {
+            $query->visibleOnStorefront()->orderBy('sort_order');
         }])
             ->whereNull('parent_id')
             ->visibleOnStorefront()
@@ -39,7 +41,12 @@ class CategoryController extends Controller
         return response()->json($categories->map(function (Category $category): array {
             return array_merge($this->basicCategoryPayload($category), [
                 'children' => $category->children
-                    ->map(fn (Category $child): array => $this->basicCategoryPayload($child))
+                    ->map(fn (Category $child): array => array_merge($this->basicCategoryPayload($child), [
+                        'children' => $child->children
+                            ->map(fn (Category $grandchild): array => $this->basicCategoryPayload($grandchild))
+                            ->values()
+                            ->all(),
+                    ]))
                     ->values()
                     ->all(),
             ]);
@@ -65,11 +72,10 @@ class CategoryController extends Controller
             ->get();
 
         $sections = [];
+        $tree = Category::query()->visibleOnStorefront()->get(['id', 'parent_id'])->groupBy('parent_id');
 
         foreach ($parents as $parent) {
-            $categoryIds = collect([$parent->id])
-                ->merge($parent->children->pluck('id'))
-                ->all();
+            $categoryIds = $this->withDescendants([$parent->id], $tree);
 
             $productCount = $this->storefrontProductQuery($categoryIds)->count();
             if ($productCount === 0) {
@@ -112,22 +118,24 @@ class CategoryController extends Controller
             ->visibleOnStorefront()
             ->firstOrFail();
 
-        $categoryIds = collect([$category->id])
-            ->merge($category->children->pluck('id'))
-            ->values();
-        $categoryIdsArray = $categoryIds->all();
-        $childProductCounts = $this->childProductCounts($category->children);
+        // Products of the category and of every sub-category below it
+        // (Laptop cũ → Dell → Latitude).
+        $tree = Category::query()->visibleOnStorefront()->get(['id', 'parent_id'])->groupBy('parent_id');
+        $categoryIdsArray = $this->withDescendants([$category->id], $tree);
+        $childProductCounts = $this->childProductCounts($category->children, $tree);
 
         $assignedFilters = $category->filters()
             ->where('is_active', true)
             ->with(['activeValues'])
             ->get();
 
-        if ($assignedFilters->isEmpty() && $category->parent_id) {
-            $assignedFilters = Category::find($category->parent_id)?->filters()
+        // A sub-category without its own filters uses the nearest parent's.
+        for ($ancestor = $category->parent, $depth = 0; $assignedFilters->isEmpty() && $ancestor && $depth < 5; $depth++) {
+            $assignedFilters = $ancestor->filters()
                 ->where('is_active', true)
                 ->with(['activeValues'])
-                ->get() ?? collect();
+                ->get();
+            $ancestor = $ancestor->parent;
         }
 
         $query = $this->productCardQuery($categoryIdsArray);
@@ -136,7 +144,7 @@ class CategoryController extends Controller
             $subCategory = $category->children
                 ->firstWhere('slug', (string) $request->input('sub_category'));
             if ($subCategory) {
-                $query->where('category_id', $subCategory->id);
+                $query->whereIn('category_id', $this->withDescendants([$subCategory->id], $tree));
             }
         }
 
@@ -224,7 +232,8 @@ class CategoryController extends Controller
         $products = $query->paginate($perPage);
         $productIds = $products->getCollection()->pluck('id')->all();
 
-        $recommendations = $this->productCardQuery($categoryIdsArray)
+        // Suggestions are only machines the customer can buy now.
+        $recommendations = $this->applyInStock($this->productCardQuery($categoryIdsArray))
             ->when($productIds !== [], fn (Builder $recommendationQuery) => $recommendationQuery->whereNotIn('id', $productIds))
             ->orderByDesc('is_featured')
             ->orderByDesc('sold_count')
@@ -446,18 +455,48 @@ class CategoryController extends Controller
     }
 
     /** @param Collection<int, Category> $children */
-    private function childProductCounts(Collection $children): Collection
+    /** Product count of each child, including the child's own sub-categories. */
+    private function childProductCounts(Collection $children, Collection $tree): Collection
     {
         if ($children->isEmpty()) {
             return collect();
         }
 
-        return Product::query()
-            ->whereIn('category_id', $children->pluck('id'))
+        $childOf = [];
+        foreach ($children as $child) {
+            foreach ($this->withDescendants([$child->id], $tree) as $id) {
+                $childOf[$id] = $child->id;
+            }
+        }
+        $counts = Product::query()
+            ->whereIn('category_id', array_keys($childOf))
             ->visibleOnStorefront()
             ->selectRaw('category_id, COUNT(*) as aggregate')
             ->groupBy('category_id')
             ->pluck('aggregate', 'category_id');
+
+        return $counts->reduce(function (Collection $totals, $count, $categoryId) use ($childOf): Collection {
+            $child = $childOf[$categoryId];
+
+            return $totals->put($child, (int) $totals->get($child, 0) + (int) $count);
+        }, collect());
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @param  Collection<int|string, Collection<int, Category>>  $tree  visible categories grouped by parent_id
+     * @return list<int>
+     */
+    private function withDescendants(array $ids, Collection $tree): array
+    {
+        $all = $ids;
+        for ($level = $ids, $depth = 0; $level !== [] && $depth < 5; $depth++) {
+            $level = collect($level)->flatMap(fn (int $id) => $tree->get($id, collect())->pluck('id'))
+                ->map(fn ($id): int => (int) $id)->diff($all)->values()->all();
+            $all = array_merge($all, $level);
+        }
+
+        return $all;
     }
 
     private function categoryPayload(Category $category, Collection $childProductCounts): array
@@ -466,6 +505,8 @@ class CategoryController extends Controller
             $this->basicCategoryPayload($category, $category->description),
             [
                 'parent' => $category->parent ? $this->basicCategoryPayload($category->parent, $category->parent->description) : null,
+                // Root first, for the breadcrumb of a third-level category.
+                'ancestors' => $this->ancestors($category),
                 'children' => $category->children->map(function (Category $child) use ($childProductCounts): array {
                     return array_merge(
                         $this->basicCategoryPayload($child, $child->description),
@@ -475,6 +516,17 @@ class CategoryController extends Controller
                 'faq' => FaqExtractor::extract($category->description),
             ],
         );
+    }
+
+    private function ancestors(Category $category): array
+    {
+        $ancestors = [];
+        for ($parent = $category->parent, $depth = 0; $parent && $depth < 5; $depth++) {
+            array_unshift($ancestors, $this->basicCategoryPayload($parent));
+            $parent = $parent->parent;
+        }
+
+        return $ancestors;
     }
 
     private function basicCategoryPayload(Category $category, ?string $description = null): array

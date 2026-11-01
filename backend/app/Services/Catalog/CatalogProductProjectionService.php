@@ -197,13 +197,7 @@ class CatalogProductProjectionService
 
     private function externalId(Product $product): string
     {
-        if ($product->remote_product_id !== null) {
-            return 'kiot:'.(int) $product->remote_product_id;
-        }
-
-        $sku = Str::lower(trim((string) $product->sku));
-
-        return $sku === '' ? '' : 'sku:'.$sku;
+        return $product->catalogContentId();
     }
 
     private function productUrl(Product $product): string

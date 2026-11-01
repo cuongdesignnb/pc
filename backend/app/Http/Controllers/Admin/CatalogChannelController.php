@@ -391,6 +391,9 @@ class CatalogChannelController extends Controller
                 CatalogChannelConnection::META_CATALOG => route('feeds.meta.products'),
                 default => null,
             },
+            'subset_paths' => $connection->channel === CatalogChannelConnection::META_CATALOG
+                ? array_map(fn (string $subset): string => route('feeds.meta.subset', ['subset' => $subset]), array_keys((array) config('catalog.meta_catalog.subsets', [])))
+                : [],
             'last_tested_at' => $connection->last_tested_at,
             'last_success_at' => $connection->last_success_at,
             'last_error_at' => $connection->last_error_at,

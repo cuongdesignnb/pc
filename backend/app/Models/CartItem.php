@@ -51,7 +51,7 @@ class CartItem extends Model
     public function warrantyPackage(): ?array
     {
         try {
-            return app(WarrantyPackages::class)->select($this->product, $this->warranty_months);
+            return app(WarrantyPackages::class)->select($this->product, $this->warranty_months, $this->variant?->display_price);
         } catch (InvalidWarrantyPackage) {
             return null;
         }

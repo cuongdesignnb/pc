@@ -27,6 +27,13 @@ return [
     'meta_catalog' => [
         'enabled' => env('META_CATALOG_ENABLED', false),
         'artifact' => 'meta-products.csv',
+        // Smaller copies of the Meta feed, rebuilt with it, for tools that
+        // cannot filter a catalog themselves (Botcake). Each keeps only the
+        // in-stock rows of products in the category tree of `category_slug`
+        // and is served at /feeds/meta/{name}.csv with the same token.
+        'subsets' => [
+            'laptop-cu-con-hang' => ['category_slug' => env('META_SUBSET_USED_LAPTOP_CATEGORY', 'laptop-cu')],
+        ],
         'test_mode' => env('META_CATALOG_TEST_MODE', true),
         // LaptopPlus' legacy KIOT contract does not currently provide a
         // separate brand field. These reviewed aliases allow Meta-only

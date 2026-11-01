@@ -291,6 +291,7 @@ class OrderController extends Controller
                 'total' => $item->total,
                 'warranty_months' => $item->warranty_months,
                 'warranty_price' => (int) $item->warranty_price,
+                'catalog_content_id' => $item->product?->catalogContentId($item->variant_id) ?: null,
             ])->values()->all();
         }
 

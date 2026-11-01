@@ -12,8 +12,10 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 
 /**
- * Works out which CTV a checkout belongs to and the first-order referral
- * discount, then records the customer and commission once the order exists.
+ * Works out which CTV a checkout belongs to and the referral discount, then
+ * records the customer and commission once the order exists. Every order of
+ * a CTV's customer gets the discount: laptop orders always, other orders from
+ * the minimum total set in Cài đặt.
  *
  * A phone number that already belongs to a CTV stays with that CTV whatever
  * code is typed; only an admin can move it.
@@ -56,9 +58,6 @@ class AffiliateCheckoutService
         $affiliate->loadMissing('user');
         $result['affiliate'] = $affiliate;
         $result['code'] = $affiliate->code;
-        if ($customer?->first_discount_order_id) {
-            return $result;
-        }
         if ($this->containsLaptop($productIds) || $subtotal >= $this->minNonLaptopSubtotal()) {
             $result['discount'] = min($subtotal, max(0, (int) Setting::get('affiliate_referral_discount', 200000)));
         } else {

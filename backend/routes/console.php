@@ -75,3 +75,8 @@ Schedule::command('affiliate:approve-commissions')
     ->hourly()
     ->withoutOverlapping()
     ->onOneServer();
+
+Schedule::command('affiliate:create-payouts')
+    ->dailyAt('08:00')
+    ->withoutOverlapping()
+    ->onOneServer();

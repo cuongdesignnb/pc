@@ -126,6 +126,51 @@ XML);
             ->assertStatus(304);
     }
 
+    public function test_meta_build_writes_an_in_stock_used_laptop_subset(): void
+    {
+        $other = $this->category();
+        $used = Category::create([
+            'provider' => 'kiot', 'remote_category_id' => 2, 'name' => 'Laptop cũ', 'slug' => 'laptop-cu',
+            'is_active' => true, 'show_on_pc_website' => true, 'provider_sync_status' => 'active',
+        ]);
+        $dell = Category::create([
+            'provider' => 'kiot', 'remote_category_id' => 3, 'parent_id' => $used->id, 'name' => 'Dell', 'slug' => 'laptop-cu-dell',
+            'is_active' => true, 'show_on_pc_website' => true, 'provider_sync_status' => 'active',
+        ]);
+        foreach ([
+            [$used, 21, []],
+            [$dell, 22, []],
+            [$dell, 23, ['kiot_available_quantity' => 0, 'stock_quantity' => 0]],
+            [$other, 24, []],
+        ] as [$category, $remoteId, $overrides]) {
+            $this->product($category, $remoteId, $overrides + ['sku' => "SKU-{$remoteId}", 'slug' => "laptop-{$remoteId}"])
+                ->images()->create(['url' => "https://cdn.laptopplus.test/{$remoteId}.jpg", 'is_primary' => true]);
+        }
+
+        app(MetaCatalogFeedBuilder::class)->build();
+
+        $full = Storage::disk('local')->get('catalog-feed-tests/meta-products.csv');
+        $this->assertStringContainsString('kiot:23', $full);
+        $subset = Storage::disk('local')->get('catalog-feed-tests/meta-laptop-cu-con-hang.csv');
+        $this->assertSame(MetaCatalogCsvRenderer::HEADERS, str_getcsv(strtok($subset, '
+'), ',', '"', ''));
+        $this->assertStringContainsString('kiot:21', $subset);
+        $this->assertStringContainsString('kiot:22', $subset);
+        $this->assertStringNotContainsString('kiot:23', $subset);
+        $this->assertStringNotContainsString('kiot:24', $subset);
+        // The Pixel sends the same id as the feed row.
+        $this->getJson('/api/v1/products/laptop-22')->assertJsonPath('product.catalog_content_id', 'kiot:22');
+
+        $connection = CatalogChannelConnection::where('channel', CatalogChannelConnection::META_CATALOG)->firstOrFail();
+        $connection->update(['status' => 'configured', 'is_enabled' => true, 'configuration_encrypted' => []]);
+        $token = app(CatalogChannelManager::class)->rotateFeedToken($connection);
+        $this->get('/feeds/meta/laptop-cu-con-hang.csv')->assertNotFound();
+        $this->get('/feeds/meta/khac.csv?token='.$token)->assertNotFound();
+        $this->get('/feeds/meta/laptop-cu-con-hang.csv?token='.$token)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+    }
+
     private function category(): Category
     {
         return Category::create([

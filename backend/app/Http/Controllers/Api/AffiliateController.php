@@ -6,15 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Models\Affiliate;
 use App\Models\AffiliateClick;
 use App\Models\AffiliateCommission;
+use App\Models\AffiliatePayout;
 use App\Models\Product;
 use App\Models\Setting;
 use App\Services\Affiliate\CommissionRules;
 use App\Services\Affiliate\CommissionService;
+use App\Services\Affiliate\PayoutService;
 use App\Services\Affiliate\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 /** Storefront side of the CTV program: link clicks, sign-up and the CTV's own dashboard. */
 class AffiliateController extends Controller
@@ -104,7 +107,31 @@ class AffiliateController extends Controller
                 ])->values(),
                 'meta' => ['current_page' => $history->currentPage(), 'last_page' => $history->lastPage(), 'total' => $history->total()],
             ],
+            'payouts' => $affiliate->payouts()->latest('id')->limit(20)->get()
+                ->map(fn (AffiliatePayout $payout) => [
+                    'id' => $payout->id,
+                    'amount' => (int) $payout->amount,
+                    'status' => $payout->status,
+                    'bank_account_number' => $payout->bank_account_number,
+                    'paid_at' => $payout->paid_at?->toIso8601String(),
+                    'created_at' => $payout->created_at?->toIso8601String(),
+                ])->values(),
         ]);
+    }
+
+    /** The CTV withdraws the whole available balance; staff then transfer it. */
+    public function requestPayout(Request $request, PayoutService $payouts): JsonResponse
+    {
+        $affiliate = $request->user()->affiliate;
+        abort_unless($affiliate, 404);
+
+        try {
+            $payout = $payouts->request($affiliate);
+        } catch (InvalidArgumentException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json(['payout' => ['id' => $payout->id, 'amount' => (int) $payout->amount, 'status' => $payout->status]], 201);
     }
 
     public function updatePayoutSchedule(Request $request): JsonResponse

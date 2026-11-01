@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CatalogChannelConnection;
 use App\Services\Catalog\CatalogChannelManager;
+use App\Services\Catalog\Meta\MetaCatalogSubsetWriter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -29,6 +30,19 @@ class CatalogFeedController extends Controller
             $request,
             CatalogChannelConnection::META_CATALOG,
             (string) config('catalog.meta_catalog.artifact'),
+            'text/csv; charset=UTF-8',
+        );
+    }
+
+    /** A filtered copy of the Meta feed, e.g. /feeds/meta/laptop-cu-con-hang.csv. */
+    public function metaSubset(Request $request, string $subset): Response
+    {
+        abort_unless(array_key_exists($subset, (array) config('catalog.meta_catalog.subsets', [])), 404);
+
+        return $this->serve(
+            $request,
+            CatalogChannelConnection::META_CATALOG,
+            MetaCatalogSubsetWriter::artifact($subset),
             'text/csv; charset=UTF-8',
         );
     }

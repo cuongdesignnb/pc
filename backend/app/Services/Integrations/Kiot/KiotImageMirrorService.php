@@ -142,7 +142,8 @@ class KiotImageMirrorService
                     'file_size' => strlen($body),
                     'width' => (int) $dimensions[0],
                     'height' => (int) $dimensions[1],
-                    'alt_text' => $product->name,
+                    // Alt text typed in the admin survives a re-download.
+                    'alt_text' => $current?->alt_text ?: $product->name,
                     'sort_order' => (int) ($remote['sort_order'] ?? 0),
                     'is_primary' => (bool) ($remote['is_primary'] ?? false),
                     'synced_at' => now(),

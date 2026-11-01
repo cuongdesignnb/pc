@@ -7,10 +7,14 @@ use App\Models\Affiliate;
 use App\Models\AffiliateCommission;
 use App\Models\AffiliateCustomer;
 use App\Models\AffiliateExternalOrder;
+use App\Models\AffiliatePayout;
 use App\Models\Category;
 use App\Services\Affiliate\AffiliateCheckoutService;
 use App\Services\Affiliate\CommissionService;
+use App\Services\Affiliate\PayoutService;
 use App\Services\Affiliate\PhoneNumber;
+use App\Support\SimpleXlsx;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -194,6 +198,83 @@ class AffiliateController extends Controller
         });
 
         return back()->with('success', "Đã ghi nhận đơn cho CTV {$affiliate->code}.");
+    }
+
+    public function payouts(Request $request)
+    {
+        return Inertia::render('Admin/Affiliates/Payouts', [
+            'payouts' => $this->payoutQuery($request)->paginate(30)->withQueryString()->through(fn (AffiliatePayout $p) => [
+                'id' => $p->id,
+                'affiliate' => $p->affiliate ? ['id' => $p->affiliate->id, 'label' => $p->affiliate->label(), 'phone' => $p->affiliate->phone] : null,
+                'amount' => (int) $p->amount,
+                'status' => $p->status,
+                'source' => $p->source,
+                'bank_name' => $p->bank_name,
+                'bank_account_number' => $p->bank_account_number,
+                'bank_account_name' => $p->bank_account_name,
+                'paid_at' => $p->paid_at,
+                'paid_by' => $p->paidBy?->name,
+                'note' => $p->note,
+                'created_at' => $p->created_at,
+            ]),
+            'totals' => [
+                'pending' => (int) AffiliatePayout::where('status', 'pending')->sum('amount'),
+                'paid' => (int) AffiliatePayout::where('status', 'paid')->sum('amount'),
+            ],
+            'affiliates' => $this->affiliateOptions(),
+            'filters' => $request->only(['status', 'affiliate_id', 'from', 'to']),
+        ]);
+    }
+
+    public function exportPayouts(Request $request)
+    {
+        $statuses = ['pending' => 'Chờ chuyển', 'paid' => 'Đã rút', 'cancelled' => 'Đã huỷ'];
+        $rows = $this->payoutQuery($request)->get()->map(fn (AffiliatePayout $p) => [
+            $p->id,
+            $p->created_at?->format('d/m/Y H:i'),
+            $p->affiliate?->code,
+            $p->affiliate?->user?->name,
+            $p->affiliate?->phone,
+            $p->bank_name,
+            $p->bank_account_number,
+            $p->bank_account_name,
+            (int) $p->amount,
+            $statuses[$p->status] ?? $p->status,
+            $p->paid_at?->format('d/m/Y H:i'),
+            $p->paidBy?->name,
+            $p->note,
+        ]);
+
+        return SimpleXlsx::download('lenh-rut-tien-ctv-'.now()->format('Y-m-d-His').'.xlsx', [
+            'Mã lệnh', 'Ngày tạo', 'Mã CTV', 'Tên CTV', 'SĐT', 'Ngân hàng', 'Số tài khoản', 'Chủ tài khoản',
+            'Số tiền', 'Trạng thái', 'Ngày chuyển', 'Người chuyển', 'Ghi chú',
+        ], $rows);
+    }
+
+    public function markPayoutPaid(Request $request, AffiliatePayout $payout, PayoutService $payouts)
+    {
+        $validated = $request->validate(['note' => 'nullable|string|max:255']);
+        $payouts->markPaid($payout, $request->user(), $validated['note'] ?? null);
+
+        return back()->with('success', 'Đã đánh dấu đã chuyển tiền cho CTV.');
+    }
+
+    public function cancelPayout(Request $request, AffiliatePayout $payout, PayoutService $payouts)
+    {
+        $validated = $request->validate(['reason' => 'required|string|max:255']);
+        $payouts->cancel($payout, $validated['reason']);
+
+        return back()->with('success', 'Đã huỷ lệnh rút, số tiền trở lại số dư của CTV.');
+    }
+
+    private function payoutQuery(Request $request): Builder
+    {
+        return AffiliatePayout::with(['affiliate.user:id,name', 'paidBy:id,name'])
+            ->when(in_array($request->status, AffiliatePayout::STATUSES, true), fn (Builder $q) => $q->where('status', $request->status))
+            ->when($request->affiliate_id, fn (Builder $q) => $q->where('affiliate_id', (int) $request->affiliate_id))
+            ->when($request->date('from'), fn (Builder $q, $from) => $q->where('created_at', '>=', $from->startOfDay()))
+            ->when($request->date('to'), fn (Builder $q, $to) => $q->where('created_at', '<=', $to->endOfDay()))
+            ->latest('id');
     }
 
     private function affiliateOptions()
