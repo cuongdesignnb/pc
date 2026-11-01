@@ -27,7 +27,7 @@ class CategoryController extends Controller
 
     public function index()
     {
-        $categories = Category::with('parent', 'children', 'componentType')
+        $categories = Category::with('parent', 'children.children.componentType', 'children.componentType', 'componentType')
             ->whereNull('parent_id')
             ->orderBy('sort_order')
             ->get();
@@ -40,7 +40,7 @@ class CategoryController extends Controller
     public function create()
     {
         return Inertia::render('Admin/Categories/Create', [
-            'categories' => Category::whereNull('parent_id')->get(),
+            'categories' => $this->parentOptions(),
             'componentTypes' => ComponentType::orderBy('display_order')->get(),
         ]);
     }
@@ -78,12 +78,9 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
-            'warranty_packages' => 'nullable|array|max:10',
-            'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
-            'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
-        ] + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
+        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
         if (array_key_exists('warranty_packages', $validated)) {
-            $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
+            $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
@@ -102,6 +99,10 @@ class CategoryController extends Controller
             $redirects->assertLegacySlugAvailable('category', $validated['slug']);
         } catch (\LogicException $exception) {
             return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+
+        if ($error = $this->parentError($validated['parent_id'] ?? null)) {
+            return back()->withErrors(['parent_id' => $error])->withInput();
         }
 
         // Check slug collision with products
@@ -127,9 +128,7 @@ class CategoryController extends Controller
     {
         return Inertia::render('Admin/Categories/Edit', [
             'category' => $category,
-            'categories' => Category::whereNull('parent_id')
-                ->where('id', '!=', $category->id)
-                ->get(),
+            'categories' => $this->parentOptions($category),
             'componentTypes' => ComponentType::orderBy('display_order')->get(),
         ]);
     }
@@ -154,12 +153,9 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
-            'warranty_packages' => 'nullable|array|max:10',
-            'warranty_packages.*.months' => 'required|integer|min:1|max:120|distinct',
-            'warranty_packages.*.price' => 'nullable|integer|min:0|max:1000000000',
-        ] + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
+        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
         if (array_key_exists('warranty_packages', $validated)) {
-            $validated['warranty_packages'] = WarrantyPackages::normalise($validated['warranty_packages']) ?: null;
+            $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
@@ -178,6 +174,10 @@ class CategoryController extends Controller
             $redirects->assertSlugChangeAllowed($category, $validated['slug']);
         } catch (\LogicException $exception) {
             return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
+        }
+
+        if ($error = $this->parentError($validated['parent_id'] ?? null, $category)) {
+            return back()->withErrors(['parent_id' => $error])->withInput();
         }
 
         // Check slug collision with products
@@ -214,6 +214,79 @@ class CategoryController extends Controller
 
         return redirect()->route('admin.categories.index')
             ->with('success', 'Xóa danh mục thành công');
+    }
+
+    /**
+     * Categories can be three levels deep (Laptop cũ → Dell → Latitude), so a
+     * parent is a top-level or second-level category. When editing, the
+     * category itself and its own sub-categories are left out.
+     */
+    private function parentOptions(?Category $editing = null): array
+    {
+        $roots = Category::with('children')->whereNull('parent_id')->orderBy('sort_order')->orderBy('name')->get();
+        $excluded = $editing ? $this->subtreeIds($editing) : [];
+        $options = [];
+        foreach ($roots as $root) {
+            if (in_array($root->id, $excluded, true)) {
+                continue;
+            }
+            $options[] = ['id' => $root->id, 'name' => $root->name];
+            // A category with sub-categories of its own can only go one level down.
+            if ($editing && $editing->children()->exists()) {
+                continue;
+            }
+            foreach ($root->children->sortBy('sort_order') as $child) {
+                if (! in_array($child->id, $excluded, true)) {
+                    $options[] = ['id' => $child->id, 'name' => $root->name.' → '.$child->name];
+                }
+            }
+        }
+
+        return $options;
+    }
+
+    private function parentError(mixed $parentId, ?Category $editing = null): ?string
+    {
+        if (! $parentId) {
+            return null;
+        }
+        $parent = Category::with('parent')->find($parentId);
+        if (! $parent) {
+            return null;
+        }
+        if ($editing && in_array($parent->id, $this->subtreeIds($editing), true)) {
+            return 'Không thể chọn chính danh mục này hoặc danh mục con của nó làm danh mục cha.';
+        }
+        $parentDepth = $parent->parent_id ? 2 : 1;
+        $ownDepth = $editing ? $this->subtreeDepth($editing) : 1;
+        if ($parent->parent?->parent_id || $parentDepth + $ownDepth > 3) {
+            return 'Danh mục chỉ được tối đa 3 cấp (ví dụ Laptop cũ → Dell → Latitude).';
+        }
+
+        return null;
+    }
+
+    /** @return list<int> the category and everything below it */
+    private function subtreeIds(Category $category): array
+    {
+        $ids = [$category->id];
+        for ($level = [$category->id], $depth = 0; $level !== [] && $depth < 5; $depth++) {
+            $level = Category::whereIn('parent_id', $level)->pluck('id')->map(fn ($id): int => (int) $id)->all();
+            $ids = array_merge($ids, $level);
+        }
+
+        return $ids;
+    }
+
+    /** Levels in the category's own subtree: 1 alone, 2 with children, … */
+    private function subtreeDepth(Category $category): int
+    {
+        $depth = 0;
+        for ($level = [$category->id]; $level !== [] && $depth < 6; $depth++) {
+            $level = Category::whereIn('parent_id', $level)->pluck('id')->all();
+        }
+
+        return $depth;
     }
 
     /**

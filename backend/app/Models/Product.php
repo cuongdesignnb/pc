@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Product extends Model
 {
@@ -31,6 +32,7 @@ class Product extends Model
         'weight',
         'warranty_months',
         'affiliate_commission',
+        'warranty_packages',
         'manufacture_year',
         'is_refurbished',
         'warning_info',
@@ -82,6 +84,7 @@ class Product extends Model
         'weight' => 'integer',
         'warranty_months' => 'integer',
         'affiliate_commission' => 'array',
+        'warranty_packages' => 'array',
         'manufacture_year' => 'integer',
         'is_refurbished' => 'boolean',
         'views_count' => 'integer',
@@ -216,6 +219,23 @@ class Product extends Model
             'inactive', 'deleted' => 'Ngừng kinh doanh',
             default => $this->isSellableOnline() ? 'Còn hàng' : 'Tạm thời không sẵn hàng',
         };
+    }
+
+    /**
+     * The id this product (or one of its variants) has in the Meta and
+     * Google catalog feeds: kiot:123, kiot:123:variant:4 or sku:abc. The
+     * Facebook Pixel sends the same id so events match the catalog.
+     */
+    public function catalogContentId(?int $variantId = null): string
+    {
+        if ($this->remote_product_id !== null) {
+            $id = 'kiot:'.(int) $this->remote_product_id;
+        } else {
+            $sku = Str::lower(trim((string) $this->sku));
+            $id = $sku === '' ? '' : 'sku:'.$sku;
+        }
+
+        return $id !== '' && $variantId ? $id.':variant:'.$variantId : $id;
     }
 
     public function purchasableUnitPrice(): int

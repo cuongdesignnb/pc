@@ -8,10 +8,12 @@ use App\Models\Category;
 use App\Models\ComponentType;
 use App\Models\Product;
 use App\Models\ProductDetailBlock;
+use App\Models\ProductImage;
 use App\Models\ProductRelation;
 use App\Models\ProductSpecification;
 use App\Models\SpecificationKey;
 use App\Services\Affiliate\CommissionRules;
+use App\Services\Catalog\WarrantyPackages;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use App\Support\YouTubeVideo;
@@ -165,7 +167,7 @@ class ProductController extends Controller
             return back()->withErrors(['slug' => 'Slug "'.$validated['slug'].'" đã được sử dụng bởi một danh mục.'])->withInput();
         }
 
-        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
+        $productData = collect($validated)->except(['thumbnail', 'gallery', 'image_alts', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
         if (array_key_exists('video_url', $productData)) {
             $productData['video_url'] = YouTubeVideo::canonicalUrl($productData['video_url']);
         }
@@ -276,6 +278,9 @@ class ProductController extends Controller
             'thumbnail' => 'nullable|string',
             'gallery' => 'nullable|array',
             'gallery.*' => 'string',
+            'image_alts' => 'nullable|array',
+            'image_alts.*.url' => 'required|string',
+            'image_alts.*.alt' => 'nullable|string|max:255',
             // Specifications
             'specifications_text' => 'nullable|string',
             'compatibility_specs' => 'nullable|array',
@@ -308,7 +313,10 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), self::COMPLIANCE_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), self::COMPLIANCE_RULES, WarrantyPackages::validationRules()), $this->productValidationMessages(), $this->productValidationAttributes());
+        if (array_key_exists('warranty_packages', $validated)) {
+            $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
+        }
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
         }
@@ -337,7 +345,7 @@ class ProductController extends Controller
         $oldPath = $oldCategorySlug && $oldSlug
             ? '/'.trim((string) $oldCategorySlug, '/').'/'.trim($oldSlug, '/')
             : null;
-        $productData = collect($validated)->except(['thumbnail', 'gallery', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
+        $productData = collect($validated)->except(['thumbnail', 'gallery', 'image_alts', 'compatibility_specs', 'variants', 'highlights', 'detail_blocks', 'relations'])->toArray();
         if (array_key_exists('video_url', $productData)) {
             $productData['video_url'] = YouTubeVideo::canonicalUrl($productData['video_url']);
         }
@@ -361,27 +369,12 @@ class ProductController extends Controller
         }
         $this->syncPdpContent($product, $validated);
 
-        // Rebuild images
-        $product->images()->delete();
-        $sortOrder = 0;
-        if (! empty($validated['thumbnail'])) {
-            $product->images()->create([
-                'url' => $validated['thumbnail'],
-                'is_primary' => true,
-                'sort_order' => $sortOrder++,
-            ]);
-        }
-        if (! empty($validated['gallery'])) {
-            foreach ($validated['gallery'] as $url) {
-                if ($url !== ($validated['thumbnail'] ?? '')) {
-                    $product->images()->create([
-                        'url' => $url,
-                        'is_primary' => false,
-                        'sort_order' => $sortOrder++,
-                    ]);
-                }
-            }
-        }
+        $this->syncImages(
+            $product,
+            $validated['thumbnail'] ?? null,
+            $validated['gallery'] ?? [],
+            collect($validated['image_alts'] ?? [])->pluck('alt', 'url')->all(),
+        );
 
         // Rebuild compatibility specifications
         $product->specifications()->delete();
@@ -442,6 +435,36 @@ class ProductController extends Controller
      * product into a failed request because a nested required rule sees an
      * empty draft row.
      */
+    /**
+     * Keep the product's images in the order picked in the form: the
+     * thumbnail first, then the gallery. Images that stay keep their row (so
+     * KIOT-mirrored files keep their sync data) and get the alt text typed
+     * for them; removed images are deleted, new ones added.
+     *
+     * @param  list<string>  $gallery
+     * @param  array<string, string|null>  $alts  keyed by image URL
+     */
+    private function syncImages(Product $product, ?string $thumbnail, array $gallery, array $alts): void
+    {
+        $urls = array_values(array_unique(array_filter([$thumbnail, ...$gallery], 'filled')));
+        $existing = $product->images()->get()->groupBy(fn (ProductImage $image) => (string) $image->url);
+        $keep = [];
+        foreach ($urls as $sortOrder => $url) {
+            $image = $existing->get($url)?->first();
+            $attributes = ['is_primary' => $thumbnail !== null && $url === $thumbnail, 'sort_order' => $sortOrder];
+            if (array_key_exists($url, $alts)) {
+                $attributes['alt_text'] = filled($alts[$url]) ? trim((string) $alts[$url]) : null;
+            }
+            if ($image) {
+                $image->update($attributes);
+            } else {
+                $image = $product->images()->create(['url' => $url] + $attributes);
+            }
+            $keep[] = $image->id;
+        }
+        $product->images()->whereNotIn('id', $keep)->delete();
+    }
+
     private function normalizeOptionalProductInputs(Request $request): void
     {
         $normalized = [];

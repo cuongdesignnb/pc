@@ -88,7 +88,7 @@ class KiotOrderService
                         );
                     }
                     try {
-                        $warranty = $this->warranties->select($product, $line['warranty_months']);
+                        $warranty = $this->warranties->select($product, $line['warranty_months'], $variant?->display_price);
                     } catch (InvalidWarrantyPackage $exception) {
                         throw ValidationException::withMessages(['items' => $exception->getMessage()]);
                     }
@@ -299,7 +299,7 @@ class KiotOrderService
             ],
             'items' => $order->items->map(fn ($item) => [
                 'sku' => $item->sku,
-                'product_name' => (int) $item->warranty_price > 0
+                'product_name' => (int) $item->warranty_price !== 0
                     ? "{$item->product_name} (bảo hành {$item->warranty_months} tháng)"
                     : $item->product_name,
                 'quantity' => $item->quantity, 'unit_price' => (int) $item->price,

@@ -88,6 +88,7 @@ class ProductDetailResource extends JsonResource
             'is_purchasable' => (bool) $this->is_purchasable,
             'availability_label' => $this->availability_label,
             'warranty_months' => $this->warranty_months,
+            'catalog_content_id' => $this->catalogContentId(),
             'warranty_packages' => app(\App\Services\Catalog\WarrantyPackages::class)->forProduct($this->resource),
             'compliance' => app(\App\Services\Catalog\ProductCompliance::class)->forProduct($this->resource),
             'sold_count' => (int) $this->sold_count,

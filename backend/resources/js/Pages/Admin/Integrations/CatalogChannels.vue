@@ -734,6 +734,7 @@ onMounted(() => loadSelectionProducts());
                                 <p class="mt-1 text-sm text-slate-400">{{ description(item.channel) }}</p>
                                 <p class="mt-1 text-sm text-slate-400">Mã feed: {{ item.feed_token_configured ? 'Đã cấu hình' : 'Chưa có' }}</p>
                                 <p class="mt-1 font-mono text-xs text-slate-500">{{ item.feed_path }}?token=••••••••</p>
+                                <p v-for="path in item.subset_paths || []" :key="path" class="mt-1 font-mono text-xs text-slate-500">{{ path }}?token=•••••••• <span class="font-sans">(chỉ laptop cũ còn hàng, cùng token)</span></p>
                             </div>
                             <label class="flex items-center gap-2 text-sm text-slate-300"><input :checked="item.is_enabled" :disabled="!canManage" type="checkbox" @change="toggleChannel(item.channel, $event.target.checked)"> Bật kênh</label>
                         </div>

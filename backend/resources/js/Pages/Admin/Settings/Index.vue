@@ -3,6 +3,7 @@ import { useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
+import WarrantyPackagesField, { warrantyRows, warrantyPayload } from '@/Components/WarrantyPackagesField.vue';
 
 const props = defineProps({
     settings: Object,
@@ -24,6 +25,7 @@ const groupLabels = {
     ai: 'AI (ChatGPT / Gemini)',
     affiliate: 'Cộng tác viên',
     legal: 'Thông tin pháp lý',
+    warranty: 'Bảo hành',
 };
 
 const groupIcons = {
@@ -76,6 +78,10 @@ watch(featuredSections, rows => {
 const sidebarCategories = ref(parseList(formData.value.homepage_sidebar_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
 watch(sidebarCategories, rows => {
     formData.value.homepage_sidebar_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
+}, { deep: true });
+const warrantyDefaults = ref(warrantyRows(parseList(formData.value.warranty_default_packages)));
+watch(warrantyDefaults, rows => {
+    formData.value.warranty_default_packages = JSON.stringify(warrantyPayload(rows));
 }, { deep: true });
 const laptopCategories = ref(parseList(formData.value.affiliate_laptop_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
 watch(laptopCategories, rows => {
@@ -280,6 +286,9 @@ function sendSmtpTest() {
                                         <button v-if="sidebarCategories.length < 13" type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="sidebarCategories.push({ slug: '' })">+ Thêm danh mục</button>
                                         <p class="text-xs text-slate-500">Để trống thì menu dọc tự hiện các danh mục cấp 1 theo thứ tự trong Danh mục. Tối đa 13 danh mục.</p>
                                     </div>
+
+                                    <!-- Shop-wide warranty packages -->
+                                    <WarrantyPackagesField v-else-if="item.key === 'warranty_default_packages'" v-model="warrantyDefaults" hint="Áp dụng cho mọi sản phẩm chưa có gói riêng ở sản phẩm hoặc danh mục. Để trống thì không hiện ô chọn gói." />
 
                                     <!-- CTV: laptop categories that always get the referral discount -->
                                     <div v-else-if="item.key === 'affiliate_laptop_category_slugs'" class="space-y-2">

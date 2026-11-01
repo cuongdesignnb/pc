@@ -133,15 +133,24 @@ class CommissionService
         $commission->update(['status' => 'cancelled', 'cancelled_reason' => mb_substr($reason, 0, 255)]);
     }
 
-    /** @return array{available: int, pending: int, next_approval_at: string|null, total_earned: int} */
+    /**
+     * Approved commission minus what has been or is being withdrawn.
+     *
+     * @return array{available: int, pending: int, next_approval_at: string|null, total_earned: int, payout_pending: int, withdrawn: int}
+     */
     public function wallet(Affiliate $affiliate): array
     {
         $commissions = $affiliate->commissions()->whereIn('status', ['pending', 'approved'])->get(['status', 'amount', 'approve_after']);
         $pending = $commissions->where('status', 'pending');
         $next = $pending->pluck('approve_after')->filter()->min();
+        $payouts = $affiliate->payouts()->whereIn('status', ['pending', 'paid'])->get(['status', 'amount']);
+        $payoutPending = (int) $payouts->where('status', 'pending')->sum('amount');
+        $withdrawn = (int) $payouts->where('status', 'paid')->sum('amount');
 
         return [
-            'available' => (int) $commissions->where('status', 'approved')->sum('amount'),
+            'available' => max(0, (int) $commissions->where('status', 'approved')->sum('amount') - $payoutPending - $withdrawn),
+            'payout_pending' => $payoutPending,
+            'withdrawn' => $withdrawn,
             'pending' => (int) $pending->sum('amount'),
             'next_approval_at' => $next?->toIso8601String(),
             'total_earned' => (int) $commissions->sum('amount'),

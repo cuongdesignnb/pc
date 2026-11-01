@@ -48,6 +48,7 @@ Route::get('/', function () {
 
 Route::get('feeds/google/products.xml', [CatalogFeedController::class, 'google'])->name('feeds.google.products');
 Route::get('feeds/meta/products.csv', [CatalogFeedController::class, 'meta'])->name('feeds.meta.products');
+Route::get('feeds/meta/{subset}.csv', [CatalogFeedController::class, 'metaSubset'])->where('subset', '[a-z0-9-]+')->name('feeds.meta.subset');
 
 // ─── Payment routes (SePay Gateway) ─────────────────────────────────────────
 Route::prefix('payment')->name('payment.')->group(function () {
@@ -100,6 +101,10 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::get('affiliates/commissions', [AffiliateController::class, 'commissions'])->name('affiliates.commissions');
     Route::post('affiliates/commissions/{commission}/approve', [AffiliateController::class, 'approveCommission'])->name('affiliates.commissions.approve');
     Route::post('affiliates/commissions/{commission}/cancel', [AffiliateController::class, 'cancelCommission'])->name('affiliates.commissions.cancel');
+    Route::get('affiliates/payouts', [AffiliateController::class, 'payouts'])->name('affiliates.payouts');
+    Route::get('affiliates/payouts/export', [AffiliateController::class, 'exportPayouts'])->name('affiliates.payouts.export');
+    Route::post('affiliates/payouts/{payout}/paid', [AffiliateController::class, 'markPayoutPaid'])->name('affiliates.payouts.paid');
+    Route::post('affiliates/payouts/{payout}/cancel', [AffiliateController::class, 'cancelPayout'])->name('affiliates.payouts.cancel');
     Route::get('affiliates/external-orders', [AffiliateController::class, 'externalOrders'])->name('affiliates.external-orders');
     Route::post('affiliates/external-orders', [AffiliateController::class, 'storeExternalOrder'])->name('affiliates.external-orders.store');
     Route::patch('affiliates/customers/{customer}', [AffiliateController::class, 'reassignCustomer'])->name('affiliates.customers.reassign');

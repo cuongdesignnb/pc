@@ -67,7 +67,7 @@ class CartController extends Controller
             }
 
             try {
-                $package = $warranties->select($product, $validated['warranty_months'] ?? null);
+                $package = $warranties->select($product, $validated['warranty_months'] ?? null, $variant?->display_price);
             } catch (InvalidWarrantyPackage $exception) {
                 abort(422, $exception->getMessage());
             }

@@ -86,6 +86,7 @@ const navGroups = [
         items: [
             { name: 'Danh sách CTV', href: '/admin/affiliates', icon: 'user', exact: true },
             { name: 'Hoa hồng', href: '/admin/affiliates/commissions', icon: 'star' },
+            { name: 'Lệnh rút tiền', href: '/admin/affiliates/payouts', icon: 'order' },
             { name: 'Đơn ngoài web', href: '/admin/affiliates/external-orders', icon: 'post' },
         ],
     },

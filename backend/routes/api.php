@@ -172,6 +172,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/affiliate/register', [AffiliateController::class, 'register'])->middleware('throttle:10,1');
         Route::get('/affiliate/me', [AffiliateController::class, 'me']);
         Route::put('/affiliate/me/payout-schedule', [AffiliateController::class, 'updatePayoutSchedule']);
+        Route::post('/affiliate/me/payouts', [AffiliateController::class, 'requestPayout'])->middleware('throttle:10,1');
         Route::get('/affiliate/products/{product}/commission', [AffiliateController::class, 'productCommission']);
 
         // User orders

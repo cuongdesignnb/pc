@@ -62,7 +62,7 @@ class AffiliateProgramTest extends TestCase
         $this->assertSame(1, AffiliateClick::count());
     }
 
-    public function test_first_laptop_order_gets_the_discount_and_the_first_ctv_keeps_the_customer(): void
+    public function test_every_laptop_order_gets_the_discount_and_the_first_ctv_keeps_the_customer(): void
     {
         $first = $this->affiliate();
         $second = $this->affiliate();
@@ -88,16 +88,17 @@ class AffiliateProgramTest extends TestCase
         $this->assertStringContainsString("Khách của CTV: {$first->user->name} – {$first->code}", $payload['note']);
         $this->assertSame(200000, $payload['totals']['discount']);
 
-        // Another CTV's code later: the customer stays with the first CTV, and
-        // the first-order discount is not given again.
+        // Another CTV's code later: the customer stays with the first CTV and
+        // still gets the discount.
         $this->placeOrder($laptop, ['referral_code' => $second->code, 'customer_phone' => '+84987654321'])->assertCreated();
         $again = Order::latest('id')->first();
         $this->assertSame($first->id, $again->affiliate_id);
-        $this->assertSame(0, (int) $again->discount);
+        $this->assertSame(200000, (int) $again->discount);
 
-        // No code at all: still the first CTV's customer.
+        // No code at all: still the first CTV's customer, still discounted.
         $this->placeOrder($laptop, [])->assertCreated();
         $this->assertSame($first->id, Order::latest('id')->first()->affiliate_id);
+        $this->assertSame(200000, (int) Order::latest('id')->first()->discount);
     }
 
     public function test_accessories_need_two_million_for_the_discount(): void

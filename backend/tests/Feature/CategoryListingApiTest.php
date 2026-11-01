@@ -276,6 +276,42 @@ class CategoryListingApiTest extends TestCase
         ], $overrides));
     }
 
+    public function test_third_level_categories_list_their_products_on_every_level(): void
+    {
+        $used = $this->category('laptop-cu', 'Laptop cũ');
+        $dell = $this->category('laptop-cu-dell', 'Dell', ['parent_id' => $used->id]);
+        $latitude = $this->category('dell-latitude', 'Latitude', ['parent_id' => $dell->id]);
+        $this->product($latitude, ['name' => 'Dell Latitude 7420']);
+        $this->product($dell, ['name' => 'Dell Inspiron 5301']);
+
+        $this->getJson('/api/v1/categories/laptop-cu')
+            ->assertOk()
+            ->assertJsonPath('products.total', 2)
+            ->assertJsonPath('category.children.0.slug', 'laptop-cu-dell')
+            ->assertJsonPath('category.children.0.product_count', 2);
+        $this->getJson('/api/v1/categories/laptop-cu?sub_category=laptop-cu-dell')->assertJsonPath('products.total', 2);
+        $this->getJson('/api/v1/categories/laptop-cu-dell')
+            ->assertJsonPath('products.total', 2)
+            ->assertJsonPath('category.children.0.slug', 'dell-latitude');
+        $this->getJson('/api/v1/categories/dell-latitude')
+            ->assertJsonPath('products.total', 1)
+            ->assertJsonPath('products.data.0.name', 'Dell Latitude 7420')
+            ->assertJsonPath('category.ancestors.0.slug', 'laptop-cu')
+            ->assertJsonPath('category.ancestors.1.slug', 'laptop-cu-dell');
+        $this->getJson('/api/v1/categories')->assertJsonPath('0.children.0.children.0.slug', 'dell-latitude');
+    }
+
+    public function test_recommendations_only_show_machines_in_stock(): void
+    {
+        $category = $this->category('laptop-cu', 'Laptop cũ');
+        $this->product($category, ['name' => 'Máy còn hàng', 'sold_count' => 1]);
+        $this->product($category, ['name' => 'Surface Laptop 5 hết hàng', 'stock_quantity' => 0, 'is_featured' => true, 'sold_count' => 99]);
+
+        $names = collect($this->getJson('/api/v1/categories/laptop-cu?in_stock=1&per_page=1&page=5')->json('recommendations'))->pluck('name');
+        $this->assertContains('Máy còn hàng', $names);
+        $this->assertNotContains('Surface Laptop 5 hết hàng', $names);
+    }
+
     /** @param array<string, mixed> $overrides */
     private function product(Category $category, array $overrides = []): Product
     {
