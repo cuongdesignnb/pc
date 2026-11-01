@@ -63,6 +63,7 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
                 'catalog_result' => fn () => $request->session()->get('catalog_result'),
                 'feed_url' => fn () => $request->session()->pull('feed_url'),
+                'api_token' => fn () => $request->session()->pull('api_token'),
             ],
         ];
     }

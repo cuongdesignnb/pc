@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AdminAuthenticate;
 use App\Http\Middleware\CheckPermission;
+use App\Http\Middleware\EnsureAdminApiToken;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreventApiCaching;
 use App\Http\Middleware\TrustProxies;
@@ -46,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin.auth' => AdminAuthenticate::class,
             'permission' => CheckPermission::class,
+            'admin.api' => EnsureAdminApiToken::class,
         ]);
 
         // Exclude SePay IPN and webhook from CSRF verification

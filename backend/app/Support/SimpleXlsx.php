@@ -74,6 +74,87 @@ final class SimpleXlsx
         $zip->close();
     }
 
+    /**
+     * The cell values of the first sheet as text, one list per row, with
+     * empty cells filled in so column positions line up.
+     *
+     * @return list<list<string>>
+     */
+    public static function read(string $path): array
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($path) !== true) {
+            throw new RuntimeException('Không đọc được file Excel.');
+        }
+        $shared = [];
+        $strings = $zip->getFromName('xl/sharedStrings.xml');
+        if ($strings !== false) {
+            foreach (simplexml_load_string($strings, options: LIBXML_NONET)?->si ?? [] as $item) {
+                $shared[] = self::text($item);
+            }
+        }
+        $sheetPath = 'xl/worksheets/sheet1.xml';
+        $workbook = $zip->getFromName('xl/workbook.xml');
+        $rels = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        if ($workbook !== false && $rels !== false) {
+            $first = simplexml_load_string($workbook, options: LIBXML_NONET)?->sheets->sheet[0] ?? null;
+            $relId = $first ? (string) $first->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'] : '';
+            foreach (simplexml_load_string($rels, options: LIBXML_NONET)?->Relationship ?? [] as $rel) {
+                if ((string) $rel['Id'] === $relId) {
+                    $target = ltrim((string) $rel['Target'], '/');
+                    $sheetPath = str_starts_with($target, 'xl/') ? $target : 'xl/'.$target;
+                }
+            }
+        }
+        $sheet = $zip->getFromName($sheetPath);
+        $zip->close();
+        if ($sheet === false) {
+            throw new RuntimeException('File Excel không có trang tính.');
+        }
+
+        $rows = [];
+        foreach (simplexml_load_string($sheet, options: LIBXML_NONET)?->sheetData->row ?? [] as $row) {
+            $values = [];
+            foreach ($row->c as $cell) {
+                $column = self::columnIndex(preg_replace('/\d+/', '', (string) $cell['r']) ?: self::column(count($values)));
+                $type = (string) $cell['t'];
+                $value = match ($type) {
+                    's' => $shared[(int) $cell->v] ?? '',
+                    'inlineStr' => self::text($cell->is),
+                    default => (string) $cell->v,
+                };
+                $values += array_fill(0, $column + 1, '');
+                $values[$column] = $value;
+            }
+            $rows[] = array_values($values);
+        }
+
+        return $rows;
+    }
+
+    private static function text(\SimpleXMLElement $item): string
+    {
+        if (isset($item->t)) {
+            return (string) $item->t;
+        }
+        $text = '';
+        foreach ($item->r as $run) {
+            $text .= (string) $run->t;
+        }
+
+        return $text;
+    }
+
+    private static function columnIndex(string $letters): int
+    {
+        $index = 0;
+        foreach (str_split(strtoupper($letters)) as $letter) {
+            $index = $index * 26 + (ord($letter) - 64);
+        }
+
+        return $index - 1;
+    }
+
     private static function cells(array $values, int $line, bool $header = false): string
     {
         $xml = '';

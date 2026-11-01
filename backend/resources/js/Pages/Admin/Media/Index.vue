@@ -16,6 +16,7 @@ const flash = computed(() => page.props.flash);
 const search = ref(props.filters?.search || '');
 const currentFolder = ref(props.filters?.folder || '/');
 const filterType = ref(props.filters?.type || '');
+const filterAlt = ref(props.filters?.alt || '');
 const selectedItems = ref([]);
 const viewMode = ref('grid'); // grid | list
 const showUploadModal = ref(false);
@@ -75,7 +76,29 @@ function applyFilters() {
         search: search.value || undefined,
         folder: currentFolder.value !== '/' ? currentFolder.value : undefined,
         type: filterType.value || undefined,
+        alt: filterAlt.value || undefined,
     }, { preserveState: true, replace: true });
+}
+
+// ---- Alt text (SEO) ----
+// An image "has alt" when the text says more than the file name it got on upload.
+function missingAlt(item) {
+    return isImage(item) && (!item.alt || item.alt.trim() === '' || item.alt === item.name);
+}
+const savingAlt = ref({});
+async function saveAlt(item, value) {
+    const alt = value.trim();
+    if (alt === (item.alt || '')) return;
+    savingAlt.value = { ...savingAlt.value, [item.id]: 'saving' };
+    try {
+        const response = await window.axios.put(`/admin/media/${item.id}`, {
+            name: item.name, alt: alt || null, folder: item.folder,
+        }, { headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' } });
+        item.alt = response.data.media.alt;
+        savingAlt.value = { ...savingAlt.value, [item.id]: 'saved' };
+    } catch {
+        savingAlt.value = { ...savingAlt.value, [item.id]: 'error' };
+    }
 }
 
 function setFolder(folder) {
@@ -306,6 +329,10 @@ function isImage(item) {
                         <option value="video">Video</option>
                         <option value="document">Tài liệu</option>
                     </select>
+                    <select v-model="filterAlt" @change="applyFilters()" class="border border-slate-700/50 rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-cyan-500/50">
+                        <option value="">Mọi alt</option>
+                        <option value="missing">Ảnh chưa có alt</option>
+                    </select>
 
                     <!-- View mode -->
                     <div class="flex border border-slate-700/50 rounded-lg overflow-hidden">
@@ -386,6 +413,8 @@ function isImage(item) {
                             <div class="px-2 py-1.5">
                                 <p class="text-xs text-slate-300 truncate font-medium">{{ item.name }}</p>
                                 <p class="text-[10px] text-slate-500">{{ item.human_size }}</p>
+                                <p v-if="missingAlt(item)" class="text-[10px] text-amber-400">Chưa có alt</p>
+                                <p v-else-if="isImage(item)" class="text-[10px] text-slate-500 truncate" :title="item.alt">Alt: {{ item.alt }}</p>
                             </div>
                         </div>
                     </div>
@@ -400,6 +429,7 @@ function isImage(item) {
                                     </th>
                                     <th class="w-12"></th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Tên</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Alt (mô tả ảnh)</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Loại</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Kích thước</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Kích cỡ</th>
@@ -422,6 +452,18 @@ function isImage(item) {
                                         </div>
                                     </td>
                                     <td class="px-4 py-2 text-sm text-slate-200 font-medium">{{ item.name }}</td>
+                                    <td class="px-4 py-2 text-sm" @click.stop>
+                                        <div v-if="isImage(item)" class="flex items-center gap-2">
+                                            <input :value="item.alt === item.name ? '' : (item.alt || '')" @keydown.enter.prevent="$event.target.blur()"
+                                                @blur="saveAlt(item, $event.target.value)" placeholder="Mô tả ảnh, ví dụ: Dell Latitude 7420 mặt trước"
+                                                :class="missingAlt(item) ? 'border-amber-500/60' : 'border-slate-700/50'"
+                                                class="w-64 bg-transparent border rounded px-2 py-1 text-sm text-slate-200 focus:ring-2 focus:ring-cyan-500/50">
+                                            <span v-if="savingAlt[item.id] === 'saving'" class="text-xs text-slate-500">Đang lưu…</span>
+                                            <span v-else-if="savingAlt[item.id] === 'saved'" class="text-xs text-emerald-400">Đã lưu</span>
+                                            <span v-else-if="savingAlt[item.id] === 'error'" class="text-xs text-red-400">Lỗi</span>
+                                        </div>
+                                        <span v-else class="text-slate-500">—</span>
+                                    </td>
                                     <td class="px-4 py-2 text-sm text-slate-400 uppercase">{{ item.file_name.split('.').pop() }}</td>
                                     <td class="px-4 py-2 text-sm text-slate-400">{{ item.human_size }}</td>
                                     <td class="px-4 py-2 text-sm text-slate-400">
@@ -571,6 +613,7 @@ function isImage(item) {
                         <div>
                             <label class="block text-sm font-medium text-slate-300 mb-1">Alt text</label>
                             <input v-model="detailItem.alt" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50" placeholder="Mô tả hình ảnh">
+                            <p class="mt-1 text-xs text-slate-500">Mô tả ngắn nội dung ảnh (tốt cho SEO ảnh). Ảnh sản phẩm chưa có alt riêng sẽ dùng alt này.</p>
                         </div>
 
                         <!-- Actions -->

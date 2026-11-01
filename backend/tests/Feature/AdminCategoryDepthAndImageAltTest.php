@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Media;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -70,5 +71,36 @@ class AdminCategoryDepthAndImageAltTest extends TestCase
         $this->assertTrue($images[0]->is_primary);
         $this->assertSame('Dell Latitude 7420 mặt trước', $images[0]->alt);
         $this->assertSame('Cổng kết nối bên trái', $images[1]->alt);
+    }
+
+    public function test_media_library_lists_images_without_alt_and_lends_its_alt_to_product_images(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $media = fn (array $attributes) => Media::create($attributes + [
+            'file_name' => $attributes['name'].'.webp', 'disk' => 'public', 'mime_type' => 'image/webp', 'size' => 10, 'folder' => '/',
+        ]);
+        $described = $media(['name' => 'dell-front', 'path' => 'media/dell-front.webp', 'alt' => 'Dell Latitude 7420 mặt trước']);
+        $media(['name' => 'IMG_0001', 'path' => 'media/IMG_0001.webp', 'alt' => 'IMG_0001']);
+        $media(['name' => 'no-alt', 'path' => 'media/no-alt.webp', 'alt' => null]);
+
+        $this->actingAs($admin)->get('/admin/media?alt=missing')->assertInertia(fn ($page) => $page
+            ->where('media.total', 2));
+        $this->actingAs($admin)->putJson("/admin/media/{$described->id}", ['name' => 'dell-front', 'alt' => 'Dell Latitude 7420 nhìn trước'])
+            ->assertOk()->assertJsonPath('media.alt', 'Dell Latitude 7420 nhìn trước');
+
+        $category = Category::create(['name' => 'Laptop', 'slug' => 'laptop', 'is_active' => true]);
+        $product = Product::create([
+            'name' => 'Dell Latitude 7420', 'slug' => 'dell-latitude-7420', 'sku' => 'SKU-'.Str::random(6),
+            'category_id' => $category->id, 'price' => 9_000_000, 'stock_quantity' => 1,
+            'is_active' => true, 'show_on_pc_website' => true, 'inventory_source' => 'local',
+        ]);
+        $url = $described->fresh()->url;
+        $this->actingAs($admin)->put("/admin/products/{$product->id}", [
+            'name' => $product->name, 'slug' => $product->slug, 'sku' => $product->sku, 'category_id' => $category->id,
+            'price' => 9_000_000, 'stock_quantity' => 1, 'thumbnail' => $url,
+            'image_alts' => [['url' => $url, 'alt' => '']],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('Dell Latitude 7420 nhìn trước', $product->images()->firstOrFail()->alt);
     }
 }

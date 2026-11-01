@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\ComponentType;
+use App\Models\Media;
 use App\Models\Product;
 use App\Models\ProductDetailBlock;
 use App\Models\ProductImage;
@@ -40,28 +41,7 @@ class ProductController extends Controller
         $query = Product::with(['category', 'brand', 'componentType', 'primaryImage'])
             ->latest();
 
-        if ($request->search) {
-            $query->where(function ($q) use ($request) {
-                $q->where('name', 'like', "%{$request->search}%")
-                    ->orWhere('sku', 'like', "%{$request->search}%");
-            });
-        }
-
-        if ($request->category_id) {
-            $query->where('category_id', $request->category_id);
-        }
-
-        if ($request->brand_id) {
-            $query->where('brand_id', $request->brand_id);
-        }
-
-        if ($request->status) {
-            if ($request->status === 'active') {
-                $query->where('is_active', true);
-            } elseif ($request->status === 'inactive') {
-                $query->where('is_active', false);
-            }
-        }
+        ProductManufactureYearController::applyFilters($query, $request);
 
         $products = $query->paginate(20)->withQueryString();
 
@@ -69,7 +49,8 @@ class ProductController extends Controller
             'products' => $products,
             'categories' => Category::where('is_active', true)->get(),
             'brands' => Brand::where('is_active', true)->get(),
-            'filters' => $request->only(['search', 'category_id', 'brand_id', 'status']),
+            'filters' => $request->only(['search', 'category_id', 'brand_id', 'status', 'manufacture_year']),
+            'currentYear' => now()->year,
         ]);
     }
 
@@ -149,6 +130,9 @@ class ProductController extends Controller
         ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
 
         try {
+            // A slug made from a very long product name is cut at a word
+            // boundary so the new product still gets a public link.
+            $validated['slug'] = $this->availableSlug($slugs->shorten($validated['slug']), $validated['slug']);
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
         } catch (\InvalidArgumentException $exception) {
             return back()->withErrors(['slug' => $exception->getMessage()])->withInput();
@@ -448,12 +432,18 @@ class ProductController extends Controller
     {
         $urls = array_values(array_unique(array_filter([$thumbnail, ...$gallery], 'filled')));
         $existing = $product->images()->get()->groupBy(fn (ProductImage $image) => (string) $image->url);
+        $libraryAlts = $this->mediaLibraryAlts($urls);
         $keep = [];
         foreach ($urls as $sortOrder => $url) {
             $image = $existing->get($url)?->first();
             $attributes = ['is_primary' => $thumbnail !== null && $url === $thumbnail, 'sort_order' => $sortOrder];
             if (array_key_exists($url, $alts)) {
                 $attributes['alt_text'] = filled($alts[$url]) ? trim((string) $alts[$url]) : null;
+            }
+            // An image picked from the Media library without its own alt
+            // text takes the alt written for it in the library.
+            if (blank($attributes['alt_text'] ?? $image?->alt_text) && isset($libraryAlts[$url])) {
+                $attributes['alt_text'] = $libraryAlts[$url];
             }
             if ($image) {
                 $image->update($attributes);
@@ -463,6 +453,46 @@ class ProductController extends Controller
             $keep[] = $image->id;
         }
         $product->images()->whereNotIn('id', $keep)->delete();
+    }
+
+    /** $slug, or $slug-2, -3 … when another product already uses it. */
+    private function availableSlug(string $slug, string $original): string
+    {
+        if ($slug === $original) {
+            return $slug;
+        }
+        $candidate = $slug;
+        for ($counter = 2; Product::where('slug', $candidate)->exists(); $counter++) {
+            $candidate = substr($slug, 0, VietnameseSlugNormalizer::MAX_LENGTH - strlen('-'.$counter)).'-'.$counter;
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * Alt texts from the Media library for the given image URLs, keyed by URL.
+     * Library alts that are only the upload file name are skipped.
+     *
+     * @param  list<string>  $urls
+     * @return array<string, string>
+     */
+    private function mediaLibraryAlts(array $urls): array
+    {
+        $paths = [];
+        foreach ($urls as $url) {
+            $path = (string) parse_url($url, PHP_URL_PATH);
+            if (($position = strpos($path, '/storage/')) !== false) {
+                $paths[rawurldecode(substr($path, $position + strlen('/storage/')))] = $url;
+            }
+        }
+        if ($paths === []) {
+            return [];
+        }
+
+        return Media::query()->whereIn('path', array_keys($paths))->get(['path', 'name', 'alt'])
+            ->filter(fn (Media $media) => filled($media->alt) && $media->alt !== $media->name)
+            ->mapWithKeys(fn (Media $media) => [$paths[$media->path] => trim((string) $media->alt)])
+            ->all();
     }
 
     private function normalizeOptionalProductInputs(Request $request): void
@@ -782,7 +812,7 @@ class ProductController extends Controller
                 $providedSlug = trim($row[3] ?? '');
                 $slug = $providedSlug
                     ? $slugs->validateCustom($providedSlug)
-                    : $slugs->normalize($name);
+                    : $slugs->normalizeShortened($name);
                 if ($slugs->isReserved($slug)) {
                     throw new \InvalidArgumentException('Slug này dành riêng cho route hệ thống.');
                 }

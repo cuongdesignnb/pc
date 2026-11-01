@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\Admin\AiGenerationController;
+use App\Http\Controllers\Admin\MediaController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AdminApiController;
 use App\Http\Controllers\Api\AffiliateController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
@@ -22,6 +24,7 @@ use App\Http\Controllers\Api\ProductQuestionController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SettingController;
+use App\Services\AdminApi\AdminApiTokens;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -185,4 +188,27 @@ Route::prefix('v1')->group(function () {
 Route::prefix('ai')->middleware(['web', 'admin.auth', 'permission:ai-articles.create|posts.create|products.create|products.edit', 'throttle:ai-generation'])->group(function () {
     Route::post('/content', [AiGenerationController::class, 'content'])->name('api.ai.content');
     Route::post('/content-with-images', [AiGenerationController::class, 'contentWithImages'])->name('api.ai.content-with-images');
+});
+
+// Admin API for outside tools, with a token from Admin → API token.
+// Read tokens may only GET; content tokens may also edit articles,
+// categories, media and product SEO (never price or stock).
+Route::prefix('v1/admin-api')->middleware(['auth:sanctum', 'throttle:120,1'])->name('api.admin.')->group(function () {
+    Route::middleware('admin.api:'.AdminApiTokens::READ)->group(function () {
+        Route::get('products', [AdminApiController::class, 'products'])->name('products.index');
+        Route::get('products/{product}', [AdminApiController::class, 'product'])->name('products.show');
+        Route::get('categories', [AdminApiController::class, 'categories'])->name('categories.index');
+        Route::get('posts', [AdminApiController::class, 'posts'])->name('posts.index');
+        Route::get('posts/{post}', [AdminApiController::class, 'post'])->name('posts.show');
+        Route::get('media', [AdminApiController::class, 'media'])->name('media.index');
+    });
+    Route::middleware('admin.api:'.AdminApiTokens::WRITE)->group(function () {
+        Route::patch('products/{product}', [AdminApiController::class, 'updateProduct'])->name('products.update');
+        Route::post('categories', [AdminApiController::class, 'storeCategory'])->name('categories.store');
+        Route::patch('categories/{category}', [AdminApiController::class, 'updateCategory'])->name('categories.update');
+        Route::post('posts', [AdminApiController::class, 'storePost'])->name('posts.store');
+        Route::patch('posts/{post}', [AdminApiController::class, 'updatePost'])->name('posts.update');
+        Route::post('media', [MediaController::class, 'upload'])->name('media.store');
+        Route::patch('media/{medium}', [AdminApiController::class, 'updateMedia'])->name('media.update');
+    });
 });
