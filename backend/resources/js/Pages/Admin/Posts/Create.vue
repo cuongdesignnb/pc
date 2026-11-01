@@ -7,7 +7,7 @@ import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
 const props = defineProps({ categories: Array });
 const form = useForm({ title: '', slug: '', excerpt: '', body: '', featured_image: '', post_category_id: '', status: 'draft', is_featured: false, published_at: '', meta_title: '', meta_description: '' });
-function genSlug() { form.slug = form.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+function genSlug() { form.slug = form.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); if (form.slug.length > 160) { const cut = form.slug.slice(0, 161); form.slug = cut.slice(0, cut.lastIndexOf('-') > 0 ? cut.lastIndexOf('-') : 160).replace(/-+$/, ''); } }
 function submit() { form.post('/admin/posts'); }
 function applyAi(data) { form.title = data.title || form.title; form.excerpt = data.excerpt || form.excerpt; form.body = data.content || data.body || form.body; form.meta_title = data.meta_title || form.meta_title; form.meta_description = data.meta_description || form.meta_description; if (data.thumbnail) form.featured_image = data.thumbnail; }
 

@@ -97,6 +97,7 @@ const navGroups = [
             { name: 'Menu', href: '/admin/menus', icon: 'menu' },
             { name: 'Cài đặt', href: '/admin/settings', icon: 'settings' },
             { name: 'Tích hợp KIOT', href: '/admin/integrations/kiot', icon: 'compat', perm: 'settings.view' },
+            { name: 'API token', href: '/admin/api-tokens', icon: 'shield', perm: 'settings.edit' },
             { name: 'Catalog Channels', href: '/admin/integrations/catalog-channels', icon: 'feed', perm: 'catalog-channels.view' },
             { name: 'Nhân viên', href: '/admin/users', icon: 'user', perm: 'users.view' },
             { name: 'Vai trò', href: '/admin/roles', icon: 'shield', perm: 'roles.view' },

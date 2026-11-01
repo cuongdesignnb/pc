@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use App\Services\Seo\IndexabilityPolicy;
+use App\Services\Seo\IndexNow;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SitemapExportService;
 use Illuminate\Http\Response;
@@ -52,6 +53,18 @@ class SeoController extends Controller
         abort_if($content === '', 404);
 
         return response($content."\n", 200, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Cache-Control' => 'public, max-age=3600',
+        ]);
+    }
+
+    /** The IndexNow key file; the storefront serves it at its own root. */
+    public function indexNowKey(IndexNow $indexNow): Response
+    {
+        $key = $indexNow->key();
+        abort_if($key === null, 404);
+
+        return response($key, 200, [
             'Content-Type' => 'text/plain; charset=UTF-8',
             'Cache-Control' => 'public, max-age=3600',
         ]);

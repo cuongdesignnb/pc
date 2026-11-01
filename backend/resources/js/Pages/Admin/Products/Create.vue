@@ -39,6 +39,11 @@ function genSlug() {
     form.slug = form.name.toLowerCase().normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd')
         .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    // Public slugs are at most 160 characters; cut a long name at a word.
+    if (form.slug.length > 160) {
+        const cut = form.slug.slice(0, 161);
+        form.slug = cut.slice(0, cut.lastIndexOf('-') > 0 ? cut.lastIndexOf('-') : 160).replace(/-+$/, '');
+    }
 }
 
 // Get spec keys for selected component type

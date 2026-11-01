@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AffiliateController;
 use App\Http\Controllers\Admin\AiArticleController;
 use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Admin\AiProductContentCampaignController;
+use App\Http\Controllers\Admin\ApiTokenController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BannerController;
 use App\Http\Controllers\Admin\BrandController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Admin\PageController;
 use App\Http\Controllers\Admin\PostCategoryController;
 use App\Http\Controllers\Admin\PostController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProductManufactureYearController;
 use App\Http\Controllers\Admin\ProductQuestionController;
 use App\Http\Controllers\Admin\ReviewController;
 use App\Http\Controllers\Admin\RoleController;
@@ -41,6 +43,7 @@ Route::get('sitemaps/{shard}.xml', [SeoController::class, 'sitemapShard'])
     ->name('seo.sitemap.shard');
 Route::get('robots.txt', [SeoController::class, 'robots'])->name('seo.robots');
 Route::get('llms.txt', [SeoController::class, 'llms'])->name('seo.llms');
+Route::get('indexnow-key.txt', [SeoController::class, 'indexNowKey'])->name('seo.indexnow-key');
 
 Route::get('/', function () {
     return redirect('/admin');
@@ -79,6 +82,9 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // Products
+    Route::post('products/manufacture-year', [ProductManufactureYearController::class, 'bulk'])->name('products.manufacture-year.bulk');
+    Route::get('products/manufacture-year/template', [ProductManufactureYearController::class, 'template'])->name('products.manufacture-year.template');
+    Route::post('products/manufacture-year/import', [ProductManufactureYearController::class, 'import'])->name('products.manufacture-year.import');
     Route::resource('products', ProductController::class);
     Route::get('products-export', [ProductController::class, 'export'])->name('products.export');
     Route::post('products-import', [ProductController::class, 'import'])->name('products.import');
@@ -195,6 +201,11 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
 
     Route::middleware('permission:settings.view')->group(function () {
         Route::get('integrations/kiot', [KiotIntegrationController::class, 'index'])->name('integrations.kiot.index');
+    });
+    Route::middleware('permission:settings.edit')->group(function () {
+        Route::get('api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
+        Route::post('api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
+        Route::delete('api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
     });
     Route::middleware('permission:settings.edit')->group(function () {
         Route::post('integrations/kiot/pair', [KiotIntegrationController::class, 'pair'])->name('integrations.kiot.pair');

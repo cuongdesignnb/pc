@@ -32,6 +32,40 @@ class VietnameseSlugNormalizer
 
     public function normalize(mixed $source): string
     {
+        $value = $this->transliterate($source);
+        if (strlen($value) > self::MAX_LENGTH) {
+            throw new SeoSlugException('Slug dài quá '.self::MAX_LENGTH.' ký tự ASCII.', 'SLUG_TOO_LONG');
+        }
+
+        return $value;
+    }
+
+    /**
+     * Like normalize(), but a long name (KIOT product names often are) is
+     * cut to $maxLength at a word boundary instead of being rejected, so the
+     * product still gets a public link.
+     */
+    public function normalizeShortened(mixed $source, int $maxLength = self::MAX_LENGTH): string
+    {
+        return $this->shorten($this->transliterate($source), $maxLength);
+    }
+
+    /** Cut a valid slug to at most $maxLength characters, at a hyphen when possible. */
+    public function shorten(string $slug, int $maxLength = self::MAX_LENGTH): string
+    {
+        $maxLength = max(1, min($maxLength, self::MAX_LENGTH));
+        if (strlen($slug) <= $maxLength) {
+            return $slug;
+        }
+        $cut = substr($slug, 0, $maxLength + 1);
+        $boundary = strrpos($cut, '-');
+        $cut = $boundary !== false && $boundary > 0 ? substr($cut, 0, $boundary) : substr($slug, 0, $maxLength);
+
+        return rtrim($cut, '-');
+    }
+
+    private function transliterate(mixed $source): string
+    {
         $this->assertText($source);
 
         $value = $source;
@@ -56,9 +90,6 @@ class VietnameseSlugNormalizer
 
         if ($value === '') {
             throw new SeoSlugException('Không thể tạo slug từ nội dung đã nhập.', 'EMPTY_SLUG');
-        }
-        if (strlen($value) > self::MAX_LENGTH) {
-            throw new SeoSlugException('Slug dài quá '.self::MAX_LENGTH.' ký tự ASCII.', 'SLUG_TOO_LONG');
         }
 
         return $value;

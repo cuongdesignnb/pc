@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use App\Services\Integrations\Kiot\KiotProductSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -62,10 +63,50 @@ class KiotProductConsumerV2Test extends TestCase
         $this->assertSame(0, $second['created']);
         $this->assertSame(0, $second['updated']);
         $this->assertSame(1, $second['unchanged']);
-        $this->assertSame(1, $second['image_skips']);
+        $this->assertSame(0, $second['image_downloads']);
         $this->assertDatabaseCount('categories', 1);
         $this->assertDatabaseCount('products', 1);
         $this->assertDatabaseCount('product_images', 1);
+    }
+
+    public function test_price_or_stock_change_keeps_the_web_category_and_images(): void
+    {
+        Storage::fake('public');
+        $this->fakeProvider([$this->category()], [$this->canonicalProduct()]);
+        app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+        $local = Product::where(['provider' => 'kiot', 'remote_product_id' => 123])->firstOrFail();
+
+        // Staff move the laptop into a web-only category and curate the gallery.
+        $used = Category::create(['name' => 'Laptop cũ', 'slug' => 'laptop-cu', 'is_active' => true]);
+        $dell = Category::create(['name' => 'Dell', 'slug' => 'laptop-cu-dell', 'is_active' => true, 'parent_id' => $used->id]);
+        $local->update(['category_id' => $dell->id]);
+        $local->images()->update(['alt_text' => 'Dell mặt trước', 'is_primary' => false, 'sort_order' => 1]);
+        $local->images()->create(['url' => 'https://cdn.test/side.webp', 'is_primary' => true, 'sort_order' => 0]);
+
+        Http::swap(new HttpFactory);
+        $this->fakeProvider([$this->category()], [$this->canonicalProduct(
+            ['pricing' => ['selected_price' => 8_900_000], 'updated_at' => '2026-07-26T05:00:00Z'],
+            [[
+                'id' => 91,
+                'url' => 'https://kiot.example.test/storage/products/new.png',
+                'checksum' => hash('sha256', $this->png),
+                'width' => 1,
+                'height' => 1,
+                'sort_order' => 0,
+                'is_primary' => true,
+            ]],
+        )]);
+        $report = app(KiotProductSyncService::class)->sync(dryRun: false, full: true);
+
+        $local->refresh();
+        $this->assertSame(1, $report['updated']);
+        $this->assertSame('8900000', $local->price);
+        $this->assertSame($dell->id, $local->category_id);
+        $images = $local->images()->orderBy('sort_order')->get();
+        $this->assertSame(['https://cdn.test/side.webp', 90], [$images[0]->url, $images[1]->remote_image_id]);
+        $this->assertTrue($images[0]->is_primary);
+        $this->assertSame('Dell mặt trước', $images[1]->alt);
+        $this->assertDatabaseMissing('product_images', ['remote_image_id' => 91]);
     }
 
     public function test_dry_run_persists_only_the_report_and_never_downloads_or_advances_cursor(): void

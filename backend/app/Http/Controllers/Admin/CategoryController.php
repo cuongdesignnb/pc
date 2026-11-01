@@ -245,7 +245,7 @@ class CategoryController extends Controller
         return $options;
     }
 
-    private function parentError(mixed $parentId, ?Category $editing = null): ?string
+    public function parentError(mixed $parentId, ?Category $editing = null): ?string
     {
         if (! $parentId) {
             return null;

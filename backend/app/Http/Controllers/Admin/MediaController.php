@@ -35,9 +35,16 @@ class MediaController extends Controller
             };
         }
 
-        // Search by name
+        // Search by name or alt text
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%'.$request->search.'%');
+            $query->where(fn ($q) => $q->where('name', 'like', '%'.$request->search.'%')
+                ->orWhere('alt', 'like', '%'.$request->search.'%'));
+        }
+
+        // Images whose alt text is empty or still the upload file name
+        if ($request->alt === 'missing') {
+            $query->where('mime_type', 'like', 'image/%')
+                ->where(fn ($q) => $q->whereNull('alt')->orWhere('alt', '')->orWhereColumn('alt', 'name'));
         }
 
         $media = $query->paginate(40)->withQueryString();
@@ -46,7 +53,7 @@ class MediaController extends Controller
         return Inertia::render('Admin/Media/Index', [
             'media' => $media,
             'folders' => $folders,
-            'filters' => $request->only(['folder', 'type', 'search']),
+            'filters' => $request->only(['folder', 'type', 'search', 'alt']),
         ]);
     }
 

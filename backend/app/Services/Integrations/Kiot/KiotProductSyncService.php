@@ -653,6 +653,13 @@ class KiotProductSyncService
                 if (blank($product->description) && filled($remote['description'] ?? null)) {
                     $attributes['description'] = $remote['description'];
                 }
+                // The shop sorts products into its own categories on the web
+                // (Laptop cũ → Dell …). After the first import KIOT only feeds
+                // price, stock and availability, so a price change no longer
+                // moves the product back to the KIOT category.
+                if ($product->category_id !== null) {
+                    unset($attributes['category_id']);
+                }
                 $this->classifyChanges($product, $attributes, $remote, $report);
                 $report['update_candidates']++;
                 $report['matched']++;
@@ -679,9 +686,11 @@ class KiotProductSyncService
                 $report['warning_details'][] = ['code' => 'PRICE_FALLBACK_USED', 'remote_product_id' => $remoteId, 'sku' => $sku];
             }
 
-            if ($product) {
+            // KIOT photos are imported once; afterwards the gallery, order,
+            // main image and alt texts are managed on the web.
+            if ($product && ! $product->images()->exists()) {
                 $this->images->sync($product, (array) ($remote['images'] ?? []), $dryRun, $report);
-            } else {
+            } elseif (! $product) {
                 $report['image_downloads'] += count((array) ($remote['images'] ?? []));
             }
             $this->updateRunProgress($run, $report);
@@ -871,11 +880,13 @@ class KiotProductSyncService
 
     private function uniqueProductSlug(string $name, string $sku, int $remoteId): string
     {
+        // Room for the "-<remote id>-<n>" suffix used when the slug is taken.
+        $maxBase = VietnameseSlugNormalizer::MAX_LENGTH - strlen('-'.$remoteId.'-99');
         try {
-            $base = $this->slugs->normalize($name);
+            $base = $this->slugs->normalizeShortened($name, $maxBase);
         } catch (\InvalidArgumentException) {
             try {
-                $base = $this->slugs->normalize($sku);
+                $base = $this->slugs->normalizeShortened($sku, $maxBase);
             } catch (\InvalidArgumentException) {
                 $base = 'kiot-product-'.$remoteId;
             }
