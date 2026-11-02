@@ -11,6 +11,7 @@ use App\Models\FilterValue;
 use App\Models\Product;
 use App\Models\Setting;
 use App\Models\SpecificationKey;
+use App\Services\Seo\PriceLandingPages;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
 use App\Support\FaqExtractor;
@@ -103,9 +104,22 @@ class CategoryController extends Controller
      * Get a category, its filter metadata, a paginated product listing and
      * real recommendations for the current category.
      */
-    public function show(string $slug, Request $request, SlugRedirectService $redirects): JsonResponse
+    public function show(string $slug, Request $request, SlugRedirectService $redirects, PriceLandingPages $landings): JsonResponse
     {
-        $resolved = $redirects->categoryBySlug($slug);
+        // A price-range page (/laptop-duoi-5-trieu) lists its category in
+        // stock and within the range unless the visitor picks another price.
+        $landing = $landings->find($slug);
+        if ($landing) {
+            $request->merge(array_filter([
+                'in_stock' => '1',
+                'min_price' => $request->filled('min_price') || $request->filled('max_price') ? null : ($landing['min_price'] ?? null),
+                'max_price' => $request->filled('min_price') || $request->filled('max_price') ? null : ($landing['max_price'] ?? null),
+            ], fn ($value) => $value !== null));
+        }
+
+        $resolved = $landing
+            ? Category::query()->where('slug', (string) $landing['category'])->first()
+            : $redirects->categoryBySlug($slug);
         abort_unless($resolved && $resolved->isVisibleOnStorefront(), 404);
 
         $category = Category::with([
@@ -265,8 +279,19 @@ class CategoryController extends Controller
         $filterGroups = $this->filterGroups($assignedFilters, $categoryIdsArray);
         $specFilters = $this->legacySpecFilters($assignedFilters, $categoryIdsArray, $category->component_type_id);
 
+        $categoryPayload = $this->categoryPayload($category, $childProductCounts);
+        if ($landing) {
+            $categoryPayload = $this->landingPayload($landing, $category, $categoryPayload);
+        }
+
         return response()->json([
-            'category' => $this->categoryPayload($category, $childProductCounts),
+            'category' => $categoryPayload,
+            'landing' => $landing ? [
+                'slug' => $landing['slug'],
+                'min_price' => $landing['min_price'] ?? null,
+                'max_price' => $landing['max_price'] ?? null,
+                'in_stock' => true,
+            ] : null,
             'promo_banner' => $this->categoryBanner($category->slug),
             'products' => [
                 'data' => ProductCardResource::collection($products->getCollection())->resolve(),
@@ -283,6 +308,7 @@ class CategoryController extends Controller
                     'max' => (int) ($priceStats->max_price ?? 0),
                 ],
                 'price_presets' => $this->pricePresets($assignedFilters),
+                'price_landings' => $landings->forCategory($category),
                 'groups' => $filterGroups,
                 'specs' => $specFilters,
             ],
@@ -313,24 +339,7 @@ class CategoryController extends Controller
 
     private function applyInStock(Builder $query): Builder
     {
-        return $query->where(function (Builder $stockQuery): void {
-            $stockQuery
-                ->where(function (Builder $localQuery): void {
-                    $localQuery->whereNull('provider')->where('stock_quantity', '>', 0);
-                })
-                ->orWhere(function (Builder $kiotQuery): void {
-                    $kiotQuery
-                        ->where('provider', 'kiot')
-                        ->where('kiot_sellable', true)
-                        ->where('kiot_sync_status', 'active')
-                        ->whereIn('kiot_availability_status', ['available', 'repairing'])
-                        ->where('kiot_available_quantity', '>', 0)
-                        ->where('price', '>', 0);
-                })
-                ->orWhereHas('variants', fn (Builder $variantQuery) => $variantQuery
-                    ->where('is_active', true)
-                    ->where('stock_quantity', '>', 0));
-        });
+        return $query->inStock();
     }
 
     private function applyFilterValue(Builder $query, string $matchField, FilterValue $value): void
@@ -516,6 +525,33 @@ class CategoryController extends Controller
                 'faq' => FaqExtractor::extract($category->description),
             ],
         );
+    }
+
+    /**
+     * The page's own name, SEO text and canonical; its category becomes the
+     * parent in the breadcrumb.
+     *
+     * @param  array<string, mixed>  $landing
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function landingPayload(array $landing, Category $category, array $payload): array
+    {
+        $path = '/'.$landing['slug'];
+        $base = $this->basicCategoryPayload($category);
+
+        return array_merge($payload, [
+            'name' => (string) $landing['title'],
+            'slug' => (string) $landing['slug'],
+            'description' => $landing['description'] ?? $landing['meta_description'] ?? null,
+            'meta_title' => $landing['meta_title'] ?? $landing['title'],
+            'meta_description' => $landing['meta_description'] ?? null,
+            'canonical_path' => $path,
+            'canonical_url' => app(PublicUrlResolver::class)->absolute($path),
+            'parent' => $base,
+            'ancestors' => [...$payload['ancestors'], $base],
+            'faq' => [],
+        ]);
     }
 
     private function ancestors(Category $category): array

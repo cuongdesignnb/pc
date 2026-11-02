@@ -114,9 +114,25 @@ class SitemapExportService
                     'lastmod' => $category->updated_at,
                 ];
             })
+            ->concat($this->priceLandingEntries())
             ->filter(fn (?array $entry): bool => $entry !== null && $this->policy->isIndexablePath($entry['path']))
             ->values()
             ->all();
+    }
+
+    /** @return list<array{path:string,lastmod:?CarbonInterface}> */
+    private function priceLandingEntries(): array
+    {
+        $categories = Category::query()->visibleOnStorefront()->get(['id', 'slug', 'updated_at'])->keyBy('slug');
+        $entries = [];
+        foreach (app(PriceLandingPages::class)->all() as $slug => $landing) {
+            $category = $categories->get($landing['category'] ?? '');
+            if ($category) {
+                $entries[] = ['path' => '/'.$slug, 'lastmod' => $category->updated_at];
+            }
+        }
+
+        return $entries;
     }
 
     /** @return list<array{path:string,lastmod:?CarbonInterface}> */

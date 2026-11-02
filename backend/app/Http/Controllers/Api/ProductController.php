@@ -68,6 +68,10 @@ class ProductController extends Controller
             $query->where('price', '<=', $request->max_price);
         }
 
+        if ($request->boolean('in_stock')) {
+            $query->inStock();
+        }
+
         // Featured only
         if ($request->featured) {
             $query->where('is_featured', true);
