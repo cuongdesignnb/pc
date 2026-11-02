@@ -99,6 +99,14 @@ class CatalogChannelManagementTest extends TestCase
             'is_enabled' => true,
         ])->assertSessionHas('success');
         $this->assertDatabaseHas('catalog_channel_events', ['channel' => 'google_merchant', 'event' => 'CHANNEL_ENABLED']);
+
+        // Meta also reveals the in-stock used-laptop feed with the same token, once.
+        $meta = $this->actingAs($admin)->post('/admin/integrations/catalog-channels/meta_catalog/rotate-token')
+            ->assertSessionHas('feed_url');
+        parse_str((string) parse_url($meta->getSession()->get('feed_url'), PHP_URL_QUERY), $metaQuery);
+        $subsetUrls = $meta->getSession()->get('feed_subset_urls');
+        $this->assertCount(1, $subsetUrls);
+        $this->assertStringContainsString('/feeds/meta/laptop-cu-con-hang.csv?token='.$metaQuery['token'], $subsetUrls[0]);
     }
 
     public function test_admin_actions_queue_jobs_and_disabled_jobs_do_not_call_channels(): void

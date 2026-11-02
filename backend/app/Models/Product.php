@@ -111,6 +111,29 @@ class Product extends Model
         return max(0, (int) ($this->stock_quantity ?? 0));
     }
 
+    /** "Còn hàng" filter shared by the category page and the product API. */
+    public function scopeInStock(Builder $query): Builder
+    {
+        return $query->where(function (Builder $stockQuery): void {
+            $stockQuery
+                ->where(function (Builder $localQuery): void {
+                    $localQuery->whereNull('provider')->where('stock_quantity', '>', 0);
+                })
+                ->orWhere(function (Builder $kiotQuery): void {
+                    $kiotQuery
+                        ->where('provider', 'kiot')
+                        ->where('kiot_sellable', true)
+                        ->where('kiot_sync_status', 'active')
+                        ->whereIn('kiot_availability_status', ['available', 'repairing'])
+                        ->where('kiot_available_quantity', '>', 0)
+                        ->where('price', '>', 0);
+                })
+                ->orWhereHas('variants', fn (Builder $variantQuery) => $variantQuery
+                    ->where('is_active', true)
+                    ->where('stock_quantity', '>', 0));
+        });
+    }
+
     public function scopeSellableOnline(Builder $query): Builder
     {
         return $query->visibleOnStorefront()

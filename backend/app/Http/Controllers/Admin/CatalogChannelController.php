@@ -366,7 +366,11 @@ class CatalogChannelController extends Controller
 
         return back()
             ->with('success', 'Feed token đã được rotate. URL chỉ hiển thị trong phản hồi này.')
-            ->with('feed_url', route($route, ['token' => $token]));
+            ->with('feed_url', route($route, ['token' => $token]))
+            // The Meta subsets (laptop-cu-con-hang.csv) use the same token.
+            ->with('feed_subset_urls', $channel === CatalogChannelConnection::META_CATALOG
+                ? array_map(fn (string $subset): string => route('feeds.meta.subset', ['subset' => $subset, 'token' => $token]), array_keys((array) config('catalog.meta_catalog.subsets', [])))
+                : []);
     }
 
     private function safeConnection(CatalogChannelConnection $connection): array

@@ -24,6 +24,7 @@ const canManage = computed(() => roles.value.includes('super-admin') || permissi
 const canManagePricing = computed(() => canManage.value || permissions.value.includes('catalog_channels.manage_pricing'));
 const canManageGoogleSheetsPricing = computed(() => canManage.value || permissions.value.includes('catalog_channels.manage_google_sheets'));
 const revealedFeedUrl = computed(() => page.props.flash?.feed_url || '');
+const revealedSubsetUrls = computed(() => page.props.flash?.feed_subset_urls || []);
 const catalogResult = computed(() => page.props.flash?.catalog_result || null);
 const fallbackPolicies = ['none', 'retail_price', 'selected_price'];
 const priceSources = ['retail_price', 'selected_price'];
@@ -218,9 +219,9 @@ function inactiveSelected(option) {
     return option.active === false && ['website', 'google_sheets', 'google_merchant', 'meta_catalog'].some((channel) => isSelected(channel, option.value));
 }
 
-async function copyFeedUrl() {
-    if (revealedFeedUrl.value) {
-        await navigator.clipboard.writeText(revealedFeedUrl.value);
+async function copyFeedUrl(url = revealedFeedUrl.value) {
+    if (url) {
+        await navigator.clipboard.writeText(url);
     }
 }
 
@@ -444,7 +445,11 @@ onMounted(() => loadSelectionProducts());
                 <p class="text-sm font-medium text-amber-100">Đường dẫn feed mới chỉ hiển thị một lần. Hãy lưu tại nơi quản lý thông tin bảo mật an toàn.</p>
                 <div class="mt-3 flex gap-2">
                     <input :value="revealedFeedUrl" readonly class="min-w-0 flex-1 rounded-lg border border-amber-500/30 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200">
-                    <button class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-950" @click="copyFeedUrl">Sao chép URL</button>
+                    <button class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-950" @click="copyFeedUrl()">Sao chép URL</button>
+                </div>
+                <div v-for="url in revealedSubsetUrls" :key="url" class="mt-2 flex gap-2">
+                    <input :value="url" readonly class="min-w-0 flex-1 rounded-lg border border-amber-500/30 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-200">
+                    <button class="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-950" @click="copyFeedUrl(url)">Sao chép</button>
                 </div>
             </div>
             <pre v-if="catalogResult" class="overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs text-cyan-200">{{ JSON.stringify(catalogResult, null, 2) }}</pre>
