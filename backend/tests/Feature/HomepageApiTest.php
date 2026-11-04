@@ -97,6 +97,23 @@ class HomepageApiTest extends TestCase
         $this->assertSame([], $sections[0]['children']);
     }
 
+    public function test_homepage_blocks_list_in_stock_products_first_unless_turned_off(): void
+    {
+        $used = $this->category('laptop-cu', 'Laptop cũ');
+        $soldOut = $this->product($used, ['sold_count' => 500, 'is_featured' => true, 'stock_quantity' => 0]);
+        $best = $this->product($used, ['sold_count' => 90]);
+        $next = $this->product($used, ['sold_count' => 10]);
+        Setting::set('homepage_featured_category_slugs', [$used->slug]);
+        Setting::set('homepage_product_tabs', [['label' => 'Laptop cũ', 'category_slug' => 'laptop-cu']]);
+
+        $response = $this->getJson('/api/v1/homepage')->assertOk();
+        $this->assertSame([$best->id, $next->id, $soldOut->id], array_column($response->json('product_tabs.0.products'), 'id'));
+        $this->assertSame($soldOut->id, $response->json('category_sections.0.products.2.id'));
+
+        Setting::set('homepage_in_stock_first', false);
+        $this->assertSame($soldOut->id, $this->getJson('/api/v1/homepage')->json('product_tabs.0.products.0.id'));
+    }
+
     public function test_category_sections_list_child_categories_and_need_a_configured_slug(): void
     {
         $components = $this->category('linh-kien', 'Linh kiện');
