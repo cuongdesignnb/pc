@@ -292,6 +292,14 @@ class SettingSeeder extends Seeder
                 'is_public' => true,
             ],
             [
+                'key' => 'homepage_in_stock_first',
+                'value' => '1',
+                'group' => 'homepage',
+                'type' => 'boolean',
+                'label' => 'Xếp sản phẩm còn hàng lên trước (khối bán chạy và danh mục)',
+                'is_public' => true,
+            ],
+            [
                 'key' => 'homepage_show_brands',
                 'value' => '1',
                 'group' => 'homepage',

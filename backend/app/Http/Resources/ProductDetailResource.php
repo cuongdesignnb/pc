@@ -91,6 +91,8 @@ class ProductDetailResource extends JsonResource
             'catalog_content_id' => $this->catalogContentId(),
             'warranty_packages' => app(\App\Services\Catalog\WarrantyPackages::class)->forProduct($this->resource),
             'compliance' => app(\App\Services\Catalog\ProductCompliance::class)->forProduct($this->resource),
+            // schema.org Product/Offer fields (condition, seller, warranty, returns, shipping, reviews).
+            'structured_data' => app(\App\Services\Seo\ProductStructuredData::class)->forProduct($this->resource, (int) $displayPrice),
             'sold_count' => (int) $this->sold_count,
             'rating' => [
                 'average' => $reviewAverage,

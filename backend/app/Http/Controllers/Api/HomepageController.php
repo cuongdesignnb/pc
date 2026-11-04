@@ -118,7 +118,7 @@ class HomepageController extends Controller
         }
 
         $categoryIds = $this->categoryIds($category);
-        $products = $this->productQuery()
+        $products = $this->inStockFirst($this->productQuery())
             ->whereIn('category_id', $categoryIds)
             ->orderByDesc('is_featured')
             ->orderByDesc('sold_count')
@@ -248,7 +248,7 @@ class HomepageController extends Controller
                 return null;
             }
 
-            $products = $this->productQuery()
+            $products = $this->inStockFirst($this->productQuery())
                 ->whereIn('category_id', $this->categoryIds($category))
                 ->orderByDesc('sold_count')
                 ->orderByDesc('is_featured')
@@ -349,6 +349,23 @@ class HomepageController extends Controller
             ->withAvg('approvedReviews', 'rating')
             ->withCount('approvedReviews')
             ->visibleOnStorefront();
+    }
+
+    /**
+     * In-stock products before sold-out ones (Cài đặt → Trang chủ), keeping
+     * the block's own order inside each group.
+     */
+    private function inStockFirst(Builder $query): Builder
+    {
+        if (! $this->toBoolean(Setting::get('homepage_in_stock_first', true), true)) {
+            return $query;
+        }
+        $inStock = Product::query()->select('id')->inStock();
+
+        return $query->orderByRaw(
+            'CASE WHEN products.id IN ('.$inStock->toSql().') THEN 0 ELSE 1 END',
+            $inStock->getBindings(),
+        );
     }
 
     /** @return list<int> */
