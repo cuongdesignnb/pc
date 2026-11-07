@@ -12,6 +12,7 @@ class Page extends Model
         'body',
         'meta_title',
         'meta_description',
+        'schema_json',
         'is_active',
         'slug_source',
         'slug_policy_version',

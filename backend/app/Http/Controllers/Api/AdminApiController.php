@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Media;
 use App\Models\Post;
+use App\Models\PostCategory;
 use App\Models\Product;
 use App\Models\SlugHistory;
 use App\Services\News\ArticleContentSanitizer;
@@ -71,9 +72,19 @@ class AdminApiController extends Controller
             'images' => 'sometimes|array|max:50',
             'images.*.id' => 'required|integer',
             'images.*.alt' => 'nullable|string|max:255',
+            'specifications' => 'sometimes|nullable|array|max:100',
+            'specifications.*.label' => 'required|string|max:255',
+            'specifications.*.value' => 'nullable|string|max:2000',
         ]);
 
-        $product->fill(collect($validated)->except('images')->all())->save();
+        $fields = collect($validated)->except(['images', 'specifications'])->all();
+        if (array_key_exists('specifications', $validated)) {
+            // Stored as "Label: value" lines, the same as the admin's "Thông số kỹ thuật" box.
+            $fields['specifications_text'] = collect($validated['specifications'] ?? [])
+                ->map(fn (array $spec): string => self::oneLine(str_replace(':', ' ', $spec['label'])).': '.self::oneLine((string) ($spec['value'] ?? '')))
+                ->implode("\n") ?: null;
+        }
+        $product->fill($fields)->save();
         foreach ($validated['images'] ?? [] as $image) {
             $product->images()->whereKey($image['id'])->update(['alt_text' => filled($image['alt']) ? trim($image['alt']) : null]);
         }
@@ -112,6 +123,14 @@ class AdminApiController extends Controller
         $category->fill($validated)->save();
 
         return response()->json(['data' => $this->categoryPayload($category)]);
+    }
+
+    public function postCategories(): JsonResponse
+    {
+        return response()->json(['data' => PostCategory::query()->orderBy('sort_order')->orderBy('id')->get()
+            ->map(fn (PostCategory $category) => $category->only(['id', 'name', 'slug', 'description', 'sort_order']) + [
+                'url' => $this->urls->absolute($this->urls->postCategoryPath($category)),
+            ])->all()]);
     }
 
     // ---- Posts ----------------------------------------------------------
@@ -215,7 +234,17 @@ class AdminApiController extends Controller
             'category' => $product->category?->only(['id', 'name', 'slug']),
             'price' => (float) $product->price,
             'sale_price' => $product->sale_price !== null ? (float) $product->sale_price : null,
+            // What the website sells now (0 when sold out or hidden).
             'stock_quantity' => (int) $product->stock_quantity,
+            // Ready to sell: KIOT units not under repair and not reserved.
+            'ready_quantity' => $this->readyQuantity($product),
+            'inventory_source' => $product->inventory_source,
+            'kiot' => $product->inventory_source === 'kiot' ? [
+                'stock_quantity' => (int) $product->kiot_physical_quantity,
+                'reserved_quantity' => (int) $product->kiot_reserved_quantity,
+                'ready_quantity' => $this->readyQuantity($product),
+                'synced_at' => $product->kiot_synced_at?->toIso8601String(),
+            ] : null,
             'is_active' => (bool) $product->is_active,
             'show_on_pc_website' => (bool) $product->show_on_pc_website,
             'manufacture_year' => $product->manufacture_year,
@@ -223,11 +252,26 @@ class AdminApiController extends Controller
             'meta_description' => $product->meta_description,
             'short_description' => $product->short_description,
             'description' => $product->description,
+            'specifications' => collect($product->parsed_specifications)->values()->all(),
             'images' => $product->images->sortBy('sort_order')->values()->map(fn ($image) => [
                 'id' => $image->id, 'url' => $image->url, 'alt' => $image->alt, 'is_primary' => (bool) $image->is_primary,
             ])->all(),
             'updated_at' => $product->updated_at?->toIso8601String(),
         ];
+    }
+
+    private static function oneLine(string $text): string
+    {
+        return trim((string) preg_replace('/\s+/u', ' ', $text));
+    }
+
+    private function readyQuantity(Product $product): int
+    {
+        if ($product->inventory_source !== 'kiot') {
+            return (int) $product->stock_quantity;
+        }
+
+        return (int) ($product->kiot_ready_quantity ?? $product->kiot_available_quantity);
     }
 
     private function categoryPayload(Category $category): array
@@ -246,6 +290,8 @@ class AdminApiController extends Controller
         ]) + ($withBody ? ['body' => $post->body] : []) + [
             'url' => $this->urls->postUrl($post),
             'published_at' => $post->published_at?->toIso8601String(),
+            // Published with a future date: goes live by itself at published_at.
+            'is_scheduled' => $post->status === 'published' && $post->published_at?->isFuture() === true,
             'updated_at' => $post->updated_at?->toIso8601String(),
         ];
     }

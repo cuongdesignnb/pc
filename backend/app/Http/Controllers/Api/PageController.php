@@ -7,6 +7,7 @@ use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\PageSchema;
 use App\Support\PolicyPages;
 use Illuminate\Http\JsonResponse;
 
@@ -38,6 +39,8 @@ class PageController extends Controller
                 'meta_title' => PolicyPages::fill($page->meta_title, false),
                 'meta_description' => PolicyPages::fill($page->meta_description, false),
                 'canonical_path' => $canonicalPath,
+                // JSON-LD typed in admin for this page (LocalBusiness, FAQPage…).
+                'schema' => PageSchema::parse($page->schema_json) ?? [],
                 'updated_at' => $page->updated_at?->toIso8601String(),
             ],
         ]);

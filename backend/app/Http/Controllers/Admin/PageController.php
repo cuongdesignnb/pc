@@ -8,6 +8,7 @@ use App\Models\Page;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\PageSchema;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -40,8 +41,12 @@ class PageController extends Controller
             'body' => 'required|string',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
+            'schema_json' => 'nullable|string|max:100000',
             'is_active' => 'boolean',
         ]);
+        if (PageSchema::parse($validated['schema_json'] ?? null) === null) {
+            return back()->withErrors(['schema_json' => 'JSON-LD không hợp lệ: cần một đối tượng (hoặc danh sách đối tượng) JSON có "@type", ví dụ {"@type": "FAQPage", ...}.'])->withInput();
+        }
 
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);
@@ -84,8 +89,12 @@ class PageController extends Controller
             'body' => 'required|string',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
+            'schema_json' => 'nullable|string|max:100000',
             'is_active' => 'boolean',
         ]);
+        if (PageSchema::parse($validated['schema_json'] ?? null) === null) {
+            return back()->withErrors(['schema_json' => 'JSON-LD không hợp lệ: cần một đối tượng (hoặc danh sách đối tượng) JSON có "@type", ví dụ {"@type": "FAQPage", ...}.'])->withInput();
+        }
 
         try {
             $validated['slug'] = $slugs->validateCustom($validated['slug']);

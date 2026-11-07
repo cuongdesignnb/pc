@@ -4,7 +4,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 const props = defineProps({ page: Object });
 const pg = props.page;
-const form = useForm({ title: pg.title, slug: pg.slug, body: pg.body || '', meta_title: pg.meta_title || '', meta_description: pg.meta_description || '', is_active: pg.is_active ?? true });
+const form = useForm({ title: pg.title, slug: pg.slug, body: pg.body || '', meta_title: pg.meta_title || '', meta_description: pg.meta_description || '', schema_json: pg.schema_json || '', is_active: pg.is_active ?? true });
 function submit() { form.put(`/admin/pages/${pg.id}`); }
 </script>
 <template>
@@ -22,6 +22,7 @@ function submit() { form.put(`/admin/pages/${pg.id}`); }
                 <h4 class="font-medium text-slate-200">SEO</h4>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta Title</label><input v-model="form.meta_title" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta Description</label><textarea v-model="form.meta_description" rows="2" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">JSON-LD riêng cho trang (tuỳ chọn)</label><textarea v-model="form.schema_json" rows="8" spellcheck="false" placeholder='{"@type": "FAQPage", "mainEntity": [...]}' class="w-full border border-slate-700/50 rounded-lg px-3 py-2 font-mono text-xs"></textarea><p class="mt-1 text-xs text-slate-500">Dán schema như LocalBusiness, FAQPage (một đối tượng, danh sách hoặc @graph). Không cần thẻ &lt;script&gt; và @context.</p><p v-if="form.errors.schema_json" class="mt-1 text-xs text-red-400">{{ form.errors.schema_json }}</p></div>
             </div>
             <div class="flex justify-end gap-3">
                 <Link href="/admin/pages" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>
