@@ -35,6 +35,8 @@ class ProductStructuredData
 
         return [
             'brand' => $this->brandName($product),
+            'gtin' => $this->gtin($product->barcode),
+            'mpn' => $this->mpn($product),
             'item_condition' => $this->condition($product),
             'price_valid_until' => $this->priceValidUntil(),
             'seller' => array_filter([
@@ -77,6 +79,34 @@ class ProductStructuredData
         $brand = $brands->first(fn (Brand $brand): bool => in_array(mb_strtolower((string) $brand->name), $words, true));
 
         return $brand?->name;
+    }
+
+    /** A barcode that is a real GTIN-8/12/13/14 (valid GS1 check digit), else null. */
+    public function gtin(?string $barcode): ?string
+    {
+        $digits = trim((string) $barcode);
+        if (! preg_match('/^(\d{8}|\d{12,14})$/', $digits)) {
+            return null;
+        }
+        $sum = 0;
+        $body = strrev(substr($digits, 0, -1));
+        for ($i = 0; $i < strlen($body); $i++) {
+            $sum += (int) $body[$i] * ($i % 2 === 0 ? 3 : 1);
+        }
+
+        return (10 - $sum % 10) % 10 === (int) substr($digits, -1) ? $digits : null;
+    }
+
+    /** The manufacturer part number from the product's specifications, when listed. */
+    public function mpn(Product $product): ?string
+    {
+        foreach ($product->parsed_specifications as $spec) {
+            if (preg_match('/^(mpn|part\s*(number|no\.?)|p\/n|mã\s*(nhà sản xuất|sản phẩm nhà sản xuất|part)|model\s*number)$/iu', trim((string) ($spec['label'] ?? ''))) && filled($spec['value'] ?? null)) {
+                return mb_substr(trim((string) $spec['value']), 0, 70);
+            }
+        }
+
+        return null;
     }
 
     /** Laptop cũ (the category tree or the name says "cũ") is used; else refurbished or new. */

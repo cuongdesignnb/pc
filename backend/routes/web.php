@@ -141,6 +141,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
 
     // Pages
     Route::resource('pages', PageController::class);
+    Route::resource('redirects', \App\Http\Controllers\Admin\RedirectController::class)->only(['index', 'store', 'update', 'destroy']);
 
     // SEO URL governance. Slug changes are intentionally separated from
     // ordinary CRUD so every rename has a preview and a verified 301 history.

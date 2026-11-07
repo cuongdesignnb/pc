@@ -81,6 +81,7 @@ Route::prefix('v1')->group(function () {
 
     // Published CMS pages. Hidden pages remain unavailable to public clients.
     Route::get('/pages/{slug}', [PageController::class, 'show']);
+    Route::get('/redirects', [\App\Http\Controllers\Api\RedirectController::class, 'index']);
 
     // Newsletter
     Route::post('/newsletter/subscribe', [NewsletterController::class, 'subscribe']);
@@ -198,6 +199,7 @@ Route::prefix('v1/admin-api')->middleware(['auth:sanctum', 'throttle:120,1'])->n
         Route::get('products', [AdminApiController::class, 'products'])->name('products.index');
         Route::get('products/{product}', [AdminApiController::class, 'product'])->name('products.show');
         Route::get('categories', [AdminApiController::class, 'categories'])->name('categories.index');
+        Route::get('post-categories', [AdminApiController::class, 'postCategories'])->name('post-categories.index');
         Route::get('posts', [AdminApiController::class, 'posts'])->name('posts.index');
         Route::get('posts/{post}', [AdminApiController::class, 'post'])->name('posts.show');
         Route::get('media', [AdminApiController::class, 'media'])->name('media.index');

@@ -437,6 +437,7 @@ class KiotProductSyncService
                 'kiot_reserved_quantity' => max(0, (int) ($remote['reserved_quantity'] ?? 0)),
                 'stock_quantity' => $sellable ? $availableQuantity : 0,
                 'kiot_available_quantity' => $availableQuantity,
+                'kiot_ready_quantity' => $availableQuantity,
                 'kiot_has_serial' => (bool) ($remote['has_serial'] ?? false),
                 'kiot_sellable' => $sellable,
                 'kiot_sync_status' => $remote['sync_status'] ?? 'active',
@@ -556,6 +557,8 @@ class KiotProductSyncService
             $physicalQuantity = max(0, (int) ($remote['inventory']['stock_quantity'] ?? 0));
             $reservedQuantity = max(0, (int) ($remote['inventory']['reserved_quantity'] ?? 0));
             $availableQuantity = max(0, (int) ($remote['inventory']['available_quantity'] ?? 0));
+            // KIOT's own count of units ready to sell now (not under repair, not reserved).
+            $readyQuantity = $availableQuantity;
             $reportedUnderRepair = $rawAvailabilityStatus === 'repairing'
                 || (bool) ($remote['availability']['is_under_repair'] ?? false);
             if ($reportedUnderRepair) {
@@ -596,6 +599,7 @@ class KiotProductSyncService
                 'kiot_physical_quantity' => $physicalQuantity,
                 'kiot_reserved_quantity' => $reservedQuantity,
                 'kiot_available_quantity' => $availableQuantity,
+                'kiot_ready_quantity' => $readyQuantity,
                 'kiot_retail_price' => $this->money($remote['pricing']['retail_price'] ?? 0, $remoteId, $report),
                 'kiot_selected_price' => $selectedPrice,
                 'kiot_price_fallback_used' => (bool) ($remote['pricing']['fallback_used'] ?? false),
@@ -637,6 +641,9 @@ class KiotProductSyncService
                     $report['created']++;
                 }
             } elseif (hash_equals((string) $product->kiot_sync_checksum, $checksum)) {
+                if ($product->kiot_ready_quantity === null && ! $dryRun) {
+                    $product->forceFill(['kiot_ready_quantity' => $readyQuantity])->saveQuietly();
+                }
                 if ($product->slug_policy_version === null || $product->slug_locked_at === null) {
                     $product->forceFill([
                         'slug_source' => $product->slug_source ?: $product->name,

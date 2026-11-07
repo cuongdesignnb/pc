@@ -219,6 +219,8 @@ class KiotProductConsumerV2Test extends TestCase
         $repairingLocal = Product::where('remote_product_id', 124)->firstOrFail();
         $this->assertTrue($repairingLocal->isSellableOnline());
         $this->assertSame(1, $repairingLocal->stock_quantity);
+        // The web may sell it, but KIOT's ready-to-sell count stays 0 for tools reading it.
+        $this->assertSame(0, $repairingLocal->kiot_ready_quantity);
         $this->assertSame('available', $repairingLocal->kiot_availability_status);
         $this->assertFalse($repairingLocal->kiot_is_under_repair);
         $this->assertSame('Còn hàng', $repairingLocal->availability_label);
