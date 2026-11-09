@@ -146,6 +146,10 @@ class KiotOrderService
                     'subtotal' => $subtotal,
                     'discount' => $discount,
                     'referral_discount' => $discount,
+                    'utm_source' => self::cleanSource($data['utm_source'] ?? null),
+                    'utm_campaign' => self::cleanSource($data['utm_campaign'] ?? null),
+                    'utm_content' => self::cleanSource($data['utm_content'] ?? null),
+                    'video_code' => self::cleanSource($data['video_code'] ?? null),
                     'shipping_fee' => $shippingFee,
                     'total' => $total,
                     'payment_method' => $data['payment_method'],
@@ -309,14 +313,32 @@ class KiotOrderService
         ];
     }
 
-    /** The customer's note, plus the CTV who brought the order so the shop sees it in KIOT. */
+    /** The customer's note, then where the order came from (website, UTM, video, CTV) so the shop sees it in KIOT. */
     private function kiotNote(Order $order): ?string
     {
+        $source = collect([
+            'utm_source' => $order->utm_source,
+            'utm_campaign' => $order->utm_campaign,
+            'utm_content' => $order->utm_content,
+        ])->filter(fn ($value) => filled($value))->map(fn ($value, $key) => "{$key}={$value}")->implode(', ');
+        $lines = [
+            'Nguồn: Website '.$order->order_number.($source !== '' ? " ({$source})" : ''),
+        ];
+        if (filled($order->video_code)) {
+            $lines[] = 'Mã video: '.$order->video_code;
+        }
         $affiliate = $order->affiliate()->with('user')->first();
-        if (! $affiliate) {
-            return $order->notes;
+        if ($affiliate) {
+            $lines[] = 'Khách của CTV: '.$affiliate->label();
         }
 
-        return trim(($order->notes ?? '')."\nKhách của CTV: ".$affiliate->label());
+        return trim(($order->notes ?? '')."\n".implode("\n", $lines));
+    }
+
+    private static function cleanSource(mixed $value): ?string
+    {
+        $value = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string) $value));
+
+        return $value === '' ? null : mb_substr($value, 0, 150);
     }
 }

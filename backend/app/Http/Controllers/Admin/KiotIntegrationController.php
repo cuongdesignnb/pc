@@ -24,6 +24,7 @@ use App\Services\Integrations\Kiot\KiotPairingService;
 use App\Services\Integrations\Kiot\KiotProductSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -91,11 +92,7 @@ class KiotIntegrationController extends Controller
             'nextScheduledRun' => $runtime->productSyncEnabled ? now()->addMinutes(5)->toIso8601String() : null,
             'counts' => [
                 'product_errors' => Product::whereNotNull('kiot_sync_error_code')->count(),
-                'products_stale' => Product::where('inventory_source', 'kiot')
-                    ->where(function ($query) use ($runtime) {
-                        $query->whereNull('kiot_synced_at')
-                            ->orWhere('kiot_synced_at', '<', now()->subMinutes($runtime->productStaleAfterMinutes));
-                    })->count(),
+                'products_stale' => $this->staleProductCount($runtime->productStaleAfterMinutes),
                 'orders_pending' => Order::whereIn('kiot_sync_status', ['pending', 'sending'])->count(),
                 'orders_retrying' => Order::where('kiot_sync_status', 'retrying')->count(),
                 'orders_rejected' => Order::where('kiot_sync_status', 'rejected')->count(),
@@ -112,6 +109,32 @@ class KiotIntegrationController extends Controller
                 ->get(['id', 'integration_connection_id', 'event', 'actor_id', 'metadata', 'created_at']),
             'skuPreview' => $request->session()->get('kiot_preview'),
         ]);
+    }
+
+    /**
+     * Products whose KIOT stock may be out of date. An incremental run asks KIOT
+     * for every product changed since the last watermark, so after a recent
+     * successful run all products seen at least once are current, even those
+     * KIOT did not report. Without such a run, fall back to per-product age.
+     */
+    private function staleProductCount(int $staleAfterMinutes): int
+    {
+        $threshold = now()->subMinutes($staleAfterMinutes);
+        $lastSuccess = IntegrationSyncRun::query()
+            ->where(['provider' => 'kiot', 'resource' => 'products'])
+            ->whereIn('mode', ['incremental', 'full'])
+            ->whereIn('status', ['completed', 'completed_with_warnings'])
+            ->latest('completed_at')
+            ->value('completed_at');
+        $recent = $lastSuccess !== null && Carbon::parse($lastSuccess)->greaterThanOrEqualTo($threshold);
+
+        return Product::where('inventory_source', 'kiot')
+            ->where(function ($query) use ($recent, $threshold) {
+                $query->whereNull('kiot_synced_at');
+                if (! $recent) {
+                    $query->orWhere('kiot_synced_at', '<', $threshold);
+                }
+            })->count();
     }
 
     public function pair(Request $request): RedirectResponse

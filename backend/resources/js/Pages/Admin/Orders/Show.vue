@@ -261,6 +261,18 @@ const remaining = computed(() =>
             >
         </div>
         <div
+            v-if="order.utm_source || order.utm_campaign || order.utm_content || order.video_code"
+            class="bg-slate-900 rounded-lg border border-slate-800/60 p-4 mb-6 text-sm"
+        >
+            <p class="text-slate-200 font-semibold mb-2">Nguồn đơn</p>
+            <dl class="grid gap-2 sm:grid-cols-4">
+                <div><dt class="text-slate-500">utm_source</dt><dd class="text-slate-200 break-all">{{ order.utm_source || "—" }}</dd></div>
+                <div><dt class="text-slate-500">utm_campaign</dt><dd class="text-slate-200 break-all">{{ order.utm_campaign || "—" }}</dd></div>
+                <div><dt class="text-slate-500">utm_content</dt><dd class="text-slate-200 break-all">{{ order.utm_content || "—" }}</dd></div>
+                <div><dt class="text-slate-500">Mã video</dt><dd class="text-slate-200 break-all">{{ order.video_code || "—" }}</dd></div>
+            </dl>
+        </div>
+        <div
             v-if="kiot"
             class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-4 mb-6 flex flex-wrap items-center justify-between gap-3"
         >

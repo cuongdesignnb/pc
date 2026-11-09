@@ -15,6 +15,14 @@ use Illuminate\Support\Str;
 
 class CatalogProductProjectionService
 {
+    /** Web-only products (not from KIOT) whose SKU starts with this are also listed in the feeds. */
+    public const LOCAL_SKU_PREFIX = 'WEB-NEW-';
+
+    public static function isLocalWebProduct(Product $product): bool
+    {
+        return $product->provider !== 'kiot' && $product->inventory_source !== 'kiot';
+    }
+
     public function __construct(
         private readonly CatalogProductChecksum $checksum,
         private readonly CatalogPriceResolver $prices,
@@ -26,7 +34,10 @@ class CatalogProductProjectionService
     {
         return Product::query()
             ->withTrashed()
-            ->where('provider', 'kiot')
+            ->where(fn (Builder $query) => $query->where('provider', 'kiot')->orWhere(fn (Builder $local) => $local
+                ->where(fn (Builder $source) => $source->whereNull('inventory_source')->orWhere('inventory_source', '!=', 'kiot'))
+                ->where(fn (Builder $provider) => $provider->whereNull('provider')->orWhere('provider', '!=', 'kiot'))
+                ->where('sku', 'like', self::LOCAL_SKU_PREFIX.'%')))
             ->with([
                 'category:id,parent_id,name,slug,is_active,provider,show_on_pc_website,provider_sync_status',
                 'brand:id,name',
@@ -69,17 +80,18 @@ class CatalogProductProjectionService
         $categories ??= Category::query()->get()->keyBy('id');
         $category = $product->category;
         $categoryVisible = $category?->isVisibleOnStorefront() === true;
-        $isDeleted = $product->trashed() || $product->kiot_sync_status === 'deleted';
+        $local = self::isLocalWebProduct($product);
+        $isDeleted = $product->trashed() || (! $local && $product->kiot_sync_status === 'deleted');
         $isVisible = ! $isDeleted
             && (bool) $product->show_on_pc_website
             && (bool) $product->is_active
-            && $product->kiot_sync_status === 'active'
+            && ($local || $product->kiot_sync_status === 'active')
             && $categoryVisible;
         // "Đang sửa chữa" from KIOT is operational metadata. It must not
         // suppress the retail price, inventory, or sales eligibility.
         $underRepair = false;
-        $isSellable = (bool) $product->kiot_sellable;
-        $inventory = max(0, (int) ($product->kiot_available_quantity ?? 0));
+        $isSellable = $local ? (bool) $product->is_active : (bool) $product->kiot_sellable;
+        $inventory = max(0, (int) ($local ? $product->stock_quantity : ($product->kiot_available_quantity ?? 0)));
         $images = $product->images
             ->pluck('url')
             ->filter()

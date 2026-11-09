@@ -229,18 +229,18 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <div><dt class="text-slate-500">Lần chạy tự động kế tiếp</dt><dd class="mt-1 text-slate-200">{{ formatTime(nextScheduledRun) }}</dd></div>
                 </dl>
                 <p v-if="counts.products_stale" class="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                    Storefront vẫn đọc cache gần nhất; KIOT tiếp tục là cổng kiểm tra tồn cuối khi checkout. Hãy kiểm tra product sync trước khi bật integration.
+                    Có sản phẩm chưa được xác nhận tồn kho từ KIOT gần đây (chưa đồng bộ lần nào, hoặc lần đồng bộ tự động gần nhất bị lỗi). Bấm "Đồng bộ toàn bộ sản phẩm" để kiểm tra lại tất cả. Lần chạy tự động mỗi 5 phút chỉ lấy các mã có thay đổi trên KIOT, nên thường chỉ xử lý vài mã là bình thường.
                 </p>
                 <div class="mt-5 grid gap-3 md:grid-cols-[1fr_auto_auto]">
                     <label class="sr-only" for="kiot-sku">SKU cần kiểm tra</label>
                     <input id="kiot-sku" v-model="skuForm.sku" placeholder="Nhập chính xác SKU" class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
-                    <button :disabled="!canPilot || !skuForm.sku || skuForm.processing" @click="skuForm.post('/admin/integrations/kiot/test-one', { preserveScroll: true })" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">Test one SKU</button>
-                    <button :disabled="!canProductWrite || !skuForm.sku || skuForm.processing" @click="skuForm.post('/admin/integrations/kiot/sync-one', { preserveScroll: true })" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Sync one SKU</button>
+                    <button :disabled="!canPilot || !skuForm.sku || skuForm.processing" @click="skuForm.post('/admin/integrations/kiot/test-one', { preserveScroll: true })" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">Kiểm tra 1 SKU</button>
+                    <button :disabled="!canProductWrite || !skuForm.sku || skuForm.processing" @click="skuForm.post('/admin/integrations/kiot/sync-one', { preserveScroll: true })" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Đồng bộ 1 SKU</button>
                 </div>
                 <div class="mt-3 flex flex-wrap gap-3">
-                    <button :disabled="!canPilot" @click="submit('/admin/integrations/kiot/dry-run')" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">Product dry-run</button>
-                    <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/sync')" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Full product sync</button>
-                    <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/incremental')" class="rounded-lg border border-cyan-500/40 px-4 py-2 text-sm text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40">Incremental sync</button>
+                    <button :disabled="!canPilot" @click="submit('/admin/integrations/kiot/dry-run')" class="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">Chạy thử (không ghi)</button>
+                    <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/sync')" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Đồng bộ toàn bộ sản phẩm</button>
+                    <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/incremental')" class="rounded-lg border border-cyan-500/40 px-4 py-2 text-sm text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40">Chỉ lấy mã thay đổi</button>
                     <button :disabled="!canOrderRetry" @click="submit('/admin/integrations/kiot/retry')" class="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300 disabled:cursor-not-allowed disabled:opacity-40">Retry đơn lỗi</button>
                 </div>
                 <dl v-if="skuPreview" class="mt-5 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
