@@ -34,7 +34,7 @@ class AdminApiController extends Controller
 
     public function products(Request $request): JsonResponse
     {
-        $query = Product::query()->with(['category:id,name,slug', 'images'])->orderByDesc('id');
+        $query = Product::query()->with(['category:id,name,slug', 'images'])->withExists('variants')->orderByDesc('id');
         if (filled($request->search)) {
             $search = (string) $request->search;
             $query->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%"));
@@ -60,11 +60,22 @@ class AdminApiController extends Controller
 
     public function updateProduct(Request $request, Product $product): JsonResponse
     {
-        $request->validate([
-            'price' => 'prohibited', 'sale_price' => 'prohibited', 'stock_quantity' => 'prohibited',
-            'category_id' => 'prohibited', 'is_active' => 'prohibited', 'slug' => 'prohibited',
-        ], ['prohibited' => 'API không được sửa :attribute (giá, tồn kho, danh mục, hiển thị và slug chỉ sửa trên trang admin).']);
+        $pricesEditable = self::apiMayEditPrices($product);
+        $request->validate(array_filter([
+            'price' => $pricesEditable ? null : 'prohibited',
+            'sale_price' => $pricesEditable ? null : 'prohibited',
+            'stock_quantity' => 'prohibited', 'category_id' => 'prohibited', 'is_active' => 'prohibited', 'slug' => 'prohibited',
+        ]), ['prohibited' => 'API không được sửa :attribute (giá chỉ sửa được với sản phẩm web có SKU bắt đầu bằng '.self::API_PRICE_SKU_PREFIX.'; tồn kho, danh mục, hiển thị và slug chỉ sửa trên trang admin).']);
+        // Accept {"CPU": "i5"} as well as [{"label": "CPU", "value": "i5"}].
+        $specifications = $request->input('specifications');
+        if (is_array($specifications) && ! array_is_list($specifications)) {
+            $request->merge(['specifications' => collect($specifications)
+                ->map(fn ($value, $label) => ['label' => (string) $label, 'value' => is_scalar($value) || $value === null ? $value : json_encode($value, JSON_UNESCAPED_UNICODE)])
+                ->values()->all()]);
+        }
         $validated = $request->validate([
+            'price' => 'sometimes|required|integer|min:1|max:10000000000',
+            'sale_price' => 'sometimes|nullable|integer|min:0|max:10000000000',
             'meta_title' => 'sometimes|nullable|string|max:255',
             'meta_description' => 'sometimes|nullable|string|max:1000',
             'short_description' => 'sometimes|nullable|string|max:500',
@@ -78,6 +89,13 @@ class AdminApiController extends Controller
         ]);
 
         $fields = collect($validated)->except(['images', 'specifications'])->all();
+        $price = (int) ($fields['price'] ?? $product->price);
+        if (array_key_exists('sale_price', $fields) && $fields['sale_price'] !== null && (int) $fields['sale_price'] >= $price) {
+            throw ValidationException::withMessages(['sale_price' => 'Giá khuyến mãi phải nhỏ hơn giá bán.']);
+        }
+        if (array_key_exists('sale_price', $fields) && (int) ($fields['sale_price'] ?? 0) === 0) {
+            $fields['sale_price'] = null;
+        }
         if (array_key_exists('specifications', $validated)) {
             // Stored as "Label: value" lines, the same as the admin's "Thông số kỹ thuật" box.
             $fields['specifications_text'] = collect($validated['specifications'] ?? [])
@@ -90,6 +108,17 @@ class AdminApiController extends Controller
         }
 
         return $this->product($product->fresh());
+    }
+
+    public const API_PRICE_SKU_PREFIX = 'WEB-NEW-';
+
+    /** Only web-only products (not from KIOT) with a WEB-NEW- SKU may have prices set by API. */
+    public static function apiMayEditPrices(Product $product): bool
+    {
+        return str_starts_with((string) $product->sku, self::API_PRICE_SKU_PREFIX)
+            && $product->inventory_source !== 'kiot'
+            && $product->provider !== 'kiot'
+            && ! ($product->variants_exists ?? $product->variants()->exists());
     }
 
     // ---- Categories -----------------------------------------------------
@@ -234,6 +263,7 @@ class AdminApiController extends Controller
             'category' => $product->category?->only(['id', 'name', 'slug']),
             'price' => (float) $product->price,
             'sale_price' => $product->sale_price !== null ? (float) $product->sale_price : null,
+            'price_editable' => self::apiMayEditPrices($product),
             // What the website sells now (0 when sold out or hidden).
             'stock_quantity' => (int) $product->stock_quantity,
             // Ready to sell: KIOT units not under repair and not reserved.

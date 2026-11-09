@@ -641,8 +641,12 @@ class KiotProductSyncService
                     $report['created']++;
                 }
             } elseif (hash_equals((string) $product->kiot_sync_checksum, $checksum)) {
-                if ($product->kiot_ready_quantity === null && ! $dryRun) {
-                    $product->forceFill(['kiot_ready_quantity' => $readyQuantity])->saveQuietly();
+                if (! $dryRun) {
+                    // Unchanged in KIOT, but confirmed current as of this run.
+                    $product->forceFill(array_filter([
+                        'kiot_synced_at' => now(),
+                        'kiot_ready_quantity' => $product->kiot_ready_quantity === null ? $readyQuantity : null,
+                    ], fn ($value) => $value !== null))->saveQuietly();
                 }
                 if ($product->slug_policy_version === null || $product->slug_locked_at === null) {
                     $product->forceFill([

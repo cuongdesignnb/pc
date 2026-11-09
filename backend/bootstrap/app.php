@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AdminAuthenticate;
+use App\Http\Middleware\AllowZaloMiniAppProductReads;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureAdminApiToken;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -34,6 +35,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\TrustProxies::class,
             TrustProxies::class,
         );
+
+        // Runs before HandleCors so Zalo Mini App preflights are answered here.
+        $middleware->prepend(AllowZaloMiniAppProductReads::class);
 
         $middleware->web(append: [
             HandleInertiaRequests::class,

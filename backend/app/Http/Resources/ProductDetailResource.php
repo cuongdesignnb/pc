@@ -115,7 +115,10 @@ class ProductDetailResource extends JsonResource
                 'title' => $block->title,
                 'payload' => $block->payload,
             ]),
-            'video' => YouTubeVideo::toArray($this->video_url),
+            // upload_date is required by Google for VideoObject; the product's creation date is the closest we have.
+            'video' => ($video = YouTubeVideo::toArray($this->video_url))
+                ? $video + ['upload_date' => ($this->created_at ?? $this->updated_at)?->toIso8601String()]
+                : null,
             'specifications' => $specifications,
             'has_specifications' => $hasSpecifications,
             'technical_section_title' => $technicalSectionTitle,
