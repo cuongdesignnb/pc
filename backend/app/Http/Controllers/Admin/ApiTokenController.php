@@ -31,6 +31,10 @@ class ApiTokenController extends Controller
             'expires_in_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
         ], ['name.regex' => 'Tên token không được chứa dấu hai chấm.']);
 
+        if (! $this->tokens->mayIssue($request->user(), $validated['type'])) {
+            return back()->withErrors(['type' => 'Bạn cần quyền xem đơn hàng để tạo token Đơn hàng.']);
+        }
+
         $token = $this->tokens->issue($request->user(), $validated['name'], $validated['type'], $validated['expires_in_days'] ?? null);
 
         // Shown once: only a hash is stored.

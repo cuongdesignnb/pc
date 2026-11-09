@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Admin\MediaController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminApiController;
+use App\Http\Controllers\Api\AdminApiOrderController;
 use App\Http\Controllers\Api\AffiliateController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
@@ -203,6 +204,10 @@ Route::prefix('v1/admin-api')->middleware(['auth:sanctum', 'throttle:120,1'])->n
         Route::get('posts', [AdminApiController::class, 'posts'])->name('posts.index');
         Route::get('posts/{post}', [AdminApiController::class, 'post'])->name('posts.show');
         Route::get('media', [AdminApiController::class, 'media'])->name('media.index');
+    });
+    Route::middleware('admin.api:'.AdminApiTokens::ORDERS_READ)->group(function () {
+        Route::get('orders', [AdminApiOrderController::class, 'index'])->name('orders.index');
+        Route::get('orders/{order}', [AdminApiOrderController::class, 'show'])->whereNumber('order')->name('orders.show');
     });
     Route::middleware('admin.api:'.AdminApiTokens::WRITE)->group(function () {
         Route::patch('products/{product}', [AdminApiController::class, 'updateProduct'])->name('products.update');

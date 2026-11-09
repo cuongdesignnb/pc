@@ -10,7 +10,8 @@ use Laravel\Sanctum\PersonalAccessToken;
 /**
  * API tokens for tools outside the admin site. "content" may read and write
  * articles, categories, media and product SEO fields (never price or stock);
- * "readonly" (for KIOT and reports) may only read.
+ * "readonly" (for KIOT and reports) may only read. "orders" may only list
+ * orders, for shop notifications (n8n), and is kept apart from content tokens.
  */
 class AdminApiTokens
 {
@@ -20,10 +21,24 @@ class AdminApiTokens
 
     public const WRITE = 'content:write';
 
+    public const ORDERS_READ = 'orders:read';
+
     public const TYPES = [
         'content' => ['label' => 'Nội dung (đọc + ghi bài viết, danh mục, ảnh, SEO sản phẩm)', 'abilities' => [self::READ, self::WRITE]],
         'readonly' => ['label' => 'Chỉ đọc (ví dụ cho KIOT)', 'abilities' => [self::READ]],
+        'orders' => ['label' => 'Đơn hàng – chỉ đọc (tên, SĐT, sản phẩm, tổng tiền của đơn)', 'abilities' => [self::ORDERS_READ]],
     ];
+
+    /** Order tokens expose customer names and phones: only staff who may see orders. */
+    public function mayIssue(User $owner, string $type): bool
+    {
+        return $type !== 'orders' || self::mayReadOrders($owner);
+    }
+
+    public static function mayReadOrders(User $user): bool
+    {
+        return $user->hasRole('super-admin') || $user->checkPermissionTo('orders.view');
+    }
 
     public function issue(User $owner, string $name, string $type, ?int $expiresInDays = null): NewAccessToken
     {
