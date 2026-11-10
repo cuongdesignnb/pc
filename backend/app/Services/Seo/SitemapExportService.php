@@ -7,6 +7,7 @@ use App\Models\Page;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Product;
+use App\Models\Redirect;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -80,6 +81,11 @@ class SitemapExportService
     /** @return list<array{path:string,lastmod:?CarbonInterface}> */
     private function staticEntries(): array
     {
+        // A path that redirects elsewhere is not a page of its own.
+        $redirected = Redirect::query()->where('is_active', true)->pluck('source_path')
+            ->map(fn (mixed $path): ?string => Redirect::normalizePath((string) $path))
+            ->filter()->flip();
+
         return collect((array) config('seo.static_paths', []))
             ->map(fn (mixed $path): array => ['path' => (string) $path, 'lastmod' => null])
             ->merge(Page::query()->active()
@@ -93,7 +99,8 @@ class SitemapExportService
                         ? null
                         : ['path' => $path, 'lastmod' => $page->updated_at];
                 }))
-            ->filter(fn (?array $entry): bool => $entry !== null && $this->policy->isIndexablePath($entry['path']))
+            ->filter(fn (?array $entry): bool => $entry !== null && $this->policy->isIndexablePath($entry['path'])
+                && ! $redirected->has(Redirect::normalizePath($entry['path'])))
             ->unique('path')
             ->values()
             ->all();

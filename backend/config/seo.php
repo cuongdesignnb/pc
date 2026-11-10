@@ -6,8 +6,9 @@ return [
     'site_origin' => env('SEO_SITE_ORIGIN', env('CATALOG_STOREFRONT_URL', env('FRONTEND_URL'))),
     'slug_policy_version' => 'vn-v1',
     'sitemap_page_size' => 50000,
+    // "Giới thiệu" is a CMS page; it is listed from the pages table when active.
     'static_paths' => [
-        '/', '/san-pham', '/danh-muc', '/tin-tuc', '/gioi-thieu', '/lien-he',
+        '/', '/san-pham', '/danh-muc', '/tin-tuc', '/lien-he',
         '/bao-hanh', '/van-chuyen',
     ],
     // Price-range landing pages (D3): a page of their own on the storefront

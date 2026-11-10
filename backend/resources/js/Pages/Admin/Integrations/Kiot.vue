@@ -54,6 +54,15 @@ watch(() => flagsForm.is_enabled, (enabled) => {
 
 const canPilot = computed(() => props.configuration.configured && props.configuration.connected);
 const canProductWrite = computed(() => props.configuration.enabled && props.configuration.product_sync_enabled);
+// Says why the product sync buttons are locked, in the order the admin must fix it.
+const productLockReason = computed(() => {
+    const c = props.configuration;
+    if (!c.configured) return 'Chưa nhập đủ cấu hình KIOT (địa chỉ, Client ID, secret).';
+    if (!c.connected) return 'KIOT chưa ở trạng thái "Đã kết nối". Bấm "Kiểm tra kết nối"; nếu báo lỗi, xem mã lỗi ở khung Kết nối (thường là địa chỉ KIOT không phải HTTPS hoặc sai secret).';
+    if (!c.enabled) return 'Cờ "Tích hợp chính" đang tắt. Bật ở mục Feature flags rồi bấm "Lưu feature flags". Lưu ý: mỗi lần kiểm tra kết nối thất bại, hệ thống tự tắt các cờ này.';
+    if (!c.product_sync_enabled) return 'Cờ "Đồng bộ sản phẩm" đang tắt. Bật ở mục Feature flags rồi bấm "Lưu feature flags".';
+    return '';
+});
 const canOrderRetry = computed(() => props.configuration.enabled && props.configuration.order_sync_enabled);
 const tabs = [
     ['pairing', 'Ghép nối tự động'],
@@ -243,6 +252,9 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <button :disabled="!canProductWrite" @click="submit('/admin/integrations/kiot/incremental')" class="rounded-lg border border-cyan-500/40 px-4 py-2 text-sm text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40">Chỉ lấy mã thay đổi</button>
                     <button :disabled="!canOrderRetry" @click="submit('/admin/integrations/kiot/retry')" class="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-300 disabled:cursor-not-allowed disabled:opacity-40">Retry đơn lỗi</button>
                 </div>
+                <p v-if="!canProductWrite && productLockReason" class="mt-3 rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-300">
+                    Nút đồng bộ đang khoá: {{ productLockReason }}
+                </p>
                 <dl v-if="skuPreview" class="mt-5 grid gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
                     <div><dt class="text-slate-500">SKU</dt><dd class="mt-1 text-slate-200">{{ skuPreview.sku }}</dd></div>
                     <div><dt class="text-slate-500">Tên sản phẩm</dt><dd class="mt-1 text-slate-200">{{ skuPreview.product_name || 'Chưa có' }}</dd></div>
