@@ -308,6 +308,8 @@ class KiotOrderService
                     : $item->product_name,
                 'quantity' => $item->quantity, 'unit_price' => (int) $item->price,
                 'discount' => 0, 'line_total' => (int) $item->total, 'bundle_ref' => null,
+                // KIOT records the warranty package lasting this many months.
+                'warranty_months' => $item->warranty_months ? (int) $item->warranty_months : null,
             ])->values()->all(),
             'note' => $this->kiotNote($order),
         ];

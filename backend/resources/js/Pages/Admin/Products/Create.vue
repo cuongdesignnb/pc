@@ -22,7 +22,7 @@ const form = useForm({
     description: '', short_description: '', price: 0, sale_price: '', stock_quantity: 0,
     is_active: true, is_featured: false, show_on_pc_website: true, warranty_months: 12,
     manufacture_year: '', is_refurbished: null, warning_info: '', usage_instructions: '',
-    meta_title: '', meta_description: '', video_url: '',
+    meta_title: '', meta_description: '', video_url: '', instant_key_url: '',
     thumbnail: '',
     gallery: [],
     variants: [],
@@ -323,6 +323,14 @@ function removeVariant(index) {
                 <input v-model="form.video_url" type="url" placeholder="https://www.youtube.com/watch?v=..." class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
                 <p v-if="form.errors.video_url" class="text-xs text-red-400">{{ form.errors.video_url }}</p>
                 <p class="text-xs text-slate-500">Dán link YouTube (video thường, youtu.be hoặc Shorts). Video hiện trên trang chi tiết sản phẩm; để trống nếu không có.</p>
+            </div>
+
+            <!-- Lấy key ngay -->
+            <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-2">
+                <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Link lấy key ngay</h4>
+                <input v-model="form.instant_key_url" type="url" placeholder="https://..." class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                <p v-if="form.errors.instant_key_url" class="text-xs text-red-400">{{ form.errors.instant_key_url }}</p>
+                <p class="text-xs text-slate-500">Dành cho phần mềm bản quyền. Có link thì trang sản phẩm hiện thêm nút "Lấy key ngay" (mở tab mới); hết key của shop thì chỉ còn nút này. Để trống để ẩn nút. Link phải bắt đầu bằng https://.</p>
             </div>
 
             <div class="flex justify-end gap-3">

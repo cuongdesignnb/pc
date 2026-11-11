@@ -41,6 +41,7 @@ class Product extends Model
         'meta_title',
         'meta_description',
         'video_url',
+        'instant_key_url',
         'views_count',
         'sold_count',
         'barcode',

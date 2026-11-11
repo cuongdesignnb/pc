@@ -129,6 +129,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/orders/{order}/check-payment', [OrderController::class, 'checkPayment']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
 
+    // Warranty lookup (/tra-cuu-bao-hanh, Zalo Mini App): 5 a minute per IP.
+    Route::get('/warranty-lookup', \App\Http\Controllers\Api\WarrantyLookupController::class)->middleware('throttle:warranty-lookup');
+
     // CTV links: ?ref=CODE visits
     Route::post('/affiliate/clicks', [AffiliateController::class, 'click'])->middleware('throttle:30,1');
 

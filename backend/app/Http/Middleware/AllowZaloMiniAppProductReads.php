@@ -54,8 +54,8 @@ class AllowZaloMiniAppProductReads
         }
         $path = trim($request->path(), '/');
 
-        // GET /api/v1/products and /api/v1/products/{slug} only.
-        return $path === 'api/v1/products'
+        // GET /api/v1/products, /api/v1/products/{slug} and the warranty lookup only.
+        return $path === 'api/v1/products' || $path === 'api/v1/warranty-lookup'
             || (preg_match('#^api/v1/products/[^/]+$#', $path) === 1 && $path !== 'api/v1/products/featured');
     }
 

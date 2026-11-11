@@ -35,6 +35,11 @@ return [
         ],
     ],
 
+    // Cloudflare Turnstile: captcha on the warranty lookup after repeated misses.
+    'turnstile' => [
+        'secret_key' => env('TURNSTILE_SECRET_KEY'),
+    ],
+
     'sepay' => [
         'merchant_id' => env('SEPAY_MERCHANT_ID'),
         'secret_key' => env('SEPAY_SECRET_KEY'),
