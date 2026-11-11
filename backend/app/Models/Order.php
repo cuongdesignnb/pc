@@ -29,6 +29,8 @@ class Order extends Model
         'utm_source',
         'utm_campaign',
         'utm_content',
+        'utm_medium',
+        'landing_page',
         'video_code',
         'order_number',
         'subtotal',

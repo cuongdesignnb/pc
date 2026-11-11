@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Affiliate;
+use App\Models\AffiliateCommission;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\AdminApi\AdminApiTokens;
@@ -68,6 +70,43 @@ class AdminApiOrdersTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/admin-api/products')->assertForbidden();
         $this->withToken($token)->patchJson("/api/v1/admin-api/orders/{$new->id}", ['order_status' => 'cancelled'])->assertStatus(405);
         $this->assertSame('pending', $new->fresh()->order_status);
+    }
+
+    public function test_orders_carry_traffic_source_and_affiliate_commission(): void
+    {
+        $ctv = User::factory()->create();
+        $affiliate = Affiliate::create(['user_id' => $ctv->id, 'code' => 'CTV007', 'phone' => '0900000007', 'status' => 'active']);
+        $order = $this->order([
+            'utm_source' => 'tiktok', 'utm_medium' => 'video', 'utm_campaign' => 'thang11', 'utm_content' => 'review-dell',
+            'video_code' => 'V123', 'landing_page' => '/laptop/dell-7420?utm_source=tiktok',
+            'affiliate_id' => $affiliate->id, 'referral_code' => 'CTV007', 'referral_discount' => 200_000,
+        ]);
+        AffiliateCommission::create([
+            'affiliate_id' => $affiliate->id, 'order_id' => $order->id, 'base_amount' => 9_000_000, 'amount' => 450_000,
+            'status' => 'pending', 'approve_after' => now()->addDays(7),
+        ]);
+        $plain = $this->order();
+        $token = app(AdminApiTokens::class)->issue($this->admin, 'n8n', 'orders')->plainTextToken;
+
+        $this->withToken($token)->getJson("/api/v1/admin-api/orders/{$order->id}")->assertOk()
+            ->assertJsonPath('data.utm_source', 'tiktok')
+            ->assertJsonPath('data.utm_medium', 'video')
+            ->assertJsonPath('data.utm_campaign', 'thang11')
+            ->assertJsonPath('data.utm_content', 'review-dell')
+            ->assertJsonPath('data.video_code', 'V123')
+            ->assertJsonPath('data.landing_page', '/laptop/dell-7420?utm_source=tiktok')
+            ->assertJsonPath('data.affiliate_id', $affiliate->id)
+            ->assertJsonPath('data.affiliate_code', 'CTV007')
+            ->assertJsonPath('data.referral_discount', 200000)
+            ->assertJsonPath('data.affiliate_commission', 450000)
+            ->assertJsonPath('data.affiliate_commission_status', 'pending')
+            ->assertJsonPath('data.affiliate_commission_status_label', 'Chờ duyệt');
+
+        $this->withToken($token)->getJson("/api/v1/admin-api/orders?after_id={$order->id}")->assertOk()
+            ->assertJsonPath('data.0.id', $plain->id)
+            ->assertJsonPath('data.0.affiliate_id', null)
+            ->assertJsonPath('data.0.affiliate_commission', null)
+            ->assertJsonPath('data.0.affiliate_commission_status_label', null);
     }
 
     public function test_content_tokens_and_anonymous_callers_cannot_read_orders(): void

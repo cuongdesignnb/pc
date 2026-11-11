@@ -104,21 +104,62 @@ class LaptopPlusBatchSevenTest extends TestCase
             'shipping_address' => '1 Phố Huế', 'shipping_city' => 'Hà Nội', 'payment_method' => 'cod',
             'shipping_province_code' => '79', 'shipping_ward_code' => '27316',
             'notes' => 'Giao giờ hành chính',
-            'utm_source' => 'tiktok', 'utm_campaign' => 'thang11', 'utm_content' => 'review-dell', 'video_code' => 'V123',
+            'utm_source' => 'tiktok', 'utm_medium' => 'video', 'utm_campaign' => 'thang11', 'utm_content' => 'review-dell', 'video_code' => 'V123',
+            'landing_page' => '/chuot/chuot-logitech?utm_source=tiktok',
         ])->assertCreated();
 
         $order = Order::latest('id')->first();
-        $this->assertSame(['tiktok', 'thang11', 'review-dell', 'V123'], [$order->utm_source, $order->utm_campaign, $order->utm_content, $order->video_code]);
+        $this->assertSame(['tiktok', 'video', 'thang11', 'review-dell', 'V123', '/chuot/chuot-logitech?utm_source=tiktok'],
+            [$order->utm_source, $order->utm_medium, $order->utm_campaign, $order->utm_content, $order->video_code, $order->landing_page]);
 
         $payload = (fn () => $this->createPayload($order->load('items'), 0))->call(app(KiotOrderService::class));
         $this->assertStringStartsWith('Giao giờ hành chính', $payload['note']);
-        $this->assertStringContainsString("Nguồn: Website {$order->order_number} (utm_source=tiktok, utm_campaign=thang11, utm_content=review-dell)", $payload['note']);
+        $this->assertStringContainsString("Nguồn: Website {$order->order_number} (utm_source=tiktok, utm_medium=video, utm_campaign=thang11, utm_content=review-dell)", $payload['note']);
         $this->assertStringContainsString('Mã video: V123', $payload['note']);
         // KIOT picks the warranty package lasting this many months.
         $this->assertSame($order->items->first()->warranty_months, $payload['items'][0]['warranty_months']);
 
         $this->actingAs($this->admin)->get("/admin/orders/{$order->id}")->assertOk()
             ->assertInertia(fn ($page) => $page->where('order.utm_source', 'tiktok')->where('order.video_code', 'V123'));
+    }
+
+    public function test_landing_page_must_be_a_path_on_this_website(): void
+    {
+        $product = $this->product();
+        foreach (['https://evil.example/x' => null, '//evil.example/x' => null, '/khuyen-mai' => '/khuyen-mai'] as $landing => $stored) {
+            $this->withHeader('X-Cart-Session', 'lp-'.Str::random(6))->postJson('/api/v1/orders', [
+                'checkout_idempotency_key' => (string) Str::uuid(), 'order_access_token' => (string) Str::uuid(),
+                'checkout_mode' => 'buy_now', 'items' => [['product_id' => $product->id, 'quantity' => 1]],
+                'customer_name' => 'Nguyễn Văn C', 'customer_email' => 'c@example.com', 'customer_phone' => '0987654322',
+                'shipping_address' => '1 Phố Huế', 'shipping_city' => 'Hà Nội', 'payment_method' => 'cod',
+                'shipping_province_code' => '79', 'shipping_ward_code' => '27316', 'landing_page' => $landing,
+            ])->assertCreated();
+            $this->assertSame($stored, Order::latest('id')->first()->landing_page, $landing);
+        }
+    }
+
+    public function test_admin_can_remove_a_leftover_variant_from_a_kiot_product(): void
+    {
+        $product = $this->product(['inventory_source' => 'kiot', 'provider' => 'kiot', 'sku' => '670', 'price' => 550_000]);
+        $variant = $product->variants()->create(['name' => 'MacBook', 'sku' => 'SKU-19837', 'price' => 5_000_000, 'sale_price' => 4_999_999, 'stock_quantity' => 100]);
+        $other = $this->product();
+        $foreign = $other->variants()->create(['name' => 'Khác', 'sku' => 'SKU-OTHER', 'price' => 1, 'stock_quantity' => 1]);
+
+        // A variant of another product is not reachable through this product.
+        $this->actingAs($this->admin)->delete("/admin/products/{$product->id}/variants/{$foreign->id}")->assertNotFound();
+        $this->actingAs($this->admin)->from("/admin/products/{$product->id}/edit")
+            ->delete("/admin/products/{$product->id}/variants/{$variant->id}")
+            ->assertRedirect("/admin/products/{$product->id}/edit");
+        $this->assertModelMissing($variant);
+        $this->assertModelExists($foreign);
+    }
+
+    public function test_old_product_export_address_no_longer_fails(): void
+    {
+        $this->actingAs($this->admin)->get('/admin/products/export')->assertRedirect('/admin/products-export');
+        $this->actingAs($this->admin)->get('/admin/products-export')->assertOk()->assertDownload();
+        // No product "show" page: a GET there is refused instead of crashing.
+        $this->actingAs($this->admin)->get('/admin/products/khong-co')->assertMethodNotAllowed();
     }
 
     public function test_kiot_stale_count_trusts_a_recent_successful_incremental_run(): void

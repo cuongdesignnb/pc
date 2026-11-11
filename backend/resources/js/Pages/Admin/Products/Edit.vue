@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { useForm, Link } from '@inertiajs/vue3';
+import { useForm, Link, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
@@ -110,6 +110,13 @@ const specKeys = computed(() => {
 });
 
 const isKiot = computed(() => props.product.inventory_source === 'kiot');
+// KIOT never sends variants, so any variant on a KIOT product is a leftover that
+// overrides the KIOT price on the website. It can only be deleted.
+const strayKiotVariants = computed(() => (isKiot.value ? props.product.variants || [] : []));
+const deleteStrayVariant = (variant) => {
+    if (!window.confirm(`Xoá biến thể "${variant.name}" (${variant.sku || 'không SKU'})? Không hoàn tác được.`)) return;
+    router.delete(`/admin/products/${props.product.id}/variants/${variant.id}`, { preserveScroll: true });
+};
 const formErrors = ref(null);
 
 // Build compatibility spec entries from spec keys + existing values
@@ -326,6 +333,15 @@ function removeVariant(index) {
             </div>
             <div v-else class="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-5 text-sm text-cyan-100">
                 Biến thể, SKU, giá và tồn kho của sản phẩm này do KIOT quản lý. Hãy đồng bộ KIOT thay vì tạo hoặc chỉnh sửa biến thể tại đây.
+                <div v-if="strayKiotVariants.length" class="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-amber-100">
+                    <p class="font-semibold">Sản phẩm đang có biến thể không đến từ KIOT. Biến thể này làm website hiện sai giá, nên xoá đi.</p>
+                    <ul class="mt-3 space-y-2">
+                        <li v-for="variant in strayKiotVariants" :key="variant.id" class="flex flex-wrap items-center justify-between gap-3 rounded-md bg-slate-950/50 px-3 py-2">
+                            <span>{{ variant.name }} · {{ variant.sku || 'không SKU' }} · {{ Number(variant.sale_price || variant.price).toLocaleString('vi-VN') }}đ · tồn {{ variant.stock_quantity }}</span>
+                            <button type="button" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500" @click="deleteStrayVariant(variant)">Xoá biến thể</button>
+                        </li>
+                    </ul>
+                </div>
             </div>
 
             <!-- Thông số kỹ thuật -->

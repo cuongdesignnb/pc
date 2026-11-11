@@ -12,6 +12,7 @@ use App\Models\ProductDetailBlock;
 use App\Models\ProductImage;
 use App\Models\ProductRelation;
 use App\Models\ProductSpecification;
+use App\Models\ProductVariant;
 use App\Models\SpecificationKey;
 use App\Services\Affiliate\CommissionRules;
 use App\Services\Catalog\WarrantyPackages;
@@ -395,6 +396,20 @@ class ProductController extends Controller
 
         return redirect()->route('admin.products.index')
             ->with('success', 'Xóa sản phẩm thành công');
+    }
+
+    /**
+     * KIOT products never get variants from KIOT, so the edit form hides them.
+     * A variant left over from a test (or from before the product was linked
+     * to KIOT) can only be removed here.
+     */
+    public function destroyVariant(Product $product, ProductVariant $variant)
+    {
+        $name = $variant->name;
+        $variant->delete();
+        $product->touch();
+
+        return back()->with('success', "Đã xoá biến thể \"{$name}\".");
     }
 
     /**

@@ -85,7 +85,11 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::post('products/manufacture-year', [ProductManufactureYearController::class, 'bulk'])->name('products.manufacture-year.bulk');
     Route::get('products/manufacture-year/template', [ProductManufactureYearController::class, 'template'])->name('products.manufacture-year.template');
     Route::post('products/manufacture-year/import', [ProductManufactureYearController::class, 'import'])->name('products.manufacture-year.import');
-    Route::resource('products', ProductController::class);
+    // Typed or bookmarked "/admin/products/export" used to hit the missing show() action (HTTP 500).
+    Route::redirect('products/export', '/admin/products-export');
+    Route::delete('products/{product}/variants/{variant}', [ProductController::class, 'destroyVariant'])
+        ->scopeBindings()->name('products.variants.destroy');
+    Route::resource('products', ProductController::class)->except(['show']);
     Route::get('products-export', [ProductController::class, 'export'])->name('products.export');
     Route::post('products-import', [ProductController::class, 'import'])->name('products.import');
 

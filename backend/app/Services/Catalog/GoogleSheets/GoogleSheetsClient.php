@@ -7,6 +7,8 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class GoogleSheetsClient
 {
@@ -47,7 +49,13 @@ class GoogleSheetsClient
             return;
         }
 
-        $this->ensureColumnCapacity($configuration, $columnCount);
+        $lastRow = 0;
+        foreach ($ranges as $range) {
+            if (preg_match('/!A(\d+):/', (string) ($range['range'] ?? ''), $match)) {
+                $lastRow = max($lastRow, (int) $match[1]);
+            }
+        }
+        $this->ensureGridCapacity($configuration, $columnCount, $lastRow);
 
         foreach (array_chunk($ranges, max(1, (int) config('catalog.sync_chunk_size', 250))) as $chunk) {
             $response = $this->request($configuration)->post(
@@ -58,7 +66,11 @@ class GoogleSheetsClient
         }
     }
 
-    private function ensureColumnCapacity(array $configuration, int $columnCount): void
+    /**
+     * Google refuses to write past the sheet's grid ("exceeds grid limits");
+     * a new sheet has 1000 rows and 26 columns, so grow both first.
+     */
+    private function ensureGridCapacity(array $configuration, int $columnCount, int $rowCount): void
     {
         $response = $this->request($configuration)->get($this->spreadsheetUrl($configuration), [
             'fields' => 'sheets.properties',
@@ -74,8 +86,18 @@ class GoogleSheetsClient
         }
 
         $sheetId = (int) data_get($sheet, 'properties.sheetId', -1);
+        $requests = [];
         $currentColumnCount = (int) data_get($sheet, 'properties.gridProperties.columnCount', 0);
-        if ($currentColumnCount >= $columnCount) {
+        if ($currentColumnCount < $columnCount) {
+            $requests[] = ['appendDimension' => ['sheetId' => $sheetId, 'dimension' => 'COLUMNS', 'length' => $columnCount - $currentColumnCount]];
+        }
+        // rowCount 0 means Google did not report it; leave the rows alone then.
+        $currentRowCount = (int) data_get($sheet, 'properties.gridProperties.rowCount', 0);
+        if ($currentRowCount > 0 && $currentRowCount < $rowCount) {
+            // Leave some headroom so a few new products do not need another call.
+            $requests[] = ['appendDimension' => ['sheetId' => $sheetId, 'dimension' => 'ROWS', 'length' => $rowCount - $currentRowCount + 200]];
+        }
+        if ($requests === []) {
             return;
         }
         if ($sheetId < 0) {
@@ -84,15 +106,7 @@ class GoogleSheetsClient
 
         $response = $this->request($configuration)->post(
             $this->spreadsheetUrl($configuration).':batchUpdate',
-            [
-                'requests' => [[
-                    'appendDimension' => [
-                        'sheetId' => $sheetId,
-                        'dimension' => 'COLUMNS',
-                        'length' => $columnCount - $currentColumnCount,
-                    ],
-                ]],
-            ],
+            ['requests' => $requests],
         );
         $this->assertSuccessful($response, 'GOOGLE_WRITE_FAILED');
     }
@@ -208,7 +222,14 @@ class GoogleSheetsClient
         }
 
         $code = $response->status() === 429 ? 'GOOGLE_RATE_LIMITED' : $fallbackCode;
-        throw new CatalogChannelException($code, 'Google Sheets API không hoàn thành yêu cầu.');
+        // Google's own reason (e.g. "exceeds grid limits", "caller does not have
+        // permission") holds no secrets and tells the shop what to fix.
+        $reason = Str::limit(trim((string) $response->json('error.message')), 300);
+        Log::warning('Google Sheets API error', ['code' => $code, 'status' => $response->status(), 'reason' => $reason]);
+        throw new CatalogChannelException(
+            $code,
+            'Google Sheets API không hoàn thành yêu cầu (HTTP '.$response->status().($reason !== '' ? ': '.$reason : '').').',
+        );
     }
 
     private function base64Url(string $value): string

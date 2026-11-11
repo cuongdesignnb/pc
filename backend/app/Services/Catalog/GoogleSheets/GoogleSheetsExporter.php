@@ -171,17 +171,22 @@ class GoogleSheetsExporter
             return $summary + ['run_id' => $run->id];
         } catch (Throwable $exception) {
             $code = $exception instanceof CatalogChannelException ? $exception->errorCode : 'GOOGLE_WRITE_FAILED';
+            // Our own exceptions carry a safe, readable reason (Google's message).
+            $message = $exception instanceof CatalogChannelException ? $exception->getMessage() : null;
+            if ($message === null) {
+                report($exception);
+            }
             $run->update([
                 'status' => 'failed',
                 'completed_at' => now(),
                 'error_code' => $code,
-                'error_message' => 'Catalog channel operation failed.',
+                'error_message' => $message ?? 'Catalog channel operation failed.',
             ]);
             $connection->update([
                 'status' => 'error',
                 'last_error_at' => now(),
                 'last_error_code' => $code,
-                'last_error_message' => 'Google Sheets operation failed.',
+                'last_error_message' => $message ?? 'Google Sheets operation failed.',
             ]);
             throw $exception;
         } finally {

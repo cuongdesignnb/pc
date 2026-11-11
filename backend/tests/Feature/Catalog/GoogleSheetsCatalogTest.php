@@ -284,6 +284,60 @@ class GoogleSheetsCatalogTest extends TestCase
         Http::assertSentCount(4);
     }
 
+    public function test_google_client_adds_rows_when_the_feed_outgrows_the_sheet(): void
+    {
+        $structural = [];
+        Http::fake(function (Request $request) use (&$structural) {
+            if ($request->url() === 'https://oauth2.googleapis.com/token') {
+                return Http::response(['access_token' => 'fake-access-token', 'expires_in' => 3600]);
+            }
+            if (array_key_exists('requests', $request->data())) {
+                $structural[] = $request->data()['requests'];
+
+                return Http::response(['replies' => [[]]]);
+            }
+            if (array_key_exists('valueInputOption', $request->data())) {
+                return Http::response(['responses' => [[]]]);
+            }
+
+            return Http::response(['sheets' => [['properties' => [
+                'sheetId' => 7, 'title' => 'Products', 'gridProperties' => ['rowCount' => 1000, 'columnCount' => 31],
+            ]]]]);
+        });
+
+        // 1,021 products plus the header: row 1022 lies past Google's default 1,000 rows.
+        app(GoogleSheetsClient::class)->writeRows(
+            $this->configurationWithRealTestKey(),
+            [['range' => "'Products'!A1022:AE1022", 'values' => [GoogleSheetsExporter::HEADERS]]],
+            31,
+        );
+
+        $this->assertSame([[['appendDimension' => ['sheetId' => 7, 'dimension' => 'ROWS', 'length' => 222]]]], $structural);
+    }
+
+    public function test_google_error_reason_is_kept_for_the_admin(): void
+    {
+        Http::fake(function (Request $request) {
+            if ($request->url() === 'https://oauth2.googleapis.com/token') {
+                return Http::response(['access_token' => 'fake-access-token', 'expires_in' => 3600]);
+            }
+
+            return Http::response(['error' => ['code' => 403, 'message' => 'The caller does not have permission', 'status' => 'PERMISSION_DENIED']], 403);
+        });
+
+        try {
+            app(GoogleSheetsClient::class)->writeRows(
+                $this->configurationWithRealTestKey(),
+                [['range' => "'Products'!A1:AE1", 'values' => [GoogleSheetsExporter::HEADERS]]],
+                31,
+            );
+            $this->fail('Expected the write to fail.');
+        } catch (CatalogChannelException $exception) {
+            $this->assertSame('GOOGLE_WRITE_FAILED', $exception->errorCode);
+            $this->assertStringContainsString('HTTP 403: The caller does not have permission', $exception->getMessage());
+        }
+    }
+
     private function connection(bool $enabled): CatalogChannelConnection
     {
         return CatalogChannelConnection::create([
