@@ -261,15 +261,17 @@ const remaining = computed(() =>
             >
         </div>
         <div
-            v-if="order.utm_source || order.utm_campaign || order.utm_content || order.video_code"
+            v-if="order.utm_source || order.utm_medium || order.utm_campaign || order.utm_content || order.video_code || order.landing_page"
             class="bg-slate-900 rounded-lg border border-slate-800/60 p-4 mb-6 text-sm"
         >
             <p class="text-slate-200 font-semibold mb-2">Nguồn đơn</p>
             <dl class="grid gap-2 sm:grid-cols-4">
                 <div><dt class="text-slate-500">utm_source</dt><dd class="text-slate-200 break-all">{{ order.utm_source || "—" }}</dd></div>
+                <div><dt class="text-slate-500">utm_medium</dt><dd class="text-slate-200 break-all">{{ order.utm_medium || "—" }}</dd></div>
                 <div><dt class="text-slate-500">utm_campaign</dt><dd class="text-slate-200 break-all">{{ order.utm_campaign || "—" }}</dd></div>
                 <div><dt class="text-slate-500">utm_content</dt><dd class="text-slate-200 break-all">{{ order.utm_content || "—" }}</dd></div>
                 <div><dt class="text-slate-500">Mã video</dt><dd class="text-slate-200 break-all">{{ order.video_code || "—" }}</dd></div>
+                <div class="sm:col-span-4"><dt class="text-slate-500">Trang vào đầu tiên</dt><dd class="text-slate-200 break-all">{{ order.landing_page || "—" }}</dd></div>
             </dl>
         </div>
         <div

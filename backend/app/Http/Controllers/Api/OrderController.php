@@ -72,6 +72,8 @@ class OrderController extends Controller
             'utm_source' => 'nullable|string|max:150',
             'utm_campaign' => 'nullable|string|max:150',
             'utm_content' => 'nullable|string|max:150',
+            'utm_medium' => 'nullable|string|max:150',
+            'landing_page' => 'nullable|string|max:500',
             'video_code' => 'nullable|string|max:100',
             'payment_method' => 'required|in:sepay,cod',
             'payment_option' => 'nullable|in:full,deposit',

@@ -149,6 +149,8 @@ class KiotOrderService
                     'utm_source' => self::cleanSource($data['utm_source'] ?? null),
                     'utm_campaign' => self::cleanSource($data['utm_campaign'] ?? null),
                     'utm_content' => self::cleanSource($data['utm_content'] ?? null),
+                    'utm_medium' => self::cleanSource($data['utm_medium'] ?? null),
+                    'landing_page' => self::landingPage($data['landing_page'] ?? null),
                     'video_code' => self::cleanSource($data['video_code'] ?? null),
                     'shipping_fee' => $shippingFee,
                     'total' => $total,
@@ -320,6 +322,7 @@ class KiotOrderService
     {
         $source = collect([
             'utm_source' => $order->utm_source,
+            'utm_medium' => $order->utm_medium,
             'utm_campaign' => $order->utm_campaign,
             'utm_content' => $order->utm_content,
         ])->filter(fn ($value) => filled($value))->map(fn ($value, $key) => "{$key}={$value}")->implode(', ');
@@ -335,6 +338,17 @@ class KiotOrderService
         }
 
         return trim(($order->notes ?? '')."\n".implode("\n", $lines));
+    }
+
+    /** A path on this website ("/laptop/dell-7420?utm_source=tiktok"), never a full outside URL. */
+    private static function landingPage(mixed $value): ?string
+    {
+        $value = is_string($value) ? trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', '', $value)) : '';
+        if (! str_starts_with($value, '/') || str_starts_with($value, '//')) {
+            return null;
+        }
+
+        return mb_substr($value, 0, 500);
     }
 
     private static function cleanSource(mixed $value): ?string

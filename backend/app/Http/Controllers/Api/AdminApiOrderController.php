@@ -33,7 +33,7 @@ class AdminApiOrderController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $query = Order::query()->with('items');
+        $query = Order::query()->with(['items', 'affiliate', 'affiliateCommission']);
         if ($statuses = $this->csv($validated['status'] ?? null)) {
             $unknown = array_diff($statuses, self::ORDER_STATUSES);
             if ($unknown) {
@@ -82,7 +82,7 @@ class AdminApiOrderController extends Controller
     {
         $this->ensureOwnerMayReadOrders($request);
 
-        return $this->noStore(response()->json(['data' => $this->payload($order->load('items'))]));
+        return $this->noStore(response()->json(['data' => $this->payload($order->load(['items', 'affiliate', 'affiliateCommission']))]));
     }
 
     /** @return array<string, mixed> */
@@ -119,6 +119,21 @@ class AdminApiOrderController extends Controller
             'payment_option' => $order->payment_option,
             'amount_paid' => (int) $order->amount_paid,
             'referral_code' => $order->referral_code,
+            // Shopee/Lazada-style affiliate (CTV): who brought the customer and what they earn.
+            'affiliate_id' => $order->affiliate_id,
+            'affiliate_code' => $order->affiliate?->code,
+            'referral_discount' => (int) $order->referral_discount,
+            'affiliate_commission' => $order->affiliateCommission ? (int) $order->affiliateCommission->amount : null,
+            'affiliate_commission_status' => $order->affiliateCommission?->status,
+            'affiliate_commission_status_label' => $this->commissionStatusLabel($order->affiliateCommission?->status),
+            'affiliate_commission_approve_after' => $order->affiliateCommission?->approve_after?->toIso8601String(),
+            // Where the order came from, as on the admin order page.
+            'utm_source' => $order->utm_source,
+            'utm_medium' => $order->utm_medium,
+            'utm_campaign' => $order->utm_campaign,
+            'utm_content' => $order->utm_content,
+            'video_code' => $order->video_code,
+            'landing_page' => $order->landing_page,
             'created_at' => $order->created_at?->toIso8601String(),
             'updated_at' => $order->updated_at?->toIso8601String(),
             'admin_url' => route('admin.orders.show', $order),
@@ -140,6 +155,17 @@ class AdminApiOrderController extends Controller
     private function time(string $value): Carbon
     {
         return Carbon::parse($value, SiteTimezone::get())->utc();
+    }
+
+    private function commissionStatusLabel(?string $status): ?string
+    {
+        return match ($status) {
+            null => null,
+            'pending' => 'Chờ duyệt',
+            'approved' => 'Được rút',
+            'cancelled' => 'Đã huỷ',
+            default => $status,
+        };
     }
 
     private function statusLabel(string $status): string
