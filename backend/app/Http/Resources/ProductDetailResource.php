@@ -116,6 +116,7 @@ class ProductDetailResource extends JsonResource
                 'payload' => $block->payload,
             ]),
             // upload_date is required by Google for VideoObject; the product's creation date is the closest we have.
+            'instant_key_url' => $this->instant_key_url ?: null,
             'video' => ($video = YouTubeVideo::toArray($this->video_url))
                 ? $video + ['upload_date' => ($this->created_at ?? $this->updated_at)?->toIso8601String()]
                 : null,

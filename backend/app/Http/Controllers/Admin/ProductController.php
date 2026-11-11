@@ -36,6 +36,11 @@ class ProductController extends Controller
         'usage_instructions' => 'nullable|string|max:10000',
     ];
 
+    /** "Lấy key ngay": an outside page that hands out a licence key at once. */
+    private const INSTANT_KEY_RULES = [
+        'instant_key_url' => 'nullable|url:https|max:2048',
+    ];
+
     public function index(Request $request)
     {
         $query = Product::with(['category', 'brand', 'componentType', 'primaryImage'])
@@ -127,7 +132,7 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
 
         try {
             // A slug made from a very long product name is cut at a word
@@ -297,7 +302,7 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), self::COMPLIANCE_RULES, WarrantyPackages::validationRules()), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES, WarrantyPackages::validationRules()), $this->productValidationMessages(), $this->productValidationAttributes());
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }

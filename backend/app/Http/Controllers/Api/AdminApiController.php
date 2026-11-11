@@ -86,6 +86,7 @@ class AdminApiController extends Controller
             'specifications' => 'sometimes|nullable|array|max:100',
             'specifications.*.label' => 'required|string|max:255',
             'specifications.*.value' => 'nullable|string|max:2000',
+            'instant_key_url' => 'sometimes|nullable|url:https|max:2048',
         ]);
 
         $fields = collect($validated)->except(['images', 'specifications'])->all();
@@ -280,6 +281,7 @@ class AdminApiController extends Controller
             'manufacture_year' => $product->manufacture_year,
             'meta_title' => $product->meta_title,
             'meta_description' => $product->meta_description,
+            'instant_key_url' => $product->instant_key_url,
             'short_description' => $product->short_description,
             'description' => $product->description,
             'specifications' => collect($product->parsed_specifications)->values()->all(),

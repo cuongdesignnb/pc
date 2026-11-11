@@ -114,6 +114,8 @@ class LaptopPlusBatchSevenTest extends TestCase
         $this->assertStringStartsWith('Giao giờ hành chính', $payload['note']);
         $this->assertStringContainsString("Nguồn: Website {$order->order_number} (utm_source=tiktok, utm_campaign=thang11, utm_content=review-dell)", $payload['note']);
         $this->assertStringContainsString('Mã video: V123', $payload['note']);
+        // KIOT picks the warranty package lasting this many months.
+        $this->assertSame($order->items->first()->warranty_months, $payload['items'][0]['warranty_months']);
 
         $this->actingAs($this->admin)->get("/admin/orders/{$order->id}")->assertOk()
             ->assertInertia(fn ($page) => $page->where('order.utm_source', 'tiktok')->where('order.video_code', 'V123'));

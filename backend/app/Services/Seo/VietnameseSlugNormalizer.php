@@ -22,7 +22,7 @@ class VietnameseSlugNormalizer
     /** @var list<string> */
     private const RESERVED_SEGMENTS = [
         'san-pham', 'danh-muc', 'tin-tuc', 'thuong-hieu', 'tim-kiem', 'cau-hinh',
-        'gioi-thieu', 'lien-he', 'bao-hanh', 'van-chuyen', 'dang-nhap', 'dang-ky',
+        'gioi-thieu', 'lien-he', 'bao-hanh', 'tra-cuu-bao-hanh', 'van-chuyen', 'dang-nhap', 'dang-ky',
         'tai-khoan', 'gio-hang', 'thanh-toan', 'don-hang', 'yeu-thich', 'products',
         'categories', 'blog', 'search', 'cart', 'checkout', 'account', 'orders',
         'auth', 'api', 'admin', 'payment', 'payments', 'webhooks', 'sanctum',

@@ -52,7 +52,7 @@ class CategoryController extends Controller
         'configurator', 'contact', 'orders', 'shipping', 'warranty',
         // Vietnamese routes
         'gioi-thieu', 'tai-khoan', 'tin-tuc', 'gio-hang', 'thanh-toan',
-        'cau-hinh', 'lien-he', 'don-hang', 'van-chuyen', 'bao-hanh',
+        'cau-hinh', 'lien-he', 'don-hang', 'van-chuyen', 'bao-hanh', 'tra-cuu-bao-hanh',
         'dang-nhap', 'dang-ky', 'quen-mat-khau',
         // System
         'admin', 'api', 'san-pham',

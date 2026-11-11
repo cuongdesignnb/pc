@@ -60,6 +60,12 @@ class KiotClient
         );
     }
 
+    /** Warranty lookup by serial, or by phone plus the last 4 of the serial. */
+    public function warranties(array $query): KiotResponse
+    {
+        return $this->request('GET', self::BASE_PATH.'/warranties', $query, guard: 'connected');
+    }
+
     public function createOrder(string $rawBody, string $idempotencyKey): KiotResponse
     {
         return $this->request('POST', self::BASE_PATH.'/orders', [], $rawBody, $idempotencyKey, 'order');

@@ -8,7 +8,7 @@ return [
     'sitemap_page_size' => 50000,
     // "Giới thiệu" is a CMS page; it is listed from the pages table when active.
     'static_paths' => [
-        '/', '/san-pham', '/danh-muc', '/tin-tuc', '/lien-he',
+        '/', '/san-pham', '/danh-muc', '/tin-tuc', '/lien-he', '/tra-cuu-bao-hanh',
         '/bao-hanh', '/van-chuyen',
     ],
     // Price-range landing pages (D3): a page of their own on the storefront
