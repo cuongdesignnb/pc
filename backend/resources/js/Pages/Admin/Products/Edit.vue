@@ -36,6 +36,7 @@ const form = useForm({
     name: props.product.name,
     slug: props.product.slug,
     sku: props.product.sku,
+    kiot_code: props.product.kiot_code || '',
     category_id: props.product.category_id || '',
     brand_id: props.product.brand_id || '',
     component_type_id: props.product.component_type_id || '',
@@ -210,6 +211,11 @@ function removeVariant(index) {
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">SKU *</label>
                         <input v-model="form.sku" :disabled="isKiot" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
                         <div v-if="form.errors.sku" class="text-red-400 text-xs mt-1">{{ form.errors.sku }}</div>
+                    </div>
+                    <div v-if="!isKiot"><label class="block text-sm font-medium text-slate-300 mb-1">Gắn mã Kiot</label>
+                        <input v-model="form.kiot_code" placeholder="Mã hàng đã có trong KIOT, để trống nếu chưa có" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <p class="text-slate-500 text-xs mt-1">Đơn web của sản phẩm này gửi sang KIOT bằng mã này thay cho SKU. Để trống thì KIOT dùng SKU web (và tự tạo hàng nếu chưa có).</p>
+                        <div v-if="form.errors.kiot_code" class="text-red-400 text-xs mt-1">{{ form.errors.kiot_code }}</div>
                     </div>
                     <div><label class="block text-sm font-medium text-slate-300 mb-1">Trạng thái</label>
                         <div class="flex items-center gap-4 mt-2">

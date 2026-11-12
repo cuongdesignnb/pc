@@ -5,6 +5,7 @@ namespace App\Services\Payments;
 use App\Models\Order;
 use App\Models\SepayPaymentEvent;
 use App\Models\Transaction;
+use App\Services\Orders\OrderHistoryRecorder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -117,7 +118,7 @@ class SepayPaymentService
             $updates['order_status'] = 'confirmed';
         }
 
-        $order->update($updates);
+        OrderHistoryRecorder::actingAs('payment', 'SePay báo đã nhận '.number_format((int) $event->amount, 0, ',', '.').'đ', fn () => $order->update($updates));
         Transaction::create([
             'order_id' => $order->id,
             'sepay_transaction_id' => $event->external_transaction_id,

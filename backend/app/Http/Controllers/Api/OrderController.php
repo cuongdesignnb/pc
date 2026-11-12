@@ -16,6 +16,7 @@ use App\Services\Checkout\PaymentMethodAvailability;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
 use App\Services\Locations\LocationDirectory;
+use App\Services\Orders\OrderHistoryRecorder;
 use App\Services\Payments\SepayPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -123,29 +124,26 @@ class OrderController extends Controller
         }
         $order = Order::with(['items.product'])->findOrFail($result['order']->id);
 
-        if ($order->kiot_sync_status === 'rejected') {
-            return response()->json([
-                'message' => $this->friendlyError($order->kiot_sync_error_code),
-                'order' => $this->present($order), 'integration_status' => 'rejected',
-            ], 422);
-        }
-
         if (! $result['duplicate']) {
             SendNewOrderNotification::dispatch($order->id);
         }
 
         if (($validated['checkout_mode'] ?? 'cart') === 'cart'
             && ! $result['duplicate']
-            && in_array($order->kiot_sync_status, ['synced', 'retrying', 'not_required'], true)) {
+            && in_array($order->kiot_sync_status, ['synced', 'retrying', 'not_required', 'rejected', 'failed'], true)) {
             $this->clearCart($request);
         }
 
         $payment = $order->canPay() && $this->paymentAvailability->sepayAvailable()
             ? $this->generateSepayPaymentData($order)
             : null;
-        $message = $order->kiot_sync_status === 'retrying'
-            ? 'Đơn hàng đã được ghi nhận và đang chờ hệ thống kho xác nhận.'
-            : 'Đặt hàng thành công';
+        // KIOT refusing the order no longer fails the checkout: the order is kept
+        // and the shop confirms it by phone.
+        $message = match ($order->kiot_sync_status) {
+            'retrying' => 'Đơn hàng đã được ghi nhận và đang chờ hệ thống kho xác nhận.',
+            'rejected', 'failed' => 'Đơn hàng đã được ghi nhận. Shop sẽ gọi điện xác nhận với bạn trước khi giao.',
+            default => 'Đặt hàng thành công',
+        };
         $status = $result['duplicate'] ? 200 : ($order->kiot_sync_status === 'retrying' ? 202 : 201);
 
         return response()->json([
@@ -238,7 +236,8 @@ class OrderController extends Controller
         }
 
         try {
-            $order = $cancellation->cancel($order, $validated['reason'] ?? 'Khách hàng yêu cầu hủy');
+            $reason = $validated['reason'] ?? 'Khách hàng yêu cầu hủy';
+            $order = OrderHistoryRecorder::actingAs('customer', $reason, fn () => $cancellation->cancel($order, $reason));
         } catch (KiotIntegrationException $exception) {
             $message = in_array($exception->errorCode, ['ORDER_ALREADY_INVOICED', 'ORDER_NOT_CANCELLABLE'], true)
                 ? 'Đơn hàng đã được xử lý trong hệ thống kho và không thể hủy trực tuyến.'
@@ -425,16 +424,6 @@ class OrderController extends Controller
         $value = Setting::get($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : $fallback;
-    }
-
-    private function friendlyError(?string $code): string
-    {
-        return match ($code) {
-            'INSUFFICIENT_AVAILABLE_STOCK' => 'Một hoặc nhiều sản phẩm không còn đủ tồn kho.',
-            'UNKNOWN_SKU' => 'Một hoặc nhiều sản phẩm chưa được nhận diện trong hệ thống kho.',
-            'ORDER_TOTAL_MISMATCH' => 'Tổng tiền đơn hàng chưa khớp với hệ thống kho.',
-            default => 'Đơn hàng không thể được hệ thống kho xác nhận.',
-        };
     }
 
     private function noStore(JsonResponse $response): JsonResponse

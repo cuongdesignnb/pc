@@ -6,6 +6,7 @@ use App\Exceptions\KiotIntegrationException;
 use App\Jobs\Integrations\Kiot\SyncKiotProductsBySku;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
+use App\Services\Orders\OrderHistoryRecorder;
 use App\Services\Payments\SepayPaymentService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -87,6 +88,7 @@ class KiotOutboxService
             if ($attempt > $maxAttempts) {
                 $event->update(['status' => 'dead_letter', 'locked_at' => null, 'last_error_code' => 'MAX_ATTEMPTS_EXCEEDED']);
                 Order::whereKey($event->aggregate_id)->update(['kiot_sync_status' => 'failed', 'kiot_sync_error_code' => 'MAX_ATTEMPTS_EXCEEDED']);
+                OrderHistoryRecorder::kiot((int) $event->aggregate_id, "Chưa vào KIOT: đã thử gửi {$maxAttempts} lần không thành công, dừng tự gửi.");
 
                 return null;
             }
@@ -117,6 +119,7 @@ class KiotOutboxService
                     'order_status' => 'cancelled', 'kiot_sync_status' => 'cancelled',
                     'kiot_sync_error_code' => null, 'kiot_sync_error_message' => null,
                 ]);
+                OrderHistoryRecorder::kiot($order, 'KIOT đã huỷ phiếu đặt hàng.', 'kiot');
             } else {
                 $data = $response->data();
                 $order->update([
@@ -125,6 +128,7 @@ class KiotOutboxService
                     'kiot_response' => $response->body, 'kiot_sync_error_code' => null,
                     'kiot_sync_error_message' => null,
                 ]);
+                OrderHistoryRecorder::kiot($order, 'Đã vào KIOT'.($order->kiot_order_code ? ' với mã '.$order->kiot_order_code : '').'.', 'kiot');
             }
 
             return ['order' => $order->fresh(), 'skus' => $order->items->pluck('sku')->all()];
@@ -163,6 +167,7 @@ class KiotOutboxService
                     'response_status' => $status, 'response_body' => $body,
                 ]);
                 $order->update(['kiot_sync_status' => 'retrying', 'kiot_sync_error_code' => $code, 'kiot_sync_error_message' => $message]);
+                OrderHistoryRecorder::kiot($order, "Gửi sang KIOT lần {$locked->attempt_count} lỗi ({$code}: {$message}), hệ thống sẽ tự thử lại.");
 
                 return;
             }
@@ -179,18 +184,28 @@ class KiotOutboxService
                     'kiot_sync_status' => $terminal ? 'synced' : 'failed',
                     'kiot_sync_error_code' => $code, 'kiot_sync_error_message' => $message,
                 ]);
+                OrderHistoryRecorder::kiot($order, "KIOT không huỷ được phiếu ({$code}: {$message}).");
             } else {
-                // A rejected checkout cancels the still-pending order; an order
-                // the shop already moved forward (e.g. resent from the admin)
-                // is left for staff to decide.
-                $cancel = $classification === 'business_rejection' && $order->order_status === 'pending';
+                // Never cancel the customer's order because KIOT refused it: the
+                // order stays as it is and the shop sorts it out by hand.
+                $reason = $this->describe($code, $message, $body);
                 $order->update([
                     'kiot_sync_status' => $classification === 'business_rejection' ? 'rejected' : 'failed',
-                    'order_status' => $cancel ? 'cancelled' : $order->order_status,
-                    'kiot_sync_error_code' => $code, 'kiot_sync_error_message' => $message,
+                    'kiot_sync_error_code' => $code, 'kiot_sync_error_message' => 'Chưa vào KIOT: '.$reason,
                 ]);
+                OrderHistoryRecorder::kiot($order, "Chưa vào KIOT ({$code}): {$reason}");
             }
         }, 3);
+    }
+
+    /** KIOT's message plus the SKUs it names, e.g. "SKU không có trong KIOT: WEB-NEW-1". */
+    private function describe(string $code, string $message, ?array $body): string
+    {
+        $skus = collect((array) data_get($body, 'error.details', []))
+            ->map(fn ($detail) => is_array($detail) ? ($detail['sku'] ?? null) : null)
+            ->filter()->unique()->implode(', ');
+
+        return mb_substr($skus !== '' ? "{$message} (SKU: {$skus})" : $message, 0, 900);
     }
 
     private function classify(string $code, ?int $status): string

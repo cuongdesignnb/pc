@@ -26,6 +26,12 @@ Schedule::command('kiot:retry-outbox')
     ->onOneServer()
     ->when(fn () => app(KiotConfigurationResolver::class)->resolve()->orderSyncEnabled);
 
+Schedule::command('kiot:resend-unsynced-orders')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => app(KiotConfigurationResolver::class)->resolve()->orderSyncEnabled);
+
 Schedule::job(new SyncGoogleSheetsCatalogJob)
     ->everyFifteenMinutes()
     ->withoutOverlapping(20)

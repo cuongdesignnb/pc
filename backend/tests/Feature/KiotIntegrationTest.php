@@ -501,14 +501,16 @@ class KiotIntegrationTest extends TestCase
         ])->assertStatus(503);
     }
 
-    public function test_business_rejection_cancels_order_and_is_not_retried(): void
+    public function test_business_rejection_keeps_the_order_pending_and_is_not_retried_by_the_outbox(): void
     {
         $product = $this->product(['sku' => 'CPU-1', 'inventory_source' => 'kiot', 'kiot_sellable' => true, 'stock_quantity' => 5]);
         Http::fake(['https://kiot.test/*' => Http::response(['success' => false, 'error' => ['code' => 'INSUFFICIENT_AVAILABLE_STOCK', 'message' => 'No stock']], 422)]);
 
-        $this->postJson('/api/v1/orders', $this->checkoutPayload($product->id))->assertStatus(422);
+        // The customer's order is kept; the shop confirms it by phone.
+        $this->postJson('/api/v1/orders', $this->checkoutPayload($product->id))->assertCreated()
+            ->assertJsonPath('integration_status', 'rejected');
 
-        $this->assertDatabaseHas('orders', ['kiot_sync_status' => 'rejected', 'order_status' => 'cancelled']);
+        $this->assertDatabaseHas('orders', ['kiot_sync_status' => 'rejected', 'order_status' => 'pending']);
         $this->assertDatabaseHas('integration_outbox_events', ['status' => 'rejected', 'attempt_count' => 1]);
         $this->assertSame(5, $product->fresh()->stock_quantity);
     }
@@ -624,7 +626,7 @@ class KiotIntegrationTest extends TestCase
         $this->postJson('/api/v1/orders', $this->checkoutPayload($blocked->id))->assertUnprocessable();
     }
 
-    public function test_cart_is_cleared_once_on_accept_preserved_on_rejection_and_cleared_on_transient_retry(): void
+    public function test_cart_is_cleared_once_on_accept_on_rejection_and_on_transient_retry(): void
     {
         $product = $this->product(['inventory_source' => 'kiot', 'kiot_sellable' => true, 'stock_quantity' => 5]);
         $cart = Cart::create(['session_id' => 'accepted-cart']);
@@ -645,9 +647,10 @@ class KiotIntegrationTest extends TestCase
 
         $rejectedCart = Cart::create(['session_id' => 'rejected-cart']);
         $rejectedCart->items()->create(['product_id' => $product->id, 'quantity' => 1, 'price' => 1000]);
+        // A refused order is still a website order now, so the cart is emptied too.
         $this->withHeader('X-Cart-Session', 'rejected-cart')
-            ->postJson('/api/v1/orders', $this->checkoutPayload($product->id))->assertUnprocessable();
-        $this->assertDatabaseHas('cart_items', ['cart_id' => $rejectedCart->id, 'product_id' => $product->id]);
+            ->postJson('/api/v1/orders', $this->checkoutPayload($product->id))->assertCreated();
+        $this->assertDatabaseMissing('cart_items', ['cart_id' => $rejectedCart->id]);
 
         $retryCart = Cart::create(['session_id' => 'retry-cart']);
         $retryCart->items()->create(['product_id' => $product->id, 'quantity' => 1, 'price' => 1000]);

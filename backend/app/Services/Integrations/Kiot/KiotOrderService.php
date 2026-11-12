@@ -230,7 +230,9 @@ class KiotOrderService
 
                 return $existing->id;
             }
-            if ($existing) {
+            // A refused event is final; send a fresh one so KIOT sees the current
+            // data (e.g. a KIOT code linked to the product since).
+            if ($existing && ! in_array($existing->status, ['rejected', 'cancelled'], true)) {
                 throw new KiotIntegrationException(
                     'ORDER_SYNC_IN_PROGRESS',
                     'Đơn đang có yêu cầu gửi sang KIOT, vui lòng chờ hệ thống xử lý.',
@@ -255,7 +257,7 @@ class KiotOrderService
 
     private function queueCreateEvent(Order $order, int $weight): IntegrationOutboxEvent
     {
-        $payload = $this->createPayload($order->fresh()->load('items'), $weight);
+        $payload = $this->createPayload($order->fresh()->load('items.product'), $weight);
         $rawBody = $this->client->encode($payload);
         $payloadHash = hash('sha256', $rawBody);
         $order->update(['kiot_payload_hash' => $payloadHash]);
@@ -304,7 +306,11 @@ class KiotOrderService
                 'shipping_fee' => (int) $order->shipping_fee, 'total' => (int) $order->total,
             ],
             'items' => $order->items->map(fn ($item) => [
-                'sku' => $item->sku,
+                // "Gắn mã Kiot": a website-only product may be linked to a KIOT code.
+                'sku' => filled($item->product?->kiot_code) ? (string) $item->product->kiot_code : $item->sku,
+                // Lets KIOT create a missing website product with a clean name and price.
+                'catalog_name' => $item->product_name,
+                'catalog_price' => max((int) $item->price - (int) $item->warranty_price, 0),
                 'product_name' => (int) $item->warranty_price !== 0
                     ? "{$item->product_name} (bảo hành {$item->warranty_months} tháng)"
                     : $item->product_name,

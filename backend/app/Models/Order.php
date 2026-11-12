@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\Affiliate\CommissionService;
+use App\Services\Orders\OrderHistoryRecorder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -88,6 +89,7 @@ class Order extends Model
         'kiot_sync_attempt_count' => 'integer',
         'kiot_last_attempt_at' => 'datetime',
         'kiot_synced_at' => 'datetime',
+        'kiot_auto_resend_at' => 'datetime',
         'kiot_response' => 'array',
     ];
 
@@ -106,11 +108,20 @@ class Order extends Model
                 $order->delivered_at = now();
             }
         });
+        static::created(fn (Order $order) => OrderHistoryRecorder::created($order));
         static::updated(function (Order $order): void {
+            if ($order->wasChanged('order_status')) {
+                OrderHistoryRecorder::statusChanged($order, $order->getOriginal('order_status'), (string) $order->order_status);
+            }
             if ($order->affiliate_id && $order->wasChanged('order_status')) {
                 app(CommissionService::class)->syncWithOrder($order);
             }
         });
+    }
+
+    public function histories(): HasMany
+    {
+        return $this->hasMany(OrderHistory::class)->orderBy('id');
     }
 
     public function affiliate(): BelongsTo
@@ -158,7 +169,9 @@ class Order extends Model
 
     public function acceptsPayments(): bool
     {
-        return in_array($this->kiot_sync_status, ['synced', 'not_required'], true);
+        // An order KIOT has not taken yet ("rejected"/"failed") is still a valid
+        // website order the shop handles by hand, so the customer may pay it.
+        return in_array($this->kiot_sync_status, ['synced', 'not_required', 'rejected', 'failed'], true);
     }
 
     public function remainingAmount(): int
@@ -179,12 +192,12 @@ class Order extends Model
     public function canCancel(): bool
     {
         return in_array($this->order_status, ['pending', 'confirmed'], true)
-            && ! in_array($this->kiot_sync_status, ['rejected', 'cancelled', 'cancel_pending'], true);
+            && ! in_array($this->kiot_sync_status, ['cancelled', 'cancel_pending'], true);
     }
 
     public function canResendToKiot(): bool
     {
-        return in_array($this->kiot_sync_status, ['not_required', 'failed'], true)
+        return in_array($this->kiot_sync_status, ['not_required', 'failed', 'rejected'], true)
             && $this->order_status !== 'cancelled';
     }
 

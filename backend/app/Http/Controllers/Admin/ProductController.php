@@ -243,6 +243,8 @@ class ProductController extends Controller
             'name' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products,slug,'.$product->id,
             'sku' => 'required|string|max:100|unique:products,sku,'.$product->id,
+            // "Gắn mã Kiot": KIOT goods code used for this website-only product's orders.
+            'kiot_code' => ['nullable', 'string', 'max:100', 'regex:/^\S+$/u'],
             // KIOT sync owns the category of KIOT products and leaves it empty
             // until the KIOT category is mapped; content edits must still save.
             'category_id' => [$product->inventory_source === 'kiot' ? 'nullable' : 'required', 'exists:categories,id'],
@@ -344,8 +346,11 @@ class ProductController extends Controller
             'slug_policy_version' => VietnameseSlugNormalizer::POLICY_VERSION,
             'slug_locked_at' => $product->slug_locked_at ?: now(),
         ];
+        if (array_key_exists('kiot_code', $productData)) {
+            $productData['kiot_code'] = filled($productData['kiot_code']) ? trim((string) $productData['kiot_code']) : null;
+        }
         if ($product->inventory_source === 'kiot') {
-            unset($productData['sku'], $productData['price'], $productData['stock_quantity']);
+            unset($productData['sku'], $productData['price'], $productData['stock_quantity'], $productData['kiot_code']);
             if (blank($productData['category_id'] ?? null)) {
                 unset($productData['category_id']);
             }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Console\Commands\ResendUnsyncedKiotOrdersCommand;
 use App\Exceptions\KiotIntegrationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
@@ -10,6 +11,7 @@ use App\Models\Order;
 use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
+use App\Services\Orders\OrderHistoryRecorder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -62,7 +64,7 @@ class OrderController extends Controller
 
     public function show(Order $order, KiotConfigurationResolver $resolver)
     {
-        $order->load(['user', 'items.product', 'transactions', 'affiliate.user:id,name', 'affiliateCommission']);
+        $order->load(['user', 'items.product', 'transactions', 'affiliate.user:id,name', 'affiliateCommission', 'histories']);
         $runtime = $resolver->resolve();
         $orderSyncEnabled = $runtime->enabled && $runtime->orderSyncEnabled;
 
@@ -72,6 +74,13 @@ class OrderController extends Controller
                 'status' => $order->kiot_sync_status,
                 'order_code' => $order->kiot_order_code,
                 'error_message' => $order->kiot_sync_error_message,
+                'auto_resend_count' => (int) $order->kiot_auto_resend_count,
+                'auto_resend_max' => count(ResendUnsyncedKiotOrdersCommand::DELAYS),
+                // Products of this order that KIOT does not know yet and have no KIOT code linked.
+                'unlinked_products' => $order->items
+                    ->filter(fn ($item) => $item->product && $item->product->inventory_source !== 'kiot' && blank($item->product->kiot_code))
+                    ->map(fn ($item) => ['id' => $item->product->id, 'name' => $item->product->name, 'sku' => $item->product->sku])
+                    ->unique('id')->values(),
                 'order_sync_enabled' => $orderSyncEnabled,
                 'can_resend' => $orderSyncEnabled && $order->canResendToKiot(),
             ],
@@ -82,6 +91,7 @@ class OrderController extends Controller
     {
         try {
             $eventId = $kiotOrders->resend($order);
+            OrderHistoryRecorder::kiot($order, 'Nhân viên '.(auth()->user()?->name ?? '').' bấm gửi lại sang KIOT.', 'admin');
         } catch (KiotIntegrationException $exception) {
             return back()->with('error', $exception->getMessage());
         }
@@ -93,7 +103,7 @@ class OrderController extends Controller
 
         return match ($order->kiot_sync_status) {
             'synced' => back()->with('success', 'Đã gửi đơn sang KIOT'.($order->kiot_order_code ? " (mã {$order->kiot_order_code})." : '.')),
-            'rejected', 'failed' => back()->with('error', 'KIOT từ chối đơn: '.($order->kiot_sync_error_message ?: 'không rõ lý do')),
+            'rejected', 'failed' => back()->with('error', 'KIOT chưa nhận đơn. '.($order->kiot_sync_error_message ?: 'Không rõ lý do.')),
             default => back()->with('success', 'KIOT chưa phản hồi, hệ thống sẽ tự gửi lại trong ít phút.'),
         };
     }
@@ -102,18 +112,20 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'order_status' => 'required|in:pending,confirmed,processing,shipping,delivered,cancelled',
+            'reason' => 'nullable|string|max:500',
         ]);
+        $reason = filled($validated['reason'] ?? null) ? trim($validated['reason']) : null;
 
         if ($validated['order_status'] === 'cancelled') {
             try {
-                $cancellation->cancel($order, 'Admin yêu cầu hủy đơn');
+                OrderHistoryRecorder::actingAs('admin', $reason ?? 'Nhân viên huỷ đơn', fn () => $cancellation->cancel($order, $reason ?? 'Admin yêu cầu hủy đơn'));
             } catch (KiotIntegrationException $exception) {
                 return back()->with('error', in_array($exception->errorCode, ['ORDER_ALREADY_INVOICED', 'ORDER_NOT_CANCELLABLE'], true)
                     ? 'Đơn hàng đã được xử lý trong hệ thống kho và không thể hủy.'
                     : $exception->getMessage());
             }
         } else {
-            $order->update($validated);
+            OrderHistoryRecorder::actingAs('admin', $reason, fn () => $order->update(['order_status' => $validated['order_status']]));
         }
 
         return back()->with('success', 'Cập nhật trạng thái đơn hàng thành công');
