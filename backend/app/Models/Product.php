@@ -21,6 +21,7 @@ class Product extends Model
         'name',
         'slug',
         'sku',
+        'kiot_code',
         'short_description',
         'description',
         'price',

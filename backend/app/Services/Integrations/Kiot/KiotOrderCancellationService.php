@@ -31,13 +31,14 @@ class KiotOrderCancellationService
         if ($createEvent && $createEvent->status === 'pending' && $createEvent->attempt_count === 0) {
             DB::transaction(function () use ($createEvent, $order) {
                 IntegrationOutboxEvent::whereKey($createEvent->id)->lockForUpdate()->update(['status' => 'cancelled', 'locked_at' => null]);
-                Order::whereKey($order->id)->lockForUpdate()->update(['order_status' => 'cancelled', 'kiot_sync_status' => 'cancelled']);
+                // A model update (not a query) so the status change reaches the order history.
+                Order::whereKey($order->id)->lockForUpdate()->firstOrFail()->update(['order_status' => 'cancelled', 'kiot_sync_status' => 'cancelled']);
             });
 
             return $order->fresh();
         }
 
-        if (in_array($order->kiot_sync_status, ['pending', 'sending', 'retrying', 'failed'], true)) {
+        if (in_array($order->kiot_sync_status, ['pending', 'sending', 'retrying', 'failed', 'rejected'], true)) {
             $remote = $this->client->order($order->id);
             if (! $remote->successful()) {
                 if ($remote->errorCode() === 'EXTERNAL_ORDER_NOT_FOUND') {

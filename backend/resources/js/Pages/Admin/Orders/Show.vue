@@ -33,8 +33,8 @@ const kiotStatusLabel = {
     sending: "Đang gửi",
     retrying: "Đang thử gửi lại",
     synced: "Đã đồng bộ",
-    failed: "Gửi thất bại",
-    rejected: "KIOT từ chối",
+    failed: "Chưa vào KIOT (gửi thất bại)",
+    rejected: "Chưa vào KIOT (KIOT từ chối)",
     cancel_pending: "Đang hủy bên KIOT",
     cancelled: "Đã hủy",
 };
@@ -50,12 +50,15 @@ const newStatus = ref(
     props.order.order_status || props.order.status || "pending",
 );
 const newPayStatus = ref(props.order.payment_status || "unpaid");
+const statusReason = ref("");
 
 function updateStatus() {
     router.patch(`/admin/orders/${props.order.id}/status`, {
         order_status: newStatus.value,
-    });
+        reason: statusReason.value || null,
+    }, { preserveScroll: true, onSuccess: () => { statusReason.value = ""; } });
 }
+const historyStatusLabel = (status) => (status ? statusLabel[status] || status : "—");
 function updatePayment() {
     router.patch(`/admin/orders/${props.order.id}/payment-status`, {
         payment_status: newPayStatus.value,
@@ -184,6 +187,12 @@ const remaining = computed(() =>
                             {{ l }}
                         </option>
                     </select>
+                    <input
+                        v-model="statusReason"
+                        maxlength="500"
+                        placeholder="Lý do (không bắt buộc, ghi vào lịch sử)"
+                        class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"
+                    />
                     <button
                         @click="updateStatus"
                         class="w-full px-3 py-2 bg-cyan-600 text-white rounded-lg text-sm hover:bg-cyan-700"
@@ -292,8 +301,21 @@ const remaining = computed(() =>
                 >
                     Lỗi: {{ kiot.error_message }}
                 </p>
+                <p v-if="['failed', 'rejected'].includes(kiot.status)" class="text-amber-300">
+                    Đơn vẫn giữ trên web, chưa vào KIOT. Shop xử lý tay hoặc bấm "Gửi lại sang KIOT".
+                    <span v-if="kiot.auto_resend_count < kiot.auto_resend_max">Hệ thống tự gửi lại đã chạy {{ kiot.auto_resend_count }}/{{ kiot.auto_resend_max }} lần.</span>
+                    <span v-else>Đã hết {{ kiot.auto_resend_max }} lần tự gửi lại.</span>
+                </p>
+                <p v-if="['failed', 'rejected'].includes(kiot.status) && kiot.unlinked_products?.length" class="text-slate-400">
+                    Sản phẩm chưa gắn mã KIOT:
+                    <template v-for="(product, index) in kiot.unlinked_products" :key="product.id">
+                        <span v-if="index">, </span>
+                        <Link :href="`/admin/products/${product.id}/edit`" class="text-cyan-400 hover:underline">{{ product.sku }}</Link>
+                    </template>
+                    (mở sản phẩm để "Gắn mã Kiot" nếu hàng đã có trong KIOT với mã khác).
+                </p>
                 <p
-                    v-if="!kiot.order_sync_enabled && ['not_required', 'failed'].includes(kiot.status)"
+                    v-if="!kiot.order_sync_enabled && ['not_required', 'failed', 'rejected'].includes(kiot.status)"
                     class="text-slate-500"
                 >
                     Bật "Đồng bộ đơn hàng" trong Tích hợp KIOT để gửi lại đơn này.
@@ -308,6 +330,23 @@ const remaining = computed(() =>
             >
                 {{ resending ? "Đang gửi..." : "Gửi lại sang KIOT" }}
             </button>
+        </div>
+        <div
+            v-if="order.histories?.length"
+            class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-4 mb-6"
+        >
+            <p class="text-sm text-slate-300 font-semibold mb-2">Lịch sử đơn hàng</p>
+            <ol class="space-y-2 text-sm">
+                <li v-for="h in order.histories" :key="h.id" class="flex flex-wrap gap-x-2 border-l-2 pl-3" :class="h.type === 'kiot' ? 'border-cyan-700' : 'border-slate-600'">
+                    <span class="text-slate-500">{{ formatDate(h.created_at) }}</span>
+                    <span class="text-slate-400">{{ h.actor_label }}</span>
+                    <span v-if="h.type === 'status'" class="text-slate-200">
+                        {{ h.from_status ? `${historyStatusLabel(h.from_status)} → ` : "Tạo đơn: " }}{{ historyStatusLabel(h.to_status) }}
+                    </span>
+                    <span v-else class="text-cyan-300">KIOT</span>
+                    <span v-if="h.message" class="text-slate-400 w-full">{{ h.message }}</span>
+                </li>
+            </ol>
         </div>
         <div
             v-if="order.transactions?.length"
