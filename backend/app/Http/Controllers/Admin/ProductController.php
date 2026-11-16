@@ -16,8 +16,10 @@ use App\Models\ProductVariant;
 use App\Models\SpecificationKey;
 use App\Services\Affiliate\CommissionRules;
 use App\Services\Catalog\WarrantyPackages;
+use App\Services\Payments\DepositRules;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\SeoOverrides;
 use App\Support\YouTubeVideo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -40,6 +42,12 @@ class ProductController extends Controller
     /** "Lấy key ngay": an outside page that hands out a licence key at once. */
     private const INSTANT_KEY_RULES = [
         'instant_key_url' => 'nullable|url:https|max:2048',
+    ];
+
+    /** "Link mua ngoài": one button to another site replaces cart/buy on the product page. */
+    private const EXTERNAL_BUY_RULES = [
+        'external_buy_url' => 'nullable|url:https|max:2048',
+        'external_buy_label' => 'nullable|string|max:60',
     ];
 
     public function index(Request $request)
@@ -133,7 +141,8 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES, self::EXTERNAL_BUY_RULES, SeoOverrides::rules()), $this->productValidationMessages() + SeoOverrides::messages(), $this->productValidationAttributes());
+        $validated = SeoOverrides::normalizeInput($validated);
 
         try {
             // A slug made from a very long product name is cut at a word
@@ -305,12 +314,16 @@ class ProductController extends Controller
             'relations.*.related_product_id' => 'required|integer|exists:products,id',
             'relations.*.relation_type' => ['required', Rule::in(ProductRelation::TYPES)],
             'relations.*.sort_order' => 'nullable|integer|min:0',
-        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES, WarrantyPackages::validationRules()), $this->productValidationMessages(), $this->productValidationAttributes());
+        ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), DepositRules::validationRules(), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES, self::EXTERNAL_BUY_RULES, SeoOverrides::rules(), WarrantyPackages::validationRules()), $this->productValidationMessages() + SeoOverrides::messages(), $this->productValidationAttributes());
+        $validated = SeoOverrides::normalizeInput($validated);
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
+        }
+        if (array_key_exists('deposit_rule', $validated)) {
+            $validated['deposit_rule'] = DepositRules::normalise($validated['deposit_rule']);
         }
 
         try {

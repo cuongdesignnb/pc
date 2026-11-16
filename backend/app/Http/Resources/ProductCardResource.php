@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Services\Seo\PublicUrlResolver;
+use App\Support\SeoOverrides;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,8 +23,8 @@ class ProductCardResource extends JsonResource
             'public_url' => $urls->absolute($canonicalPath),
             'seo' => [
                 'canonical_path' => $canonicalPath,
-                'canonical_url' => $urls->absolute($canonicalPath),
-                'robots' => 'index,follow',
+                'canonical_url' => SeoOverrides::canonicalUrl($this->canonical_url, $urls->absolute($canonicalPath)),
+                'robots' => SeoOverrides::robots($this->meta_robots),
             ],
             'sku' => $this->sku,
             'short_description' => $this->short_description,
@@ -64,6 +65,8 @@ class ProductCardResource extends JsonResource
             'is_featured' => $this->is_featured,
             'sold_count' => (int) $this->sold_count,
             'has_variants' => (bool) ($this->has_variants ?? false),
+            'external_buy_url' => $this->external_buy_url ?: null,
+            'external_buy_label' => $this->external_buy_url ? ($this->external_buy_label ?: null) : null,
         ];
     }
 }

@@ -9,6 +9,7 @@ class Post extends Model
 {
     protected $fillable = [
         'user_id',
+        'author_id',
         'post_category_id',
         'title',
         'slug',
@@ -21,6 +22,8 @@ class Post extends Model
         'published_at',
         'meta_title',
         'meta_description',
+        'meta_robots',
+        'canonical_url',
         'slug_source',
         'slug_policy_version',
         'slug_locked_at',
@@ -41,6 +44,12 @@ class Post extends Model
     public function author(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /** The author chosen in the post form (Nội dung → Tác giả); null = show the admin user. */
+    public function authorProfile(): BelongsTo
+    {
+        return $this->belongsTo(Author::class, 'author_id');
     }
 
     public function category(): BelongsTo

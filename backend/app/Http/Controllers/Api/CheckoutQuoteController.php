@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\Checkout\CheckoutQuoteService;
+use App\Services\Checkout\ShippingCalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,7 +21,7 @@ class CheckoutQuoteController extends Controller
             'items.*.warranty_months' => 'nullable|integer|min:1|max:120',
             'shipping_province_code' => 'nullable|string|max:20',
             'shipping_ward_code' => 'nullable|string|max:20',
-            'shipping_method' => 'nullable|string|in:standard',
+            'shipping_method' => 'nullable|string|in:'.implode(',', ShippingCalculator::METHODS),
             'payment_method' => 'nullable|string|in:cod,sepay',
             'customer_phone' => 'nullable|string|max:20',
             'referral_code' => 'nullable|string|max:20',

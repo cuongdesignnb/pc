@@ -2,12 +2,14 @@
 
 namespace App\Services\Seo;
 
+use App\Models\Author;
 use App\Models\Category;
 use App\Models\Page;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Models\Product;
 use App\Models\Redirect;
+use App\Support\SeoOverrides;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -29,8 +31,9 @@ class SitemapExportService
         $productPages = (int) ceil(Product::query()
             ->visibleOnStorefront()
             ->whereHas('category', fn (Builder $query) => $query->visibleOnStorefront())
+            ->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))
             ->count() / $pageSize);
-        $postPages = (int) ceil(Post::query()->published()->count() / $pageSize);
+        $postPages = (int) ceil(Post::query()->published()->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))->count() / $pageSize);
 
         for ($page = 1; $page <= $productPages; $page++) {
             $shards[] = '/sitemaps/products-'.$page.'.xml';
@@ -88,7 +91,7 @@ class SitemapExportService
 
         return collect((array) config('seo.static_paths', []))
             ->map(fn (mixed $path): array => ['path' => (string) $path, 'lastmod' => null])
-            ->merge(Page::query()->active()
+            ->merge(Page::query()->active()->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))
                 ->whereNotIn('slug', Category::query()->select('slug'))
                 ->orderBy('id')->get(['slug', 'updated_at'])
                 ->map(function (Page $page): ?array {
@@ -157,7 +160,26 @@ class SitemapExportService
                     'lastmod' => $category->updated_at,
                 ];
             })
+            ->concat($this->authorEntries())
             ->filter(fn (?array $entry): bool => $entry !== null && $this->policy->isIndexablePath($entry['path']))
+            ->values()
+            ->all();
+    }
+
+    /** @return list<array{path:string,lastmod:?CarbonInterface}> Author pages with indexable published posts. */
+    private function authorEntries(): array
+    {
+        return Author::query()
+            ->active()
+            ->whereHas('posts', fn (Builder $query) => SeoOverrides::scopeIndexable($query->published()))
+            ->orderBy('id')
+            ->get(['id', 'slug', 'updated_at'])
+            ->map(function (Author $author): ?array {
+                $path = $this->urls->authorPathForSlug((string) $author->slug);
+
+                return $path === null ? null : ['path' => $path, 'lastmod' => $author->updated_at];
+            })
+            ->filter()
             ->values()
             ->all();
     }
@@ -173,6 +195,7 @@ class SitemapExportService
             ->with('category')
             ->visibleOnStorefront()
             ->whereHas('category', fn (Builder $query) => $query->visibleOnStorefront())
+            ->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))
             ->orderBy('id')
             ->forPage($page, $pageSize)
             ->get(['id', 'category_id', 'slug', 'updated_at'])
@@ -197,6 +220,7 @@ class SitemapExportService
 
         return Post::query()
             ->published()
+            ->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))
             ->orderBy('id')
             ->forPage($page, $pageSize)
             ->get(['id', 'slug', 'updated_at'])
@@ -222,6 +246,7 @@ class SitemapExportService
         $total = Product::query()
             ->visibleOnStorefront()
             ->whereHas('category', fn (Builder $query) => $query->visibleOnStorefront())
+            ->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))
             ->count();
 
         return $page <= max(1, (int) ceil($total / $pageSize));
@@ -233,7 +258,7 @@ class SitemapExportService
             return false;
         }
 
-        return $page <= max(1, (int) ceil(Post::query()->published()->count() / $pageSize));
+        return $page <= max(1, (int) ceil(Post::query()->published()->tap(fn (Builder $query) => SeoOverrides::scopeIndexable($query))->count() / $pageSize));
     }
 
     /** @param list<array{path:string,lastmod:?CarbonInterface}> $entries */

@@ -10,6 +10,7 @@ use App\Models\Page;
 use App\Models\Product;
 use App\Services\Affiliate\CommissionRules;
 use App\Services\Catalog\WarrantyPackages;
+use App\Services\Payments\DepositRules;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
 use Illuminate\Http\Request;
@@ -78,12 +79,15 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
-        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
+        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + DepositRules::validationRules() + self::COMPLIANCE_RULES);
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
+        }
+        if (array_key_exists('deposit_rule', $validated)) {
+            $validated['deposit_rule'] = DepositRules::normalise($validated['deposit_rule']);
         }
 
         $validated['technical_heading'] = $validated['technical_heading'] ?? 'auto';
@@ -153,12 +157,15 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
-        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + self::COMPLIANCE_RULES);
+        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + DepositRules::validationRules() + self::COMPLIANCE_RULES);
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }
         if (array_key_exists('affiliate_commission', $validated)) {
             $validated['affiliate_commission'] = CommissionRules::normalise($validated['affiliate_commission']);
+        }
+        if (array_key_exists('deposit_rule', $validated)) {
+            $validated['deposit_rule'] = DepositRules::normalise($validated['deposit_rule']);
         }
 
         $validated['technical_heading'] = $validated['technical_heading'] ?? $category->technical_heading ?? 'auto';

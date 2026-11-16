@@ -13,6 +13,7 @@ use App\Models\SlugHistory;
 use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\SeoOverrides;
 use App\Support\SiteTimezone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -100,12 +101,14 @@ class AdminApiController extends Controller
             'specifications.*.label' => 'required|string|max:255',
             'specifications.*.value' => 'nullable|string|max:2000',
             'instant_key_url' => 'sometimes|nullable|url:https|max:2048',
-        ], [
+            'external_buy_url' => 'sometimes|nullable|url:https|max:2048',
+            'external_buy_label' => 'sometimes|nullable|string|max:60',
+        ] + SeoOverrides::rules(true), SeoOverrides::messages() + [
             'price.integer' => 'Giá phải là số nguyên (đồng), ví dụ 12000000. Cũng nhận "12.000.000", "12,000,000" hoặc "12000000đ".',
             'sale_price.integer' => 'Giá khuyến mãi phải là số nguyên (đồng), ví dụ 11500000.',
         ]);
 
-        $fields = collect($validated)->except(['images', 'specifications'])->all();
+        $fields = SeoOverrides::normalizeInput(collect($validated)->except(['images', 'specifications'])->all());
         $price = (int) ($fields['price'] ?? $product->price);
         if (array_key_exists('sale_price', $fields) && $fields['sale_price'] !== null && (int) $fields['sale_price'] >= $price) {
             throw ValidationException::withMessages(['sale_price' => 'Giá khuyến mãi phải nhỏ hơn giá bán.']);
@@ -242,7 +245,8 @@ class AdminApiController extends Controller
             'title' => 'required|string|max:255',
             'slug' => 'nullable|string|max:160',
             'body' => 'required|string',
-        ]);
+        ], SeoOverrides::messages());
+        $validated = SeoOverrides::normalizeInput($validated);
         $validated['slug'] = $this->freeSlug($slugs, $validated['slug'] ?? null, $validated['title'], 'post');
         $validated['body'] = $sanitizer->sanitize($validated['body']);
         $validated['status'] ??= 'draft';
@@ -264,7 +268,8 @@ class AdminApiController extends Controller
         $validated = $request->validate($this->postRules() + [
             'title' => 'sometimes|required|string|max:255',
             'body' => 'sometimes|required|string',
-        ]);
+        ], SeoOverrides::messages());
+        $validated = SeoOverrides::normalizeInput($validated);
         if (isset($validated['body'])) {
             $validated['body'] = $sanitizer->sanitize($validated['body']);
         }
@@ -337,6 +342,10 @@ class AdminApiController extends Controller
             'meta_title' => $product->meta_title,
             'meta_description' => $product->meta_description,
             'instant_key_url' => $product->instant_key_url,
+            'external_buy_url' => $product->external_buy_url,
+            'external_buy_label' => $product->external_buy_label,
+            'meta_robots' => $product->meta_robots,
+            'canonical_url' => $product->canonical_url,
             'short_description' => $product->short_description,
             'description' => $product->description,
             'specifications' => collect($product->parsed_specifications)->values()->all(),
@@ -373,7 +382,7 @@ class AdminApiController extends Controller
     {
         return $post->only([
             'id', 'post_category_id', 'title', 'slug', 'excerpt', 'featured_image', 'status', 'is_featured',
-            'meta_title', 'meta_description',
+            'meta_title', 'meta_description', 'meta_robots', 'canonical_url', 'author_id',
         ]) + ($withBody ? ['body' => $post->body] : []) + [
             'url' => $this->urls->postUrl($post),
             'published_at' => $post->published_at?->toIso8601String(),
@@ -406,7 +415,8 @@ class AdminApiController extends Controller
             'published_at' => 'sometimes|nullable|date',
             'meta_title' => 'sometimes|nullable|string|max:255',
             'meta_description' => 'sometimes|nullable|string|max:1000',
-        ];
+            'author_id' => 'sometimes|nullable|integer|exists:authors,id',
+        ] + SeoOverrides::rules(true);
     }
 
     private function assertParent(mixed $parentId, ?Category $editing = null): void

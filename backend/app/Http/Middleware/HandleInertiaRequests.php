@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ContactMessage;
 use App\Models\Order;
 use App\Models\Setting;
 use Illuminate\Http\Request;
@@ -57,6 +58,7 @@ class HandleInertiaRequests extends Middleware
             'siteLogo' => fn (): string => $this->siteLogo(),
             'admin' => [
                 'pending_orders_count' => fn (): int => $this->pendingOrdersCount($request),
+                'contact_unread_count' => fn (): int => $this->contactUnreadCount($request),
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
@@ -98,6 +100,22 @@ class HandleInertiaRequests extends Middleware
             return trim((string) (($settings['site_logo_white'] ?? '') ?: ($settings['site_logo'] ?? '')));
         } catch (\Throwable) {
             return '';
+        }
+    }
+
+    /** Unread messages in Hộp thư liên hệ, for the sidebar badge. */
+    private function contactUnreadCount(Request $request): int
+    {
+        if (! $request->is('admin', 'admin/*') || ! $request->user()) {
+            return 0;
+        }
+
+        try {
+            return Schema::hasTable('contact_messages')
+                ? ContactMessage::query()->where('status', ContactMessage::STATUS_NEW)->count()
+                : 0;
+        } catch (\Throwable) {
+            return 0;
         }
     }
 

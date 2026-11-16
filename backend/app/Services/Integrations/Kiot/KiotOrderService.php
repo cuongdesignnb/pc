@@ -9,8 +9,10 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\Affiliate\AffiliateCheckoutService;
 use App\Services\Catalog\InvalidWarrantyPackage;
+use App\Services\Catalog\LaptopCategories;
 use App\Services\Catalog\ProductPurchasabilityService;
 use App\Services\Catalog\WarrantyPackages;
+use App\Services\Checkout\PaymentMethodAvailability;
 use App\Services\Checkout\ShippingCalculator;
 use App\Services\Payments\DepositPolicy;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -28,6 +30,7 @@ class KiotOrderService
         private readonly DepositPolicy $deposits,
         private readonly WarrantyPackages $warranties,
         private readonly AffiliateCheckoutService $affiliates,
+        private readonly LaptopCategories $laptops,
     ) {}
 
     public function create(array $data, ?int $userId): array
@@ -118,7 +121,30 @@ class KiotOrderService
                     ];
                 }
 
-                $shippingFee = $this->shippingCalculator->quote($subtotal, $requested->sum('quantity'))['fee'];
+                $shippingMethod = $this->shippingCalculator->resolveMethod($data['shipping_method'] ?? null);
+                // Province rules (deposit, no-COD) follow the delivery address; store pickup has none.
+                $ruleProvince = $shippingMethod === 'pickup'
+                    ? null
+                    : (trim((string) ($data['shipping_province_code'] ?? '')) ?: null);
+                $orderLines = array_map(fn (array $snapshot): array => [
+                    'product_id' => (int) $snapshot['product_id'],
+                    'quantity' => (int) $snapshot['quantity'],
+                    'line_total' => (int) $snapshot['total'],
+                ], $snapshots);
+                $shipping = $this->shippingCalculator->quote(
+                    $subtotal,
+                    $requested->sum('quantity'),
+                    $shippingMethod,
+                    $data['shipping_province_code'] ?? null,
+                    $this->laptops->subtotal($orderLines),
+                );
+                if (! $shipping['available']) {
+                    throw ValidationException::withMessages(['shipping_method' => $shipping['disabled_reason']]);
+                }
+                if ($data['payment_method'] === 'cod' && ! $this->deposits->codAllowed($ruleProvince)) {
+                    throw ValidationException::withMessages(['payment_method' => PaymentMethodAvailability::COD_PROVINCE_MESSAGE]);
+                }
+                $shippingFee = $shipping['fee'];
                 $referral = $this->affiliates->evaluate(
                     $data['customer_phone'],
                     $data['referral_code'] ?? null,
@@ -129,7 +155,7 @@ class KiotOrderService
                 $total = $subtotal - $discount + $shippingFee;
                 $paymentOption = $data['payment_method'] === 'sepay' ? ($data['payment_option'] ?? 'full') : null;
                 $depositAmount = $paymentOption === 'deposit'
-                    ? $this->deposits->amountFor($total)
+                    ? $this->deposits->amountForOrder($total, $orderLines, $ruleProvince)
                     : null;
                 if ($paymentOption === 'deposit' && $depositAmount === null) {
                     throw ValidationException::withMessages([
@@ -156,6 +182,7 @@ class KiotOrderService
                     'landing_page' => self::landingPage($data['landing_page'] ?? null),
                     'video_code' => self::cleanSource($data['video_code'] ?? null),
                     'shipping_fee' => $shippingFee,
+                    'shipping_method' => $shippingMethod,
                     'total' => $total,
                     'payment_method' => $data['payment_method'],
                     'payment_option' => $paymentOption,
@@ -297,7 +324,11 @@ class KiotOrderService
             'ordered_at' => $order->created_at->toRfc3339String(),
             'customer' => ['name' => $order->shipping_name, 'phone' => $order->shipping_phone, 'email' => $order->customer_email],
             'delivery' => [
-                'is_delivery' => true, 'receiver_name' => $order->shipping_name,
+                // Store pickup is not a delivery in KIOT.
+                'is_delivery' => $order->shipping_method !== 'pickup',
+                'method' => $order->shipping_method ?: 'standard',
+                'method_label' => ShippingCalculator::label($order->shipping_method),
+                'receiver_name' => $order->shipping_name,
                 'receiver_phone' => $order->shipping_phone, 'receiver_address' => $order->shipping_address,
                 'receiver_ward' => $order->shipping_ward, 'receiver_district' => $order->shipping_district,
                 'receiver_city' => $order->shipping_city, 'weight' => $weight,
@@ -340,7 +371,12 @@ class KiotOrderService
         ])->filter(fn ($value) => filled($value))->map(fn ($value, $key) => "{$key}={$value}")->implode(', ');
         $lines = [
             'Nguồn: Website '.$order->order_number.($source !== '' ? " ({$source})" : ''),
+            'Nhận hàng: '.ShippingCalculator::label($order->shipping_method)
+                .((int) $order->shipping_fee > 0 ? ' - phí ship '.number_format((int) $order->shipping_fee, 0, ',', '.').'đ' : ' - miễn phí ship'),
         ];
+        if ($order->payment_option === 'deposit' && (int) $order->deposit_amount > 0) {
+            $lines[] = 'Đặt cọc: '.number_format((int) $order->deposit_amount, 0, ',', '.').'đ';
+        }
         if (filled($order->video_code)) {
             $lines[] = 'Mã video: '.$order->video_code;
         }

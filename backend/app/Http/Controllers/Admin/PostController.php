@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Author;
 use App\Models\Post;
 use App\Models\PostCategory;
 use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\SeoOverrides;
 use App\Support\SiteTimezone;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -46,6 +48,7 @@ class PostController extends Controller
     {
         return Inertia::render('Admin/Posts/Create', [
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
+            'authors' => $this->authorOptions(),
         ]);
     }
 
@@ -63,7 +66,9 @@ class PostController extends Controller
             'published_at' => 'nullable|date',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
-        ]);
+            'author_id' => 'nullable|integer|exists:authors,id',
+        ] + SeoOverrides::rules(), SeoOverrides::messages());
+        $validated = SeoOverrides::normalizeInput($validated);
         $validated['published_at'] = $this->publishedAtFromAdmin($validated['published_at'] ?? null);
 
         $validated['user_id'] = Auth::id() ?? 1;
@@ -102,6 +107,7 @@ class PostController extends Controller
             'post' => $post,
             'publishedAtLocal' => $post->published_at?->copy()->timezone(SiteTimezone::get())->format('Y-m-d\TH:i'),
             'categories' => PostCategory::orderBy('sort_order')->get(['id', 'name']),
+            'authors' => $this->authorOptions(),
         ]);
     }
 
@@ -119,7 +125,9 @@ class PostController extends Controller
             'published_at' => 'nullable|date',
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
-        ]);
+            'author_id' => 'nullable|integer|exists:authors,id',
+        ] + SeoOverrides::rules(), SeoOverrides::messages());
+        $validated = SeoOverrides::normalizeInput($validated);
         $validated['published_at'] = $this->publishedAtFromAdmin($validated['published_at'] ?? null);
 
         $validated['body'] = $sanitizer->sanitize($validated['body']);
@@ -299,6 +307,12 @@ class PostController extends Controller
         }
 
         return back()->with('success', $msg);
+    }
+
+    /** Authors for the post form's picker (inactive ones are marked there). */
+    private function authorOptions(): array
+    {
+        return Author::query()->orderBy('name')->get(['id', 'name', 'is_active'])->all();
     }
 
     /**

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\PostAuthorResource;
 use App\Http\Resources\PostCardResource;
 use App\Http\Resources\PostDetailResource;
+use App\Models\Author;
 use App\Models\Banner;
 use App\Models\Post;
 use App\Models\PostCategory;
@@ -15,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class BlogController extends Controller
 {
@@ -122,6 +125,7 @@ class BlogController extends Controller
         $post = Post::with([
             'category:id,name,slug',
             'author:id,name,avatar',
+            'authorProfile',
         ])
             ->published()
             ->whereKey($resolved->getKey())
@@ -250,6 +254,43 @@ class BlogController extends Controller
     }
 
     /**
+     * Author page (/tin-tuc/tac-gia/{slug}): profile and the author's
+     * published posts, 12 a page.
+     */
+    public function author(Request $request, string $slug): JsonResponse
+    {
+        $author = Author::query()->active()->where('slug', $slug)->first();
+        abort_unless($author, 404);
+
+        $posts = $this->publishedPosts()
+            ->where('author_id', $author->id)
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
+            ->paginate(12);
+        $profile = PostAuthorResource::make($author)->resolve($request);
+
+        return response()->json([
+            'author' => $profile + [
+                'posts_count' => $posts->total(),
+                'seo' => [
+                    'title' => $author->name,
+                    'description' => filled($author->bio) ? Str::limit(trim(strip_tags((string) $author->bio)), 160) : null,
+                    'canonical_path' => $profile['canonical_path'],
+                    'canonical_url' => $profile['url'],
+                    // An author without published posts is a thin page.
+                    'robots' => $posts->total() > 0 ? 'index,follow' : 'noindex,follow',
+                ],
+            ],
+            'posts' => PostCardResource::collection($posts->getCollection())->resolve(),
+            'meta' => [
+                'current_page' => $posts->currentPage(),
+                'last_page' => $posts->lastPage(),
+                'total' => $posts->total(),
+            ],
+        ]);
+    }
+
+    /**
      * Get featured posts
      */
     public function featured(): JsonResponse
@@ -274,6 +315,7 @@ class BlogController extends Controller
             ->with([
                 'category:id,name,slug',
                 'author:id,name',
+                'authorProfile:id,name,slug,is_active',
             ])
             ->when($categorySlug !== '', function (Builder $query) use ($categorySlug): void {
                 $query->whereHas('category', fn (Builder $categoryQuery) => $categoryQuery->where('slug', $categorySlug));

@@ -6,6 +6,7 @@ use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
 use App\Support\FaqExtractor;
 use App\Support\PublicAssetUrl;
+use App\Support\SeoOverrides;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -23,9 +24,7 @@ class PostDetailResource extends JsonResource
             'slug' => (string) $this->category->slug,
             'canonical_path' => $urls->postCategoryPath($this->category),
         ] : null;
-        $author = $this->relationLoaded('author') && $this->author
-            ? PostAuthorResource::make($this->author)->resolve($request)
-            : null;
+        $author = PostAuthorResource::forPost($this->resource, $request);
         $seoTitle = filled($this->meta_title) ? (string) $this->meta_title : (string) $this->title;
         $seoDescription = filled($this->meta_description)
             ? (string) $this->meta_description
@@ -48,8 +47,8 @@ class PostDetailResource extends JsonResource
                 'description' => $seoDescription,
                 'image' => PublicAssetUrl::normalize($this->featured_image),
                 'canonical_path' => $canonicalPath,
-                'canonical_url' => $urls->absolute($canonicalPath),
-                'robots' => 'index,follow',
+                'canonical_url' => SeoOverrides::canonicalUrl($this->canonical_url, $urls->absolute($canonicalPath)),
+                'robots' => SeoOverrides::robots($this->meta_robots),
             ],
             'public_url' => $urls->absolute($canonicalPath),
             'toc' => $content['toc'],

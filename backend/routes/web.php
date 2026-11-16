@@ -6,12 +6,14 @@ use App\Http\Controllers\Admin\AiGenerationController;
 use App\Http\Controllers\Admin\AiProductContentCampaignController;
 use App\Http\Controllers\Admin\ApiTokenController;
 use App\Http\Controllers\Admin\AuthController;
+use App\Http\Controllers\Admin\AuthorController;
 use App\Http\Controllers\Admin\BannerController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CatalogChannelController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\CompatibilityController;
 use App\Http\Controllers\Admin\ComponentTypeController;
+use App\Http\Controllers\Admin\ContactMessageController;
 use App\Http\Controllers\Admin\CouponController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
@@ -35,6 +37,7 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WebhookController;
 use App\Http\Controllers\CatalogFeedController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PublicFileController;
 use App\Http\Controllers\SeoController;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +52,11 @@ Route::get('indexnow-key.txt', [SeoController::class, 'indexNowKey'])->name('seo
 Route::get('/', function () {
     return redirect('/admin');
 });
+
+// Fixed link for a media file; stays the same after "Thay file" in admin.
+Route::get('files/{slug}', [PublicFileController::class, 'show'])
+    ->where('slug', '[A-Za-z0-9_-]+')
+    ->name('files.show');
 
 Route::get('feeds/google/products.xml', [CatalogFeedController::class, 'google'])->name('feeds.google.products');
 Route::get('feeds/meta/products.csv', [CatalogFeedController::class, 'meta'])->name('feeds.meta.products');
@@ -144,6 +152,17 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::get('posts-export', [PostController::class, 'export'])->name('posts.export');
     Route::post('posts-import', [PostController::class, 'import'])->name('posts.import');
     Route::resource('post-categories', PostCategoryController::class);
+    Route::resource('authors', AuthorController::class)->except(['show']);
+
+    // Hộp thư liên hệ (form /lien-he)
+    Route::middleware('permission:contact-messages.view')->group(function () {
+        Route::get('contact-messages', [ContactMessageController::class, 'index'])->name('contact-messages.index');
+        Route::get('contact-messages/{contactMessage}', [ContactMessageController::class, 'show'])->name('contact-messages.show');
+    });
+    Route::middleware('permission:contact-messages.manage')->group(function () {
+        Route::patch('contact-messages/{contactMessage}/status', [ContactMessageController::class, 'updateStatus'])->name('contact-messages.status');
+        Route::delete('contact-messages/{contactMessage}', [ContactMessageController::class, 'destroy'])->name('contact-messages.destroy');
+    });
 
     // Pages
     Route::resource('pages', PageController::class);
@@ -193,6 +212,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::post('media/bulk-delete', [MediaController::class, 'bulkDestroy'])->name('media.bulk-delete');
     Route::post('media/folders', [MediaController::class, 'createFolder'])->name('media.create-folder');
     Route::put('media/{medium}', [MediaController::class, 'update'])->name('media.update');
+    Route::post('media/{medium}/replace', [MediaController::class, 'replace'])->name('media.replace');
     Route::delete('media/{medium}', [MediaController::class, 'destroy'])->name('media.destroy');
 
     // Menus

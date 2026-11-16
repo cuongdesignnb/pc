@@ -183,6 +183,10 @@ const remaining = computed(() =>
                                 .join(", ") || "—"
                         }}
                     </p>
+                    <p>
+                        <span class="text-slate-500">Nhận hàng:</span>
+                        {{ order.shipping_method_label || "Giao hàng tiêu chuẩn" }}
+                    </p>
                     <p v-if="order.notes">
                         <span class="text-slate-500">Ghi chú:</span>
                         {{ order.notes }}

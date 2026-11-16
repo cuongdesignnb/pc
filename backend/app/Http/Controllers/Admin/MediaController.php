@@ -13,6 +13,9 @@ use Inertia\Inertia;
 
 class MediaController extends Controller
 {
+    /** Up to 50 MB each (51200 KB); see ops notes for PHP/nginx body limits. */
+    private const ALLOWED_MIMES = 'jpg,jpeg,png,gif,webp,svg,mp4,webm,pdf,doc,docx,xls,xlsx,zip';
+
     /**
      * Display media library page
      */
@@ -66,8 +69,10 @@ class MediaController extends Controller
     {
         $request->validate([
             'files' => 'required|array|max:20',
-            'files.*' => 'file|max:51200|mimes:jpg,jpeg,png,gif,webp,svg,mp4,webm,pdf,doc,docx,xls,xlsx,zip',
+            'files.*' => 'file|max:51200|mimes:'.self::ALLOWED_MIMES,
             'folder' => 'nullable|string|max:255',
+        ], [
+            'files.*.max' => 'Mỗi file tối đa 50 MB.',
         ]);
 
         $folder = $request->input('folder', '/');
@@ -128,6 +133,24 @@ class MediaController extends Controller
 
     private function storeFile(UploadedFile $file, string $folder, ?int $userId): Media
     {
+        $name = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+
+        return Media::create($this->persistFile($file, $folder) + [
+            'name' => $name,
+            'alt' => $name,
+            'folder' => $folder,
+            'uploaded_by' => $userId,
+        ]);
+    }
+
+    /**
+     * Write an upload to the public disk (images become WebP with a 300px
+     * thumbnail) and return the file columns of a media row.
+     *
+     * @return array{file_name: string, path: string, disk: string, mime_type: string, size: int, width: ?int, height: ?int}
+     */
+    private function persistFile(UploadedFile $file, string $folder): array
+    {
         $originalName = $file->getClientOriginalName();
         $name = pathinfo($originalName, PATHINFO_FILENAME);
         $extension = $file->getClientOriginalExtension();
@@ -175,8 +198,12 @@ class MediaController extends Controller
             $this->createThumbnail($file, $storagePath, $fileName);
         }
 
-        $media = Media::create([
-            'name' => $name,
+        // Clean up temporary WebP file
+        if ($shouldConvertToWebP && isset($webpPath) && file_exists($webpPath)) {
+            @unlink($webpPath);
+        }
+
+        return [
             'file_name' => $originalName,
             'path' => $path,
             'disk' => 'public',
@@ -184,17 +211,34 @@ class MediaController extends Controller
             'size' => $size,
             'width' => $width,
             'height' => $height,
-            'alt' => $name,
-            'folder' => $folder,
-            'uploaded_by' => $userId,
+        ];
+    }
+
+    /**
+     * "Thay file": put a new file behind an existing media item. Its fixed
+     * link (/files/{public_slug}), name, alt text and folder stay the same.
+     */
+    public function replace(Request $request, Media $medium)
+    {
+        $request->validate([
+            'file' => 'required|file|max:51200|mimes:'.self::ALLOWED_MIMES,
+        ], [
+            'file.max' => 'File tối đa 50 MB.',
         ]);
 
-        // Clean up temporary WebP file
-        if ($shouldConvertToWebP && isset($webpPath) && file_exists($webpPath)) {
-            @unlink($webpPath);
+        $oldDisk = $medium->disk;
+        $oldPath = $medium->path;
+        $medium->update($this->persistFile($request->file('file'), (string) ($medium->folder ?: '/')));
+        if ($oldPath !== $medium->path) {
+            Storage::disk($oldDisk)->delete($oldPath);
+            Storage::disk($oldDisk)->delete('thumbnails/'.$oldPath);
         }
 
-        return $media;
+        if (! $request->headers->has('X-Inertia') && ($request->wantsJson() || $request->ajax())) {
+            return response()->json(['media' => $medium->fresh()]);
+        }
+
+        return back()->with('success', 'Đã thay file. Link cố định vẫn giữ nguyên.');
     }
 
     /**

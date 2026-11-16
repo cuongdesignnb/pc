@@ -39,7 +39,13 @@ function revokeUploadPreviews() {
     uploadPreviewUrls.value = [];
 }
 
+// Same limit as the server (50 MB a file); bigger files are dropped with a note.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const oversizedNote = ref('');
 function setUploadFiles(files) {
+    const tooBig = files.filter(file => file.size > MAX_UPLOAD_BYTES);
+    oversizedNote.value = tooBig.length ? `Bỏ qua ${tooBig.length} file lớn hơn 50 MB: ${tooBig.map(file => file.name).join(', ')}` : '';
+    files = files.filter(file => file.size <= MAX_UPLOAD_BYTES);
     revokeUploadPreviews();
     uploadFiles.value = files;
     uploadPreviewUrls.value = files.map((file) =>
@@ -286,8 +292,40 @@ function createFolder() {
 }
 
 // ---- Copy URL ----
+const copiedUrl = ref('');
 function copyUrl(url) {
+    if (!url) return;
     navigator.clipboard.writeText(url);
+    copiedUrl.value = url;
+    setTimeout(() => { if (copiedUrl.value === url) copiedUrl.value = ''; }, 2000);
+}
+
+// ---- "Thay file": new file, same fixed link ----
+const replacing = ref(false);
+const replaceError = ref('');
+function onReplaceSelected(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !detailItem.value) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+        replaceError.value = 'File tối đa 50 MB.';
+        return;
+    }
+    if (!confirm(`Thay "${detailItem.value.file_name}" bằng "${file.name}"? Link cố định giữ nguyên, file cũ bị xoá.`)) return;
+    replacing.value = true;
+    replaceError.value = '';
+    const formData = new FormData();
+    formData.append('file', file);
+    router.post(`/admin/media/${detailItem.value.id}/replace`, formData, {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: (inertiaPage) => {
+            const fresh = inertiaPage.props.media?.data?.find(item => item.id === detailItem.value?.id);
+            if (fresh) detailItem.value = { ...fresh };
+        },
+        onError: (errors) => { replaceError.value = errors.file || 'Không thay được file.'; },
+        onFinish: () => { replacing.value = false; },
+    });
 }
 
 // ---- Pagination ----
@@ -545,6 +583,8 @@ function isImage(item) {
                 <div class="absolute inset-0 bg-black/50" @click="closeUploadModal"></div>
                 <div class="relative bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
                     <h3 class="text-lg font-semibold text-slate-200 mb-4">Upload file</h3>
+                    <p class="text-xs text-slate-500 -mt-3 mb-3">Tối đa 50 MB mỗi file. Ảnh JPG/PNG/GIF được chuyển sang WebP.</p>
+                    <p v-if="oversizedNote" class="text-xs text-red-400 mb-3">{{ oversizedNote }}</p>
 
                     <!-- File list -->
                     <div class="max-h-60 overflow-y-auto space-y-2 mb-4">
@@ -635,6 +675,21 @@ function isImage(item) {
                                 <span class="text-slate-400">Ngày upload</span>
                                 <span class="text-slate-200">{{ formatDate(detailItem.created_at) }}</span>
                             </div>
+                        </div>
+
+                        <!-- Fixed link: stays the same after "Thay file" -->
+                        <div v-if="detailItem.fixed_url">
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Link cố định</label>
+                            <div class="flex gap-2">
+                                <input :value="detailItem.fixed_url" readonly class="flex-1 text-sm bg-slate-800/40 border border-slate-700/50 rounded-lg px-3 py-2 text-slate-400">
+                                <button type="button" @click="copyUrl(detailItem.fixed_url)" class="px-3 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm whitespace-nowrap">{{ copiedUrl === detailItem.fixed_url ? 'Đã chép' : 'Sao chép link' }}</button>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">Dùng link này để gửi khách (PDF, driver…). Bấm "Thay file" để cập nhật nội dung mà link không đổi.</p>
+                            <label class="mt-2 inline-flex cursor-pointer items-center gap-2 px-3 py-2 border border-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-800/40 text-sm" :class="replacing ? 'opacity-50 pointer-events-none' : ''">
+                                <input type="file" class="hidden" accept=".jpg,.jpeg,.png,.gif,.webp,.svg,.mp4,.webm,.pdf,.doc,.docx,.xls,.xlsx,.zip" @change="onReplaceSelected">
+                                {{ replacing ? 'Đang thay file…' : 'Thay file' }}
+                            </label>
+                            <p v-if="replaceError" class="mt-1 text-xs text-red-400">{{ replaceError }}</p>
                         </div>
 
                         <!-- URL Copy -->

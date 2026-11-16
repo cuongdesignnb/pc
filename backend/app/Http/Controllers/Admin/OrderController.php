@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Models\Affiliate;
 use App\Models\Order;
+use App\Services\Checkout\ShippingCalculator;
 use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
@@ -56,7 +57,7 @@ class OrderController extends Controller
         $orders->getCollection()->each(fn (Order $order) => $order->setAttribute(
             'has_web_only_products',
             $order->items->contains(fn ($item) => $item->product && $item->product->isWebOnlyForKiot()),
-        ));
+        )->setAttribute('shipping_method_label', ShippingCalculator::label($order->shipping_method)));
 
         return Inertia::render('Admin/Orders/Index', [
             'orders' => $orders,
@@ -71,6 +72,7 @@ class OrderController extends Controller
     public function show(Order $order, KiotConfigurationResolver $resolver)
     {
         $order->load(['user', 'items.product', 'transactions', 'affiliate.user:id,name', 'affiliateCommission', 'histories']);
+        $order->setAttribute('shipping_method_label', ShippingCalculator::label($order->shipping_method));
         $runtime = $resolver->resolve();
         $orderSyncEnabled = $runtime->enabled && $runtime->orderSyncEnabled;
 

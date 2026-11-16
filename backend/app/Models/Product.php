@@ -33,6 +33,7 @@ class Product extends Model
         'weight',
         'warranty_months',
         'affiliate_commission',
+        'deposit_rule',
         'warranty_packages',
         'manufacture_year',
         'is_refurbished',
@@ -43,6 +44,10 @@ class Product extends Model
         'meta_description',
         'video_url',
         'instant_key_url',
+        'external_buy_url',
+        'external_buy_label',
+        'meta_robots',
+        'canonical_url',
         'views_count',
         'sold_count',
         'barcode',
@@ -87,6 +92,7 @@ class Product extends Model
         'weight' => 'integer',
         'warranty_months' => 'integer',
         'affiliate_commission' => 'array',
+        'deposit_rule' => 'array',
         'warranty_packages' => 'array',
         'manufacture_year' => 'integer',
         'is_refurbished' => 'boolean',
@@ -225,11 +231,20 @@ class Product extends Model
 
     public function getIsPurchasableAttribute(): bool
     {
-        return $this->isSellableOnline();
+        return ! $this->sellsElsewhere() && $this->isSellableOnline();
+    }
+
+    /** "Link mua ngoài" is set: the product is bought on another site, not here. */
+    public function sellsElsewhere(): bool
+    {
+        return filled($this->external_buy_url);
     }
 
     public function getAvailabilityLabelAttribute(): string
     {
+        if ($this->sellsElsewhere()) {
+            return 'Mua tại trang đối tác';
+        }
         if ($this->purchasableUnitPrice() <= 0) {
             return 'Liên hệ';
         }

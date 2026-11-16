@@ -9,6 +9,7 @@ import { applyProductAiResult } from '@/Components/applyProductAiResult.js';
 import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 import ProductFormErrors from '@/Components/ProductFormErrors.vue';
 import ProductComplianceFields from '@/Components/ProductComplianceFields.vue';
+import SeoRobotsCanonicalFields from '@/Components/SeoRobotsCanonicalFields.vue';
 
 const props = defineProps({
     categories: Array,
@@ -22,7 +23,7 @@ const form = useForm({
     description: '', short_description: '', price: 0, sale_price: '', stock_quantity: 0,
     is_active: true, is_featured: false, show_on_pc_website: true, warranty_months: 12,
     manufacture_year: '', is_refurbished: null, warning_info: '', usage_instructions: '',
-    meta_title: '', meta_description: '', video_url: '', instant_key_url: '',
+    meta_title: '', meta_description: '', video_url: '', instant_key_url: '', external_buy_url: '', external_buy_label: '', meta_robots: '', canonical_url: '',
     thumbnail: '',
     gallery: [],
     variants: [],
@@ -314,6 +315,7 @@ function removeVariant(index) {
                 <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">SEO</h4>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta title</label><input v-model="form.meta_title" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta description</label><textarea v-model="form.meta_description" rows="2" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
+                <SeoRobotsCanonicalFields :form="form" />
             </div>
 
             <!-- Video -->
@@ -331,6 +333,16 @@ function removeVariant(index) {
                 <input v-model="form.instant_key_url" type="url" placeholder="https://..." class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
                 <p v-if="form.errors.instant_key_url" class="text-xs text-red-400">{{ form.errors.instant_key_url }}</p>
                 <p class="text-xs text-slate-500">Dành cho phần mềm bản quyền. Có link thì trang sản phẩm hiện thêm nút "Lấy key ngay" (mở tab mới); hết key của shop thì chỉ còn nút này. Để trống để ẩn nút. Link phải bắt đầu bằng https://.</p>
+            </div>
+
+            <!-- Link mua ngoài -->
+            <div class="bg-slate-900 rounded-lg shadow-none border border-slate-800/60 p-6 space-y-2">
+                <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Link mua ngoài</h4>
+                <input v-model="form.external_buy_url" type="url" placeholder="https://..." class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                <p v-if="form.errors.external_buy_url" class="text-xs text-red-400">{{ form.errors.external_buy_url }}</p>
+                <input v-model="form.external_buy_label" type="text" maxlength="60" placeholder="Chữ trên nút (mặc định: Mua tại trang đối tác)" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                <p v-if="form.errors.external_buy_label" class="text-xs text-red-400">{{ form.errors.external_buy_label }}</p>
+                <p class="text-xs text-slate-500">Có link thì trang sản phẩm chỉ còn một nút mở link này (tab mới), ẩn nút Thêm vào giỏ / Mua ngay và sản phẩm không đặt được trên website. Để trống để bán bình thường. Link phải bắt đầu bằng https://.</p>
             </div>
 
             <div class="flex justify-end gap-3">

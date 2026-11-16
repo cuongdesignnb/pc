@@ -8,6 +8,7 @@ import WarrantyPackagesField, { warrantyRows, warrantyPayload } from '@/Componen
 const props = defineProps({
     settings: Object,
     categories: { type: Array, default: () => [] },
+    provinces: { type: Array, default: () => [] },
 });
 
 // Group labels in Vietnamese
@@ -86,6 +87,33 @@ watch(warrantyDefaults, rows => {
 const laptopCategories = ref(parseList(formData.value.affiliate_laptop_category_slugs).filter(slug => typeof slug === 'string').map(slug => ({ slug })));
 watch(laptopCategories, rows => {
     formData.value.affiliate_laptop_category_slugs = JSON.stringify(rows.map(row => row.slug).filter(Boolean));
+}, { deep: true });
+// Deposit rules by province: {"01": {"type": "none", "value": 0, "cod": true}, ...}
+function parseObject(value) {
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value || '{}') : value;
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+const provinceDepositRules = ref(Object.entries(parseObject(formData.value.payment_deposit_province_rules)).map(([code, rule]) => ({
+    code,
+    type: rule?.type || '',
+    value: rule?.value ?? '',
+    cod: rule?.cod !== false,
+})));
+watch(provinceDepositRules, rows => {
+    const out = {};
+    for (const row of rows) {
+        if (!row.code || (!row.type && row.cod)) continue;
+        out[row.code] = { type: row.type || null, value: Number(row.value) || 0, cod: row.cod };
+    }
+    formData.value.payment_deposit_province_rules = JSON.stringify(out);
+}, { deep: true });
+const ahamoveProvinces = ref(parseList(formData.value.shipping_ahamove_province_codes).map(code => ({ code: String(code) })));
+watch(ahamoveProvinces, rows => {
+    formData.value.shipping_ahamove_province_codes = JSON.stringify(rows.map(row => row.code).filter(Boolean));
 }, { deep: true });
 const categoryOptions = computed(() => {
     const byParent = {};
@@ -303,6 +331,49 @@ function sendSmtpTest() {
                                         <p class="text-xs text-slate-500">Tính cả danh mục con. Để trống thì hệ thống dùng các danh mục cấp 1 có tên bắt đầu bằng "Laptop".</p>
                                     </div>
 
+                                    <!-- Deposit rules by province -->
+                                    <div v-else-if="item.key === 'payment_deposit_province_rules'" class="space-y-2">
+                                        <div v-for="(row, index) in provinceDepositRules" :key="index" class="flex flex-wrap items-center gap-2">
+                                            <select v-model="row.code" class="w-48 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn tỉnh/thành —</option>
+                                                <option v-for="province in provinces" :key="province.code" :value="province.code">{{ province.name }}</option>
+                                            </select>
+                                            <select v-model="row.type" class="border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">Cọc theo mức chung</option>
+                                                <option value="none">Không cọc</option>
+                                                <option value="percent">Cọc % đơn</option>
+                                                <option value="fixed">Cọc số tiền cố định</option>
+                                            </select>
+                                            <template v-if="row.type === 'percent' || row.type === 'fixed'">
+                                                <input v-model="row.value" type="number" min="0" :step="row.type === 'percent' ? 1 : 50000" class="w-32 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <span class="text-sm text-slate-400">{{ row.type === 'percent' ? '%' : 'đ/đơn' }}</span>
+                                            </template>
+                                            <label class="flex items-center gap-1.5 text-sm text-slate-300">
+                                                <input v-model="row.cod" type="checkbox" class="rounded border-slate-700/50 text-cyan-500"> Cho COD
+                                            </label>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="provinceDepositRules.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="provinceDepositRules.push({ code: '', type: '', value: '', cod: true })">+ Thêm tỉnh/thành</button>
+                                        <p class="text-xs text-slate-500">
+                                            Chỉ áp dụng khi bật "Cho phép đặt cọc". Thứ tự ưu tiên: tỉnh "Không cọc" (ví dụ Hà Nội) → đơn dưới mức tối thiểu không cọc → mức cọc riêng của sản phẩm → của danh mục gần nhất (gồm danh mục con) → mức của tỉnh → mức chung.
+                                            Đơn có nhiều sản phẩm: cộng tiền cọc của từng dòng (phần còn lại của đơn, kể cả phí ship, theo mức tỉnh/mức chung). Phần % được làm tròn lên hàng nghìn.
+                                            Bỏ chọn "Cho COD" để khách ở tỉnh đó phải chuyển khoản (cọc hoặc toàn bộ). Đơn nhận tại cửa hàng không theo quy tắc tỉnh.
+                                        </p>
+                                    </div>
+
+                                    <!-- Ahamove delivery area -->
+                                    <div v-else-if="item.key === 'shipping_ahamove_province_codes'" class="space-y-2">
+                                        <div v-for="(row, index) in ahamoveProvinces" :key="index" class="flex items-center gap-2">
+                                            <select v-model="row.code" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn tỉnh/thành —</option>
+                                                <option v-for="province in provinces" :key="province.code" :value="province.code">{{ province.name }}</option>
+                                            </select>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="ahamoveProvinces.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="ahamoveProvinces.push({ code: '' })">+ Thêm tỉnh/thành</button>
+                                        <p class="text-xs text-slate-500">Khách ở tỉnh khác không chọn được Ahamove. Để trống thì Ahamove hiện cho mọi tỉnh.</p>
+                                    </div>
+
                                     <!-- Colour: picker + hex code -->
                                     <div v-else-if="item.type === 'color'" class="flex items-center gap-3">
                                         <input v-model="formData[item.key]" type="color" class="h-10 w-16 border border-slate-700/50 rounded-lg p-1">
@@ -408,6 +479,12 @@ function sendSmtpTest() {
                                     <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
                                     <p v-else-if="item.key === 'ai_product_research_official_domains'" class="text-xs text-slate-500 mt-1">Mỗi dòng một thương hiệu: <code class="text-slate-300">NVIDIA=nvidia.com</code>. Chỉ URL thuộc domain này mới được lưu làm nguồn kiểm chứng.</p>
                                     <p v-else-if="item.key === 'contact_map_embed_url'" class="text-xs text-slate-500 mt-1">Trên Google Maps chọn Chia sẻ → Nhúng bản đồ → Sao chép HTML rồi dán vào đây (dán cả thẻ iframe cũng được). Bản đồ hiện ở trang Liên hệ và cột "Bản đồ cửa hàng" ở chân trang; để trống để ẩn.</p>
+                                    <p v-else-if="item.key === 'payment_deposit_min_total'" class="text-xs text-slate-500 mt-1">Đơn có tổng tiền dưới mức này không có lựa chọn đặt cọc: khách chuyển khoản toàn bộ hoặc trả COD (nếu tỉnh cho COD). 0 = không giới hạn.</p>
+                                    <p v-else-if="item.key === 'sepay_webhook_api_key'" class="text-xs text-slate-500 mt-1">Trong SePay → Tích hợp WebHooks: URL nhận <code class="text-slate-300">https://&lt;tên miền backend&gt;/api/v1/sepay/callback</code>, kiểu chứng thực "API Key", dán cùng một key vào đây. SePay gửi header <code class="text-slate-300">Authorization: Apikey &lt;key&gt;</code>; nội dung chuyển khoản phải chứa mã đơn (DH…). Để trống thì dùng SEPAY_WEBHOOK_API_KEY trong .env.</p>
+                                    <p v-else-if="item.key === 'sepay_gateway_secret_key'" class="text-xs text-slate-500 mt-1">Chỉ cần khi dùng cổng thanh toán SePay (IPN <code class="text-slate-300">/payment/ipn</code>, header X-Secret-Key). Chuyển khoản quét mã QR chỉ cần API Key webhook ở trên. Để trống thì dùng SEPAY_SECRET_KEY trong .env.</p>
+                                    <p v-else-if="item.key === 'shipping_free_laptop_min_subtotal'" class="text-xs text-slate-500 mt-1">Đơn có tiền laptop (theo "Danh mục laptop" ở mục Cộng tác viên, gồm danh mục con) từ mức này được miễn phí ship với mọi cách giao hàng. Ví dụ 5000000.</p>
+                                    <p v-else-if="item.key === 'shipping_standard_enabled'" class="text-xs text-slate-500 mt-1">Khi tắt và bật Giao Hàng Tiết Kiệm/Ahamove, khách chọn trong các cách đang bật. Tắt hết thì vẫn dùng giao hàng tiêu chuẩn.</p>
+                                    <p v-else-if="item.key === 'shipping_pickup_enabled'" class="text-xs text-slate-500 mt-1">Khách chọn "Nhận tại cửa hàng" không cần nhập địa chỉ, phí ship 0đ.</p>
                                     <p v-else-if="item.key === 'social_facebook'" class="text-xs text-slate-500 mt-1">Link Fanpage (https://www.facebook.com/...) dùng cho khung Fanpage ở chân trang.</p>
                                     <p v-else-if="item.key === 'social_youtube'" class="text-xs text-slate-500 mt-1">Link kênh YouTube dùng cho khung kênh ở chân trang và nút "Xem kênh YouTube" của khối Hoạt động tại cửa hàng.</p>
                                     <p v-else-if="item.key === 'storefront_product_contact_footer_website_url' || item.key === 'storefront_product_contact_footer_maps_url'" class="text-xs text-slate-500 mt-1">Dùng URL HTTPS đầy đủ. Footer mặc định tắt và chỉ được thêm vào sản phẩm khi campaign bật lựa chọn này.</p>

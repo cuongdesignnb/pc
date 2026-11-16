@@ -10,6 +10,7 @@ use App\Models\ProductVariant;
 use App\Models\Setting;
 use App\Services\Affiliate\AffiliateCheckoutService;
 use App\Services\Catalog\InvalidWarrantyPackage;
+use App\Services\Catalog\LaptopCategories;
 use App\Services\Catalog\ProductPurchasabilityService;
 use App\Services\Catalog\WarrantyPackages;
 use App\Services\Locations\LocationDirectory;
@@ -28,6 +29,7 @@ class CheckoutQuoteService
         private readonly ProductPurchasabilityService $purchasability,
         private readonly WarrantyPackages $warranties,
         private readonly AffiliateCheckoutService $affiliates,
+        private readonly LaptopCategories $laptops,
     ) {}
 
     /** @return array<string, mixed> */
@@ -40,11 +42,16 @@ class CheckoutQuoteService
         $calculated = $this->calculateLines($requested);
         $issues = $calculated['issues'];
 
-        $provinceCode = $this->code($data['shipping_province_code'] ?? null);
-        $wardCode = $this->code($data['shipping_ward_code'] ?? null);
+        $shippingMethod = $this->shippingCalculator->resolveMethod($this->nullableString($data['shipping_method'] ?? null));
+        // Store pickup needs no delivery address.
+        $isPickup = $shippingMethod === 'pickup';
+        $provinceCode = $isPickup ? '' : $this->code($data['shipping_province_code'] ?? null);
+        $wardCode = $isPickup ? '' : $this->code($data['shipping_ward_code'] ?? null);
         $location = null;
         if ($provinceCode === '' && $wardCode === '') {
-            $issues[] = $this->issue('location', 'LOCATION_REQUIRED', 'Vui lòng chọn tỉnh/thành phố và xã/phường để tính phí giao hàng.');
+            if (! $isPickup) {
+                $issues[] = $this->issue('location', 'LOCATION_REQUIRED', 'Vui lòng chọn tỉnh/thành phố và xã/phường để tính phí giao hàng.');
+            }
         } elseif ($provinceCode === '' || $wardCode === '') {
             $issues[] = $this->issue('location', 'LOCATION_INCOMPLETE', 'Vui lòng chọn đủ tỉnh/thành phố và xã/phường.');
         } else {
@@ -54,22 +61,29 @@ class CheckoutQuoteService
             }
         }
 
-        $shippingMethod = (string) ($data['shipping_method'] ?? 'standard');
+        // Rules by province (deposit, COD) follow the delivery address; pickup has none.
+        $ruleProvince = $isPickup || $location === null ? null : $provinceCode;
+        $laptopSubtotal = $this->laptops->subtotal($calculated['lines']);
         $shipping = $this->shippingCalculator->quote(
             $calculated['summary']['subtotal'],
             $calculated['summary']['total_quantity'],
             $shippingMethod,
+            $provinceCode,
+            $laptopSubtotal,
         );
         if (! $shipping['available']) {
             $issues[] = $this->issue('shipping_method', 'SHIPPING_METHOD_UNAVAILABLE', $shipping['disabled_reason']);
         }
 
         $paymentMethod = $this->nullableString($data['payment_method'] ?? null);
-        if ($paymentMethod !== null && ! $this->paymentAvailability->isAvailable($paymentMethod)) {
-            $issues[] = $this->issue('payment_method', 'PAYMENT_METHOD_UNAVAILABLE', 'Phương thức thanh toán này hiện không khả dụng.');
+        if ($paymentMethod !== null && ! $this->paymentAvailability->isAvailable($paymentMethod, $ruleProvince)) {
+            $issues[] = $this->issue('payment_method', 'PAYMENT_METHOD_UNAVAILABLE', $paymentMethod === 'cod' && $this->paymentAvailability->isAvailable('cod')
+                ? PaymentMethodAvailability::COD_PROVINCE_MESSAGE
+                : 'Phương thức thanh toán này hiện không khả dụng.');
         }
 
-        $shippingFee = $location !== null && $shipping['available'] && $calculated['summary']['total_quantity'] > 0
+        $hasDestination = $location !== null || $isPickup;
+        $shippingFee = $hasDestination && $shipping['available'] && $calculated['summary']['total_quantity'] > 0
             ? $shipping['fee']
             : null;
         $referral = $this->affiliates->evaluate(
@@ -93,7 +107,30 @@ class CheckoutQuoteService
         if ($summary['total_quantity'] === 0) {
             $issues[] = $this->issue('items', 'EMPTY_CHECKOUT', 'Không có sản phẩm hợp lệ để thanh toán.');
         }
-        $paymentMethods = $this->paymentAvailability->checkoutMethods($summary['total']);
+        $paymentMethods = $this->paymentAvailability->checkoutMethods(
+            $summary['total'],
+            $this->depositLines($calculated['lines']),
+            $ruleProvince,
+        );
+        $shippingMethods = array_map(fn (array $method): array => [
+            'code' => $method['code'],
+            'label' => $method['label'],
+            'description' => $method['description'],
+            'available' => $method['available'],
+            'disabled_reason' => $method['disabled_reason'],
+            // Delivery fees wait for the address, like the order total.
+            'fee' => (! $method['requires_address'] || $location !== null) && $calculated['summary']['total_quantity'] > 0
+                ? $method['fee']
+                : null,
+            'eta' => $method['eta'],
+            'requires_address' => $method['requires_address'],
+            'pickup_address' => $method['pickup_address'],
+        ], $this->shippingCalculator->methods(
+            $calculated['summary']['subtotal'],
+            $calculated['summary']['total_quantity'],
+            $provinceCode,
+            $laptopSubtotal,
+        ));
 
         $quoteId = (string) Str::uuid();
         $expiresAt = now()->addMinutes(self::TTL_MINUTES);
@@ -104,15 +141,9 @@ class CheckoutQuoteService
             'currency' => $this->currency(),
             'items' => $calculated['lines'],
             'summary' => $summary,
-            'shipping_methods' => [[
-                'code' => $shipping['code'],
-                'label' => $shipping['label'],
-                'description' => $shipping['description'],
-                'available' => $shipping['available'],
-                'disabled_reason' => $shipping['disabled_reason'],
-                'fee' => $shippingFee,
-                'eta' => $shipping['eta'],
-            ]],
+            'shipping_methods' => $shippingMethods,
+            // The method the totals use (the first enabled one when none was sent).
+            'shipping_method' => $shippingMethod,
             'payment_methods' => $paymentMethods,
             'coupon' => null,
             // Never blocks the order: a wrong code just means no discount.
@@ -128,7 +159,7 @@ class CheckoutQuoteService
                 'marketing_subscription' => false,
             ],
             'issues' => array_values($issues),
-            'can_place_order' => $this->canPlaceOrder($summary, $issues, $paymentMethod),
+            'can_place_order' => $this->canPlaceOrder($summary, $issues, $paymentMethod, $ruleProvince),
         ];
 
         Cache::put($this->cacheKey($quoteId), [
@@ -169,7 +200,7 @@ class CheckoutQuoteService
         }
         foreach (['shipping_province_code', 'shipping_ward_code', 'shipping_method', 'payment_method'] as $field) {
             $current = $field === 'shipping_method'
-                ? (string) ($data[$field] ?? 'standard')
+                ? $this->shippingCalculator->resolveMethod($this->nullableString($data[$field] ?? null))
                 : ($field === 'payment_method' ? $this->nullableString($data[$field] ?? null) : $this->code($data[$field] ?? null));
             if ($current !== ($stored[$field] ?? null)) {
                 throw new CheckoutQuoteException('Thông tin giao hàng hoặc thanh toán đã thay đổi. Vui lòng cập nhật lại báo giá.', 'CHECKOUT_QUOTE_STALE');
@@ -184,13 +215,17 @@ class CheckoutQuoteService
         }
         $provinceCode = $this->code($data['shipping_province_code'] ?? null);
         $wardCode = $this->code($data['shipping_ward_code'] ?? null);
-        if ($this->locations->resolve($provinceCode, $wardCode) === null) {
+        $shippingMethod = $this->shippingCalculator->resolveMethod($this->nullableString($data['shipping_method'] ?? null));
+        $pickupWithoutAddress = $shippingMethod === 'pickup' && $provinceCode === '' && $wardCode === '';
+        if (! $pickupWithoutAddress && $this->locations->resolve($provinceCode, $wardCode) === null) {
             throw new CheckoutQuoteException('Địa chỉ giao hàng không hợp lệ.', 'LOCATION_INVALID', 422);
         }
         $shipping = $this->shippingCalculator->quote(
             $calculated['summary']['subtotal'],
             $calculated['summary']['total_quantity'],
-            (string) ($data['shipping_method'] ?? 'standard'),
+            $shippingMethod,
+            $provinceCode,
+            $this->laptops->subtotal($calculated['lines']),
         );
         if (($stored['summary']['shipping_fee'] ?? null) !== $shipping['fee']) {
             throw new CheckoutQuoteException('Phí giao hàng đã thay đổi. Vui lòng cập nhật lại báo giá.', 'CHECKOUT_QUOTE_STALE');
@@ -360,12 +395,22 @@ class CheckoutQuoteService
     }
 
     /** @param array<int, array<string, string>> $issues */
-    private function canPlaceOrder(array $summary, array $issues, ?string $paymentMethod): bool
+    private function canPlaceOrder(array $summary, array $issues, ?string $paymentMethod, ?string $provinceCode): bool
     {
         return $summary['total_quantity'] > 0
             && $issues === []
             && $paymentMethod !== null
-            && $this->paymentAvailability->isAvailable($paymentMethod);
+            && $this->paymentAvailability->isAvailable($paymentMethod, $provinceCode);
+    }
+
+    /** @return array<int, array{product_id: int, quantity: int, line_total: int}> */
+    private function depositLines(array $lines): array
+    {
+        return array_map(fn (array $line): array => [
+            'product_id' => (int) $line['product_id'],
+            'quantity' => (int) $line['quantity'],
+            'line_total' => (int) $line['line_total'],
+        ], $lines);
     }
 
     /** @return array{user_id: int|null, session_id: string|null} */

@@ -4,9 +4,10 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
-const props = defineProps({ post: Object, categories: Array, publishedAtLocal: String });
+import SeoRobotsCanonicalFields from '@/Components/SeoRobotsCanonicalFields.vue';
+const props = defineProps({ post: Object, categories: Array, publishedAtLocal: String, authors: { type: Array, default: () => [] } });
 const p = props.post;
-const form = useForm({ title: p.title, slug: p.slug, excerpt: p.excerpt || '', body: p.body || '', featured_image: p.featured_image || '', post_category_id: p.post_category_id || '', status: p.status || 'draft', is_featured: p.is_featured ?? false, published_at: props.publishedAtLocal || '', meta_title: p.meta_title || '', meta_description: p.meta_description || '' });
+const form = useForm({ title: p.title, slug: p.slug, excerpt: p.excerpt || '', body: p.body || '', featured_image: p.featured_image || '', post_category_id: p.post_category_id || '', status: p.status || 'draft', is_featured: p.is_featured ?? false, published_at: props.publishedAtLocal || '', meta_title: p.meta_title || '', meta_description: p.meta_description || '', meta_robots: p.meta_robots || '', canonical_url: p.canonical_url || '', author_id: p.author_id || '' });
 function submit() { form.put(`/admin/posts/${p.id}`); }
 function applyAi(data) { form.title = data.title || form.title; form.excerpt = data.excerpt || form.excerpt; form.body = data.content || data.body || form.body; form.meta_title = data.meta_title || form.meta_title; form.meta_description = data.meta_description || form.meta_description; if (data.thumbnail) form.featured_image = data.thumbnail; }
 </script>
@@ -42,6 +43,15 @@ function applyAi(data) { form.title = data.title || form.title; form.excerpt = d
                     </div>
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Tác giả</label>
+                    <select v-model="form.author_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <option value="">-- Mặc định (tài khoản admin đăng bài) --</option>
+                        <option v-for="author in authors" :key="author.id" :value="author.id">{{ author.name }}{{ author.is_active ? '' : ' (đang ẩn)' }}</option>
+                    </select>
+                    <p v-if="form.errors.author_id" class="text-xs text-red-400 mt-1">{{ form.errors.author_id }}</p>
+                    <p class="text-xs text-slate-500 mt-1">Quản lý danh sách ở menu Nội dung → <a href="/admin/authors" class="text-cyan-400 hover:underline">Tác giả</a>.</p>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-slate-300 mb-1">Ảnh đại diện</label>
                     <MediaPicker v-model="form.featured_image" label="Chọn ảnh đại diện" />
                 </div>
@@ -54,6 +64,7 @@ function applyAi(data) { form.title = data.title || form.title; form.excerpt = d
                 <h4 class="font-medium text-slate-200">SEO</h4>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta Title</label><input v-model="form.meta_title" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></div>
                 <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta Description</label><textarea v-model="form.meta_description" rows="2" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
+                <SeoRobotsCanonicalFields :form="form" />
             </div>
             <div class="flex justify-end gap-3">
                 <Link href="/admin/posts" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>

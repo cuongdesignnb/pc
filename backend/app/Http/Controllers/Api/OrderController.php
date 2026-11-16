@@ -13,15 +13,15 @@ use App\Models\Order;
 use App\Models\Setting;
 use App\Services\Checkout\CheckoutQuoteService;
 use App\Services\Checkout\PaymentMethodAvailability;
+use App\Services\Checkout\ShippingCalculator;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
 use App\Services\Locations\LocationDirectory;
 use App\Services\Orders\OrderHistoryRecorder;
-use App\Services\Payments\SepayPaymentService;
+use App\Services\Payments\SepayWebhookHandler;
 use App\Services\Webhooks\WebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -63,7 +63,8 @@ class OrderController extends Controller
             'customer_name' => 'required|string|max:255',
             'customer_email' => 'required|email|max:255',
             'customer_phone' => 'required|string|max:20',
-            'shipping_address' => 'required|string|max:500',
+            // Store pickup ("Nhận tại cửa hàng") needs no delivery address.
+            'shipping_address' => 'required_unless:shipping_method,pickup|nullable|string|max:500',
             'shipping_city' => 'nullable|string|max:100',
             'shipping_district' => 'nullable|string|max:100',
             'shipping_ward' => 'nullable|string|max:100',
@@ -82,7 +83,7 @@ class OrderController extends Controller
             'video_code' => 'nullable|string|max:100',
             'payment_method' => 'required|in:sepay,cod',
             'payment_option' => 'nullable|in:full,deposit',
-            'shipping_method' => 'nullable|in:standard',
+            'shipping_method' => 'nullable|in:'.implode(',', ShippingCalculator::METHODS),
             'quote_id' => 'nullable|uuid',
             'checkout_mode' => 'nullable|in:cart,buy_now',
             'items' => 'required|array|min:1',
@@ -93,8 +94,13 @@ class OrderController extends Controller
         ]);
 
         $validated['checkout_mode'] = $validated['checkout_mode'] ?? 'cart';
-        $validated['shipping_method'] = $validated['shipping_method'] ?? 'standard';
-        $this->resolveShippingLocation($validated, $locations);
+        $shipping = app(ShippingCalculator::class);
+        $validated['shipping_method'] = $shipping->resolveMethod($validated['shipping_method'] ?? null);
+        if ($validated['shipping_method'] === 'pickup') {
+            $this->usePickupAddress($validated, $shipping);
+        } else {
+            $this->resolveShippingLocation($validated, $locations);
+        }
         $hasExistingAttempt = Order::where('checkout_idempotency_key', $validated['checkout_idempotency_key'])->exists();
         if (! $hasExistingAttempt) {
             $this->useSelectedCartItems($request, $validated, ! empty($validated['quote_id']));
@@ -104,6 +110,9 @@ class OrderController extends Controller
             throw ValidationException::withMessages([
                 'payment_method' => 'Phương thức thanh toán này hiện không khả dụng.',
             ]);
+        }
+        if (! $this->paymentAvailability->isAvailable($validated['payment_method'], $validated['shipping_province_code'] ?? null)) {
+            throw ValidationException::withMessages(['payment_method' => PaymentMethodAvailability::COD_PROVINCE_MESSAGE]);
         }
 
         if (! $hasExistingAttempt && ! empty($validated['quote_id'])) {
@@ -176,60 +185,10 @@ class OrderController extends Controller
         ]);
     }
 
-    public function sepayCallback(Request $request, SepayPaymentService $payments): JsonResponse
+    /** SePay bank-transfer webhook; see SepayWebhookHandler. */
+    public function sepayCallback(Request $request, SepayWebhookHandler $webhooks): JsonResponse
     {
-        $request->validate([
-            'id' => 'required|integer',
-            'transferAmount' => 'required|numeric|min:0',
-            'transferType' => 'nullable|string|max:10',
-            'content' => 'nullable|string',
-            'gateway' => 'nullable|string|max:100',
-            'referenceCode' => 'nullable|string|max:255',
-            'referenceNumber' => 'nullable|string|max:255',
-            'transactionDate' => 'nullable|date',
-        ]);
-
-        $webhookKey = config('services.sepay.webhook_key');
-        if (! is_string($webhookKey) || $webhookKey === '') {
-            Log::error('SePay IPN rejected: webhook authentication is not configured');
-
-            return response()->json(['success' => false, 'message' => 'Webhook is not configured'], 503);
-        }
-        $authorization = (string) $request->header('Authorization');
-        $providedKey = str_starts_with($authorization, 'Apikey ') ? substr($authorization, 7) : '';
-        if ($providedKey === '' || ! hash_equals($webhookKey, $providedKey)) {
-            Log::warning('SePay IPN rejected: invalid API key');
-
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
-        }
-
-        // Money leaving the account never pays an order.
-        if ($request->input('transferType') === 'out') {
-            return response()->json(['success' => true, 'message' => 'Outgoing transfer ignored']);
-        }
-
-        $transactionId = (int) $request->input('id');
-        $content = (string) $request->input('content', '');
-        if (! preg_match('/DH\d{12}/', $content, $matches)) {
-            return response()->json(['success' => true, 'message' => 'No matching order']);
-        }
-
-        $result = $payments->record(
-            'sepay_webhook',
-            $transactionId,
-            $matches[0],
-            (int) $request->input('transferAmount'),
-            // SePay sends referenceCode; referenceNumber is kept for older payloads.
-            $request->input('referenceCode') ?? $request->input('referenceNumber'),
-        );
-
-        return response()->json([
-            'success' => true,
-            'duplicate' => $result['duplicate'],
-            'payment_status' => $result['processed']
-                ? $result['event']->order?->payment_status
-                : 'pending_reconciliation',
-        ]);
+        return $webhooks->handle($request);
     }
 
     public function cancel(Request $request, Order $order, KiotOrderCancellationService $cancellation): JsonResponse
@@ -262,6 +221,8 @@ class OrderController extends Controller
             'subtotal' => $order->subtotal,
             'discount' => $order->discount,
             'shipping_fee' => $order->shipping_fee,
+            'shipping_method' => $order->shipping_method ?: 'standard',
+            'shipping_method_label' => ShippingCalculator::label($order->shipping_method),
             'total' => $order->total,
             'payment_status' => $order->payment_status,
             'payment_method' => $order->payment_method,
@@ -373,6 +334,19 @@ class OrderController extends Controller
             'warranty_months' => $item->warranty_months === null ? null : (int) $item->warranty_months,
             'quantity' => (int) $item->quantity,
         ])->all();
+    }
+
+    /**
+     * Store pickup: the order keeps the store address, so admin, KIOT and the
+     * customer's order page all show where the goods are collected.
+     */
+    private function usePickupAddress(array &$validated, ShippingCalculator $shipping): void
+    {
+        $store = $shipping->pickupAddress();
+        $validated['shipping_address'] = ShippingCalculator::label('pickup').($store ? ': '.$store : '');
+        foreach (['shipping_city', 'shipping_district', 'shipping_ward', 'shipping_province_code', 'shipping_ward_code'] as $field) {
+            $validated[$field] = null;
+        }
     }
 
     private function resolveShippingLocation(array &$validated, LocationDirectory $locations): void
