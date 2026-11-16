@@ -4,6 +4,7 @@ namespace App\Services\Orders;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Services\Checkout\ShippingCalculator;
 
 /**
  * The order as the shop's own tools see it: admin API (orders tokens) and the
@@ -39,6 +40,9 @@ class OrderApiPresenter
             'subtotal' => (int) $order->subtotal,
             'discount' => (int) $order->discount,
             'shipping_fee' => (int) $order->shipping_fee,
+            // How the customer receives the order: standard, ghtk, ahamove or pickup.
+            'shipping_method' => $order->shipping_method ?: 'standard',
+            'shipping_method_label' => ShippingCalculator::label($order->shipping_method),
             'total' => (int) $order->total,
             'status' => $order->order_status,
             'status_label' => self::statusLabel((string) $order->order_status),

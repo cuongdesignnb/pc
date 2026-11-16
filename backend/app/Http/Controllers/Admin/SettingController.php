@@ -6,7 +6,9 @@ use App\Exceptions\SmtpConfigurationException;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Setting;
+use App\Services\Locations\LocationDirectory;
 use App\Services\Mail\StorefrontSmtpMailer;
+use App\Services\Payments\DepositRules;
 use App\Support\GoogleMapsEmbed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -40,6 +42,10 @@ class SettingController extends Controller
             'settings' => $settings,
             // Choices for the homepage product tabs.
             'categories' => Category::query()->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'slug', 'parent_id']),
+            // Province list for deposit rules and the Ahamove area (Thanh toán, Vận chuyển).
+            'provinces' => collect(app(LocationDirectory::class)->provinces())
+                ->map(fn (array $province): array => ['code' => $province['code'], 'name' => $province['name']])
+                ->sortBy('name')->values(),
         ]);
     }
 
@@ -84,7 +90,18 @@ class SettingController extends Controller
             if ($setting && $setting->key === 'homepage_product_tabs') {
                 $item['value'] = $this->productTabs($item['value'] ?? null);
             }
-            if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'], ['', '********'], true))) {
+            if ($setting && $setting->key === 'payment_deposit_province_rules') {
+                $item['value'] = json_encode((object) DepositRules::normaliseProvinces($item['value'] ?? null), JSON_UNESCAPED_UNICODE);
+            }
+            if ($setting && $setting->key === 'shipping_ahamove_province_codes') {
+                $codes = is_string($item['value'] ?? null) ? json_decode($item['value'], true) : ($item['value'] ?? []);
+                $item['value'] = json_encode(array_values(array_unique(array_filter(
+                    array_map(fn ($code): string => trim((string) $code), is_array($codes) ? $codes : []),
+                    fn (string $code): bool => preg_match('/^\d{1,3}$/', $code) === 1,
+                ))));
+            }
+            // Secrets keep their value when the form posts them blank ('' arrives as null) or masked.
+            if ($setting && ! (($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) && in_array($item['value'] ?? null, [null, '', '********'], true))) {
                 Setting::set($setting->key, $item['value']);
             }
         }

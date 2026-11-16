@@ -9,6 +9,7 @@ class ProductPurchasabilityService
     public function isPurchasable(Product $product, int $quantity = 1): bool
     {
         return $quantity > 0
+            && ! $product->sellsElsewhere()
             && $product->isSellableOnline()
             && $product->stock_quantity >= $quantity;
     }

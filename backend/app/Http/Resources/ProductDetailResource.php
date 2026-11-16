@@ -6,6 +6,7 @@ use App\Services\Ai\ProductContentHeadingResolver;
 use App\Services\News\ArticleContentSanitizer;
 use App\Services\Seo\PublicUrlResolver;
 use App\Support\HtmlToText;
+use App\Support\SeoOverrides;
 use App\Support\YouTubeVideo;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -117,6 +118,10 @@ class ProductDetailResource extends JsonResource
             ]),
             // upload_date is required by Google for VideoObject; the product's creation date is the closest we have.
             'instant_key_url' => $this->instant_key_url ?: null,
+            // "Link mua ngoài": when set the page shows one button to this URL
+            // instead of cart/buy, and the product cannot be bought on site.
+            'external_buy_url' => $this->external_buy_url ?: null,
+            'external_buy_label' => $this->external_buy_url ? ($this->external_buy_label ?: null) : null,
             'video' => ($video = YouTubeVideo::toArray($this->video_url))
                 ? $video + ['upload_date' => ($this->created_at ?? $this->updated_at)?->toIso8601String()]
                 : null,
@@ -137,9 +142,11 @@ class ProductDetailResource extends JsonResource
             'seo' => [
                 'title' => $this->meta_title,
                 'description' => $this->meta_description,
+                // canonical_path is the page's own path (used for routing);
+                // canonical_url and robots carry the admin overrides.
                 'canonical_path' => $canonicalPath,
-                'canonical_url' => $canonicalUrl,
-                'robots' => 'index,follow',
+                'canonical_url' => SeoOverrides::canonicalUrl($this->canonical_url, $canonicalUrl),
+                'robots' => SeoOverrides::robots($this->meta_robots),
             ],
             'public_url' => $canonicalUrl,
         ];

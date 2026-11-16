@@ -110,6 +110,10 @@ class RolePermissionSeeder extends Seeder
             // Customers
             'customers.view',
 
+            // Hộp thư liên hệ (form /lien-he)
+            'contact-messages.view',
+            'contact-messages.manage',
+
             // Reviews
             'reviews.view',
             'reviews.edit',
@@ -196,6 +200,7 @@ class RolePermissionSeeder extends Seeder
             'banners.view',
             'media.view', 'media.upload',
             'customers.view',
+            'contact-messages.view', 'contact-messages.manage',
             'reviews.view', 'reviews.edit',
             'menus.view',
         ];

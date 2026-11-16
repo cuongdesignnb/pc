@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Setting;
+use App\Services\Payments\SepayConfiguration;
 use App\Services\Payments\SepayPaymentService;
+use App\Services\Payments\SepayWebhookHandler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -62,22 +64,35 @@ class PaymentController extends Controller
 
     /**
      * IPN (Instant Payment Notification) from SePay Payment Gateway.
-     * This is different from the webhook/bank transfer callback.
-     * SePay Gateway sends this when checkout payment is completed.
+     * SePay Gateway sends this when checkout payment is completed, signed
+     * with the "X-Secret-Key" header (Cài đặt → Thanh toán → sepay_gateway_secret_key
+     * or SEPAY_SECRET_KEY).
+     *
+     * A bank-transfer webhook (the "Tích hợp WebHooks" payload with
+     * transferAmount) registered on this URL by mistake is handled like
+     * /api/v1/sepay/callback, with its "Authorization: Apikey" key.
      */
-    public function ipn(Request $request, SepayPaymentService $payments)
+    public function ipn(Request $request, SepayPaymentService $payments, SepayConfiguration $configuration, SepayWebhookHandler $webhooks)
     {
-        $secret = config('services.sepay.secret_key');
-        if (! is_string($secret) || $secret === '') {
-            Log::error('SePay Gateway IPN rejected: authentication is not configured');
+        if (SepayWebhookHandler::looksLikeBankTransfer($request)) {
+            return $webhooks->handle($request);
+        }
 
-            return response()->json(['success' => false, 'message' => 'IPN is not configured'], 503);
+        $secret = $configuration->gatewaySecret();
+        if ($secret === null) {
+            Log::error('SePay Gateway IPN rejected: the gateway secret key is not configured (Cài đặt → Thanh toán → sepay_gateway_secret_key or SEPAY_SECRET_KEY)');
+
+            return response()->json([
+                'success' => false,
+                'error_code' => 'SEPAY_IPN_NOT_CONFIGURED',
+                'message' => 'IPN is not configured: set "Secret key cổng thanh toán SePay" in Cài đặt → Thanh toán (or SEPAY_SECRET_KEY). Bank-transfer webhooks go to /api/v1/sepay/callback.',
+            ], 503);
         }
         $providedSecret = (string) $request->header('X-Secret-Key');
         if ($providedSecret === '' || ! hash_equals($secret, $providedSecret)) {
             Log::warning('SePay Gateway IPN rejected: invalid secret');
 
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+            return response()->json(['success' => false, 'error_code' => 'SEPAY_IPN_UNAUTHORIZED', 'message' => 'Unauthorized'], 401);
         }
 
         $data = $request->json()->all();

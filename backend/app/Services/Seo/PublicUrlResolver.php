@@ -101,6 +101,14 @@ class PublicUrlResolver
         return $slug === null ? null : '/tin-tuc/chuyen-muc/'.$slug;
     }
 
+    /** Author page of the news section: /tin-tuc/tac-gia/{slug}. */
+    public function authorPathForSlug(string $slug): ?string
+    {
+        $slug = $this->segment($slug);
+
+        return $slug === null ? null : '/tin-tuc/tac-gia/'.$slug;
+    }
+
     public function pagePathForSlug(string $slug): ?string
     {
         return $this->segmentPath($slug);

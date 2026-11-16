@@ -65,6 +65,9 @@ class CartController extends Controller
             if (! $product->isVisibleOnStorefront() || (($validated['variant_id'] ?? null) && ! $variant)) {
                 abort(422, 'Sản phẩm hoặc biến thể đã chọn không còn khả dụng.');
             }
+            if ($product->sellsElsewhere()) {
+                abort(422, 'Sản phẩm này được bán tại trang đối tác, không đặt trên website.');
+            }
 
             try {
                 $package = $warranties->select($product, $validated['warranty_months'] ?? null, $variant?->display_price);

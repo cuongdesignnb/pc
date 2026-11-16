@@ -4,6 +4,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AffiliateCommissionField, { commissionForm } from '@/Components/AffiliateCommissionField.vue';
+import DepositRuleField, { depositRuleForm } from '@/Components/DepositRuleField.vue';
 import ProductComplianceFields from '@/Components/ProductComplianceFields.vue';
 import WarrantyPackagesField, { warrantyRows, warrantyPayload } from '@/Components/WarrantyPackagesField.vue';
 
@@ -15,6 +16,7 @@ const form = useForm({
     is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '', technical_heading: props.category.technical_heading || 'auto',
     warranty_packages: warrantyRows(props.category.warranty_packages),
     affiliate_commission: commissionForm(props.category.affiliate_commission),
+    deposit_rule: depositRuleForm(props.category.deposit_rule),
     is_refurbished: props.category.is_refurbished ?? false, warning_info: props.category.warning_info || '', usage_instructions: props.category.usage_instructions || '',
 });
 function submit() { form.transform(data => ({ ...data, warranty_packages: warrantyPayload(data.warranty_packages) })).put(`/admin/categories/${props.category.id}`); }
@@ -47,6 +49,7 @@ function submit() { form.transform(data => ({ ...data, warranty_packages: warran
             <div><label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề phần thông tin kỹ thuật</label><select v-model="form.technical_heading" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="auto">Tự động</option><option value="configuration">Cấu hình chi tiết</option><option value="specifications">Thông số kỹ thuật</option></select><p class="mt-1 text-xs text-slate-500">Dùng cho phần thông tin kỹ thuật trên trang sản phẩm thuộc danh mục này.</p></div>
             <WarrantyPackagesField v-model="form.warranty_packages" :errors="form.errors" hint="Áp dụng cho sản phẩm thuộc danh mục này và danh mục con chưa có gói riêng. Để trống thì dùng gói mặc định trong Cài đặt → Bảo hành." />
             <AffiliateCommissionField v-model="form.affiliate_commission" :errors="form.errors" />
+            <DepositRuleField v-model="form.deposit_rule" :errors="form.errors" />
             <ProductComplianceFields :form="form" category />
 
             <div class="flex justify-end gap-3 pt-2">

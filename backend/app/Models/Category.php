@@ -36,6 +36,7 @@ class Category extends Model
         'slug_locked_at',
         'warranty_packages',
         'affiliate_commission',
+        'deposit_rule',
         'is_refurbished',
         'warning_info',
         'usage_instructions',
@@ -52,6 +53,7 @@ class Category extends Model
         'technical_heading' => 'string',
         'warranty_packages' => 'array',
         'affiliate_commission' => 'array',
+        'deposit_rule' => 'array',
         'is_refurbished' => 'boolean',
     ];
 

@@ -30,9 +30,14 @@ class PostCardResource extends JsonResource
                 'slug' => $this->category->slug,
                 'canonical_path' => $urls->postCategoryPath($this->category),
             ] : null),
-            'author' => $this->whenLoaded('author', fn () => $this->author ? [
-                'name' => $this->author->name,
-            ] : null),
+            'author' => $this->when(
+                $this->resource->relationLoaded('authorProfile') || $this->resource->relationLoaded('author'),
+                fn () => ($author = PostAuthorResource::forPost($this->resource, $request)) ? [
+                    'name' => $author['name'],
+                    'slug' => $author['slug'],
+                    'canonical_path' => $author['canonical_path'],
+                ] : null,
+            ),
         ];
     }
 }

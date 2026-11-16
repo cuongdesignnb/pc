@@ -12,6 +12,8 @@ class Page extends Model
         'body',
         'meta_title',
         'meta_description',
+        'meta_robots',
+        'canonical_url',
         'schema_json',
         'is_active',
         'slug_source',

@@ -7,6 +7,8 @@ use App\Services\Payments\DepositPolicy;
 
 class PaymentMethodAvailability
 {
+    public const COD_PROVINCE_MESSAGE = 'Đơn giao đến tỉnh/thành này cần chuyển khoản đặt cọc hoặc thanh toán trước, không áp dụng COD.';
+
     public function __construct(private readonly DepositPolicy $deposits) {}
 
     /**
@@ -35,20 +37,24 @@ class PaymentMethodAvailability
 
     /**
      * $total is the quoted order total; when known, SePay also carries the
-     * deposit the customer could transfer instead of the full amount.
+     * deposit the customer could transfer instead of the full amount, worked
+     * out from the order lines and the delivery province (see DepositPolicy).
+     * A province set to "Bắt buộc chuyển khoản" shows COD as unavailable.
      *
+     * @param  array<int, array{product_id: int, quantity: int, line_total: int}>  $lines
      * @return array<int, array{code: string, label: string, description: string, available: bool, disabled_reason: string|null, deposit_amount?: int|null}>
      */
-    public function checkoutMethods(?int $total = null): array
+    public function checkoutMethods(?int $total = null, array $lines = [], ?string $provinceCode = null): array
     {
         $methods = [];
         if ($this->codAvailable()) {
+            $codAllowed = $this->deposits->codAllowed($provinceCode);
             $methods[] = [
                 'code' => 'cod',
                 'label' => 'Thanh toán khi nhận hàng (COD)',
                 'description' => 'Thanh toán bằng tiền mặt khi nhận hàng.',
-                'available' => true,
-                'disabled_reason' => null,
+                'available' => $codAllowed,
+                'disabled_reason' => $codAllowed ? null : self::COD_PROVINCE_MESSAGE,
             ];
         }
         if ($this->sepayAvailable()) {
@@ -58,17 +64,18 @@ class PaymentMethodAvailability
                 'description' => 'Quét mã QR sau khi đơn hàng được ghi nhận.',
                 'available' => true,
                 'disabled_reason' => null,
-                'deposit_amount' => $total === null ? null : $this->deposits->amountFor($total),
+                'deposit_amount' => $total === null ? null : $this->deposits->amountForOrder($total, $lines, $provinceCode),
             ];
         }
 
         return $methods;
     }
 
-    public function isAvailable(string $method): bool
+    /** $provinceCode: the delivery province, for the "no COD" province rule. */
+    public function isAvailable(string $method, ?string $provinceCode = null): bool
     {
         return match ($method) {
-            'cod' => $this->codAvailable(),
+            'cod' => $this->codAvailable() && $this->deposits->codAllowed($provinceCode),
             'sepay' => $this->sepayAvailable(),
             default => false,
         };

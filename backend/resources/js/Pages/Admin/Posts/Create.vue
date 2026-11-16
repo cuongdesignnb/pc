@@ -5,8 +5,9 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
 import AiGeneratePanel from '@/Components/AiGeneratePanel.vue';
-const props = defineProps({ categories: Array });
-const form = useForm({ title: '', slug: '', excerpt: '', body: '', featured_image: '', post_category_id: '', status: 'draft', is_featured: false, published_at: '', meta_title: '', meta_description: '' });
+import SeoRobotsCanonicalFields from '@/Components/SeoRobotsCanonicalFields.vue';
+const props = defineProps({ categories: Array, authors: { type: Array, default: () => [] } });
+const form = useForm({ title: '', slug: '', excerpt: '', body: '', featured_image: '', post_category_id: '', status: 'draft', is_featured: false, published_at: '', meta_title: '', meta_description: '', meta_robots: '', canonical_url: '', author_id: '' });
 function genSlug() { form.slug = form.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); if (form.slug.length > 160) { const cut = form.slug.slice(0, 161); form.slug = cut.slice(0, cut.lastIndexOf('-') > 0 ? cut.lastIndexOf('-') : 160).replace(/-+$/, ''); } }
 function submit() { form.post('/admin/posts'); }
 function applyAi(data) { form.title = data.title || form.title; form.excerpt = data.excerpt || form.excerpt; form.body = data.content || data.body || form.body; form.meta_title = data.meta_title || form.meta_title; form.meta_description = data.meta_description || form.meta_description; if (data.thumbnail) form.featured_image = data.thumbnail; }
@@ -97,6 +98,15 @@ async function generateWithAI() {
                         </select>
                     </div>
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Tác giả</label>
+                    <select v-model="form.author_id" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                        <option value="">-- Mặc định (tài khoản admin đăng bài) --</option>
+                        <option v-for="author in authors" :key="author.id" :value="author.id">{{ author.name }}{{ author.is_active ? '' : ' (đang ẩn)' }}</option>
+                    </select>
+                    <p v-if="form.errors.author_id" class="text-xs text-red-400 mt-1">{{ form.errors.author_id }}</p>
+                    <p class="text-xs text-slate-500 mt-1">Quản lý danh sách ở menu Nội dung → <a href="/admin/authors" class="text-cyan-400 hover:underline">Tác giả</a>.</p>
+                </div>
                 <div><label class="block text-sm font-medium text-slate-400 mb-1">Anh dai dien</label><MediaPicker v-model="form.featured_image" label="Chon anh dai dien" /></div>
                 <div class="grid grid-cols-2 gap-4">
                     <div><label class="block text-sm font-medium text-slate-400 mb-1">Ngay dang</label><input v-model="form.published_at" type="datetime-local" class="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"></div>
@@ -107,6 +117,7 @@ async function generateWithAI() {
                 <h4 class="text-sm font-semibold text-slate-300">SEO</h4>
                 <div><label class="block text-sm font-medium text-slate-400 mb-1">Meta Title</label><input v-model="form.meta_title" class="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"></div>
                 <div><label class="block text-sm font-medium text-slate-400 mb-1">Meta Description</label><textarea v-model="form.meta_description" rows="2" class="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"></textarea></div>
+                <SeoRobotsCanonicalFields :form="form" />
             </div>
             <div class="flex justify-end gap-3">
                 <Link href="/admin/posts" class="px-5 py-2.5 text-sm text-slate-400 hover:text-slate-200 border border-slate-700 rounded-lg hover:bg-slate-800 transition-colors">Huy</Link>

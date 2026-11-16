@@ -14,6 +14,7 @@ const siteLogo = computed(() => page.props.siteLogo || '');
 const logoFailed = ref(false);
 const currentUrl = computed(() => page.props.ziggy?.location || page.url);
 const pendingOrderCount = computed(() => Number(page.props.admin?.pending_orders_count || 0));
+const contactUnreadCount = computed(() => Number(page.props.admin?.contact_unread_count || 0));
 
 // Permission check helper
 const can = (perm) => {
@@ -63,6 +64,7 @@ const navGroups = [
         items: [
             { name: 'Bài viết', href: '/admin/posts', icon: 'post' },
             { name: 'DM bài viết', href: '/admin/post-categories', icon: 'category' },
+            { name: 'Tác giả', href: '/admin/authors', icon: 'user' },
             { name: 'AI Bài viết', href: '/admin/ai-articles', icon: 'ai' },
             { name: 'Lịch viết AI', href: '/admin/ai-writer', icon: 'ai', perm: 'ai-articles.create' },
             { name: 'Trang tĩnh', href: '/admin/pages', icon: 'page' },
@@ -79,6 +81,7 @@ const navGroups = [
             { name: 'Danh sách KH', href: '/admin/customers', icon: 'user' },
             { name: 'Đánh giá', href: '/admin/reviews', icon: 'star' },
             { name: 'Hỏi đáp sản phẩm', href: '/admin/product-questions', icon: 'post' },
+            { name: 'Hộp thư liên hệ', href: '/admin/contact-messages', icon: 'post', perm: 'contact-messages.view' },
         ],
     },
     {
@@ -130,6 +133,7 @@ function isActive(item) {
 }
 
 function badgeFor(item) {
+    if (item.href === '/admin/contact-messages') return contactUnreadCount.value;
     return item.href === '/admin/orders' ? pendingOrderCount.value : 0;
 }
 
