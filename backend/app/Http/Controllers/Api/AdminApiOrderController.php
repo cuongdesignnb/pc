@@ -33,7 +33,7 @@ class AdminApiOrderController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $query = Order::query()->with(['items', 'affiliate', 'affiliateCommission']);
+        $query = Order::query()->with(['items.product', 'affiliate', 'affiliateCommission']);
         if ($statuses = $this->csv($validated['status'] ?? null)) {
             $unknown = array_diff($statuses, self::ORDER_STATUSES);
             if ($unknown) {
@@ -82,7 +82,7 @@ class AdminApiOrderController extends Controller
     {
         $this->ensureOwnerMayReadOrders($request);
 
-        return $this->noStore(response()->json(['data' => $this->payload($order->load(['items', 'affiliate', 'affiliateCommission']))]));
+        return $this->noStore(response()->json(['data' => $this->payload($order->load(['items.product', 'affiliate', 'affiliateCommission']))]));
     }
 
     /** @return array<string, mixed> */
@@ -132,8 +132,21 @@ class AdminApiOrderController extends Controller
             'utm_medium' => $order->utm_medium,
             'utm_campaign' => $order->utm_campaign,
             'utm_content' => $order->utm_content,
+            'utm_term' => $order->utm_term,
+            'gclid' => $order->gclid,
+            'fbclid' => $order->fbclid,
             'video_code' => $order->video_code,
             'landing_page' => $order->landing_page,
+            // Whether the order is in KIOT yet; "rejected"/"failed" orders are kept
+            // pending on the website and resent (see the order's history).
+            'kiot_sync_status' => $order->kiot_sync_status,
+            'kiot_sync_status_label' => $this->kiotStatusLabel($order->kiot_sync_status),
+            'kiot_order_code' => $order->kiot_order_code,
+            'kiot_error' => $order->kiot_sync_error_message,
+            'kiot_auto_resend_count' => (int) $order->kiot_auto_resend_count,
+            // Lines whose product exists only on the website (no KIOT code yet):
+            // KIOT creates them without a cost price, so the invoice waits for one.
+            'has_web_only_products' => $order->items->contains(fn (OrderItem $item) => $item->product && $item->product->isWebOnlyForKiot()),
             'created_at' => $order->created_at?->toIso8601String(),
             'updated_at' => $order->updated_at?->toIso8601String(),
             'admin_url' => route('admin.orders.show', $order),
@@ -155,6 +168,22 @@ class AdminApiOrderController extends Controller
     private function time(string $value): Carbon
     {
         return Carbon::parse($value, SiteTimezone::get())->utc();
+    }
+
+    private function kiotStatusLabel(?string $status): ?string
+    {
+        return match ($status) {
+            null => null,
+            'not_required' => 'Không cần đồng bộ',
+            'pending', 'retrying' => 'Đang gửi sang KIOT',
+            'cancel_pending' => 'Đang huỷ bên KIOT',
+            'deleted' => 'Đã xoá bên KIOT',
+            'synced' => 'Đã vào KIOT',
+            'rejected' => 'Chưa vào KIOT (KIOT từ chối)',
+            'failed' => 'Chưa vào KIOT (lỗi kết nối)',
+            'cancelled' => 'Đã huỷ bên KIOT',
+            default => $status,
+        };
     }
 
     private function commissionStatusLabel(?string $status): ?string

@@ -150,6 +150,9 @@ class KiotOrderService
                     'utm_campaign' => self::cleanSource($data['utm_campaign'] ?? null),
                     'utm_content' => self::cleanSource($data['utm_content'] ?? null),
                     'utm_medium' => self::cleanSource($data['utm_medium'] ?? null),
+                    'utm_term' => self::cleanSource($data['utm_term'] ?? null),
+                    'gclid' => self::cleanClickId($data['gclid'] ?? null),
+                    'fbclid' => self::cleanClickId($data['fbclid'] ?? null),
                     'landing_page' => self::landingPage($data['landing_page'] ?? null),
                     'video_code' => self::cleanSource($data['video_code'] ?? null),
                     'shipping_fee' => $shippingFee,
@@ -331,6 +334,9 @@ class KiotOrderService
             'utm_medium' => $order->utm_medium,
             'utm_campaign' => $order->utm_campaign,
             'utm_content' => $order->utm_content,
+            'utm_term' => $order->utm_term,
+            'gclid' => $order->gclid ? 'có' : null,
+            'fbclid' => $order->fbclid ? 'có' : null,
         ])->filter(fn ($value) => filled($value))->map(fn ($value, $key) => "{$key}={$value}")->implode(', ');
         $lines = [
             'Nguồn: Website '.$order->order_number.($source !== '' ? " ({$source})" : ''),
@@ -355,6 +361,14 @@ class KiotOrderService
         }
 
         return mb_substr($value, 0, 500);
+    }
+
+    /** Ad click ids are opaque tokens: keep only URL-safe characters. */
+    private static function cleanClickId(mixed $value): ?string
+    {
+        $value = (string) preg_replace('/[^A-Za-z0-9._~\-]/', '', (string) $value);
+
+        return $value === '' ? null : substr($value, 0, 255);
     }
 
     private static function cleanSource(mixed $value): ?string
