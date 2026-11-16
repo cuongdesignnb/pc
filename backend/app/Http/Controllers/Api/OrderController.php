@@ -18,6 +18,7 @@ use App\Services\Integrations\Kiot\KiotOrderService;
 use App\Services\Locations\LocationDirectory;
 use App\Services\Orders\OrderHistoryRecorder;
 use App\Services\Payments\SepayPaymentService;
+use App\Services\Webhooks\WebhookDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -129,6 +130,7 @@ class OrderController extends Controller
 
         if (! $result['duplicate']) {
             SendNewOrderNotification::dispatch($order->id);
+            app(WebhookDispatcher::class)->orderCreated($order);
         }
 
         if (($validated['checkout_mode'] ?? 'cart') === 'cart'

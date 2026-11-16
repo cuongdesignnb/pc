@@ -6,8 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One line on an order's timeline: a status change ("status") or a KIOT sync
- * event ("kiot"), with who or what did it and why.
+ * One line on an order's timeline: a status change ("status"), a KIOT sync
+ * event ("kiot"), a payment ("payment") or a shipment update ("shipment"), with who or what did it and why.
  */
 class OrderHistory extends Model
 {
@@ -33,6 +33,10 @@ class OrderHistory extends Model
 
     public function getActorLabelAttribute(): string
     {
+        // API writes carry the token name ("Token: n8n"), which says it all.
+        if ($this->actor_type === 'api' && $this->actor_name) {
+            return $this->actor_name;
+        }
         $label = self::ACTOR_LABELS[$this->actor_type] ?? $this->actor_type;
 
         return $this->actor_name ? "{$label}: {$this->actor_name}" : $label;

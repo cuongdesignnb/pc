@@ -81,6 +81,18 @@ class KiotClient
         return $this->request('POST', self::BASE_PATH.'/orders/'.rawurlencode((string) $externalOrderId).'/cancel', [], $rawBody, $idempotencyKey, 'order');
     }
 
+    /** Website marked the order delivered: KIOT turns its order into an invoice. */
+    public function deliverOrder(string|int $externalOrderId, string $rawBody, string $idempotencyKey): KiotResponse
+    {
+        return $this->request('POST', self::BASE_PATH.'/orders/'.rawurlencode((string) $externalOrderId).'/deliver', [], $rawBody, $idempotencyKey, 'order');
+    }
+
+    /** Money received on the website: KIOT records a receipt (phiếu thu) for the order. */
+    public function recordOrderPayment(string|int $externalOrderId, string $rawBody, string $idempotencyKey): KiotResponse
+    {
+        return $this->request('POST', self::BASE_PATH.'/orders/'.rawurlencode((string) $externalOrderId).'/payments', [], $rawBody, $idempotencyKey, 'order');
+    }
+
     public function encode(array $payload): string
     {
         try {

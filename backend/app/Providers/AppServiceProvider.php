@@ -32,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('warranty-lookup', fn (Request $request) => Limit::perMinute(5)->by((string) $request->ip())
             ->response(fn () => response()->json(['message' => 'Bạn tra cứu quá nhanh. Vui lòng thử lại sau 1 phút.'], 429)));
 
+        RateLimiter::for('contact-messages', fn (Request $request) => Limit::perMinute(5)->by((string) $request->ip())
+            ->response(fn () => response()->json(['message' => 'Bạn gửi quá nhanh. Vui lòng thử lại sau 1 phút.'], 429)));
+
         Product::saved(fn (Product $product) => app(IndexNow::class)->productChanged($product));
         Post::saved(fn (Post $post) => app(IndexNow::class)->postChanged($post));
     }

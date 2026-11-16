@@ -12,6 +12,7 @@ use Laravel\Sanctum\PersonalAccessToken;
  * articles, categories, media and product SEO fields (never price or stock);
  * "readonly" (for KIOT and reports) may only read. "orders" may only list
  * orders, for shop notifications (n8n), and is kept apart from content tokens.
+ * "orders_write" may also update an order's status, payments and shipment.
  */
 class AdminApiTokens
 {
@@ -23,16 +24,31 @@ class AdminApiTokens
 
     public const ORDERS_READ = 'orders:read';
 
+    public const ORDERS_WRITE = 'orders:write';
+
     public const TYPES = [
         'content' => ['label' => 'Nội dung (đọc + ghi bài viết, danh mục, ảnh, SEO sản phẩm)', 'abilities' => [self::READ, self::WRITE]],
         'readonly' => ['label' => 'Chỉ đọc (ví dụ cho KIOT)', 'abilities' => [self::READ]],
         'orders' => ['label' => 'Đơn hàng – chỉ đọc (tên, SĐT, sản phẩm, tổng tiền của đơn)', 'abilities' => [self::ORDERS_READ]],
+        'orders_write' => ['label' => 'Đơn hàng – đọc + cập nhật (trạng thái giao, thanh toán, vận đơn)', 'abilities' => [self::ORDERS_READ, self::ORDERS_WRITE]],
     ];
 
-    /** Order tokens expose customer names and phones: only staff who may see orders. */
+    /**
+     * Order tokens expose customer names and phones: only staff who may see
+     * orders. Write tokens change orders: only staff who may also edit them.
+     */
     public function mayIssue(User $owner, string $type): bool
     {
-        return $type !== 'orders' || self::mayReadOrders($owner);
+        return match ($type) {
+            'orders' => self::mayReadOrders($owner),
+            'orders_write' => self::mayReadOrders($owner) && self::mayEditOrders($owner),
+            default => true,
+        };
+    }
+
+    public static function mayEditOrders(User $user): bool
+    {
+        return $user->hasRole('super-admin') || $user->checkPermissionTo('orders.edit');
     }
 
     public static function mayReadOrders(User $user): bool

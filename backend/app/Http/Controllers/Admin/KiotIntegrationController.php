@@ -20,6 +20,7 @@ use App\Services\Integrations\Kiot\KiotConfigurationAuditService;
 use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use App\Services\Integrations\Kiot\KiotConnectionManagementService;
 use App\Services\Integrations\Kiot\KiotConnectionTestService;
+use App\Services\Integrations\Kiot\KiotFulfillmentService;
 use App\Services\Integrations\Kiot\KiotPairingService;
 use App\Services\Integrations\Kiot\KiotProductSyncService;
 use Illuminate\Http\RedirectResponse;
@@ -74,6 +75,7 @@ class KiotIntegrationController extends Controller
                 'last_error_code' => $connection?->last_error_code,
                 'last_error_message' => $connection?->last_error_message,
                 'website_url' => rtrim((string) config('app.url'), '/'),
+                'auto_fulfillment_enabled' => KiotFulfillmentService::enabled(),
             ],
             'syncState' => IntegrationSyncState::where(['integration' => 'kiot', 'resource' => 'products'])->first(),
             'syncRuns' => IntegrationSyncRun::query()
@@ -189,6 +191,18 @@ class KiotIntegrationController extends Controller
         return $result['success']
             ? back()->with('success', 'Kết nối KIOT thành công.')
             : back()->withErrors(['kiot' => "{$result['error_code']}: {$result['message']}"]);
+    }
+
+    /** "Tự tạo hoá đơn KIOT khi đơn web Đã giao và phiếu thu khi Đã thanh toán" (off by default). */
+    public function updateFulfillment(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['enabled' => ['required', 'boolean']]);
+        KiotFulfillmentService::setEnabled((bool) $data['enabled']);
+        $this->recordOperation($this->resolver->resolve()->databaseConnectionId, 'order.auto_fulfillment_'.($data['enabled'] ? 'enabled' : 'disabled'), $request, []);
+
+        return back()->with('success', $data['enabled']
+            ? 'Đã bật: đơn web Đã giao sẽ tạo hoá đơn KIOT, tiền đã thu sẽ tạo phiếu thu KIOT.'
+            : 'Đã tắt tự tạo hoá đơn và phiếu thu KIOT.');
     }
 
     public function updateFlags(Request $request): RedirectResponse
@@ -348,6 +362,9 @@ class KiotIntegrationController extends Controller
         if (in_array($event->status, ['dead_letter', 'retrying'], true)) {
             $event->update(['status' => 'retrying', 'attempt_count' => 0, 'next_attempt_at' => now(), 'locked_at' => null]);
             ProcessKiotOutboxEvent::dispatch($event->id);
+        } elseif ($event->status === 'rejected' && in_array($event->event_type, KiotFulfillmentService::EVENT_TYPES, true)) {
+            // A refused invoice/receipt (e.g. Serial/IMEI fixed in KIOT since): send a fresh event.
+            ProcessKiotOutboxEvent::dispatch(app(KiotFulfillmentService::class)->requeue($event)->id);
         }
         $this->recordOperation($runtime->databaseConnectionId, 'order.retry_requested', $request, ['event_id' => $event->id]);
 

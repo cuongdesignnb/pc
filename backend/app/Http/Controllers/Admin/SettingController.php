@@ -20,9 +20,12 @@ class SettingController extends Controller
     // shared content provider (openai_*), images use openai_image_*.
     private const RETIRED_KEYS = ['chatgpt_api_key', 'chatgpt_model'];
 
+    // Switches with their own page (Tích hợp KIOT) and confirmation; not edited here.
+    private const OWN_PAGE_KEYS = ['kiot_auto_fulfillment_enabled'];
+
     public function index()
     {
-        $settings = Setting::whereNotIn('key', self::RETIRED_KEYS)->orderBy('group')->orderBy('id')->get()->map(function (Setting $setting) {
+        $settings = Setting::whereNotIn('key', [...self::RETIRED_KEYS, ...self::OWN_PAGE_KEYS])->orderBy('group')->orderBy('id')->get()->map(function (Setting $setting) {
             if ($setting->type === 'password' || str_ends_with($setting->key, '_api_key')) {
                 $setting->type = 'password';
             }
@@ -49,6 +52,9 @@ class SettingController extends Controller
         ]);
 
         foreach ($request->input('settings') as $item) {
+            if (in_array($item['key'], self::OWN_PAGE_KEYS, true)) {
+                continue;
+            }
             $setting = Setting::where('key', $item['key'])->first();
             if ($setting && in_array($setting->key, [
                 'storefront_product_contact_footer_website_url',

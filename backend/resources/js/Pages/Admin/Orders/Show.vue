@@ -59,6 +59,22 @@ function updateStatus() {
     }, { preserveScroll: true, onSuccess: () => { statusReason.value = ""; } });
 }
 const historyStatusLabel = (status) => (status ? statusLabel[status] || status : "—");
+const shipment = ref({
+    shipping_carrier: props.order.shipping_carrier || "",
+    tracking_code: props.order.tracking_code || "",
+});
+const savingShipment = ref(false);
+function updateShipment() {
+    router.patch(`/admin/orders/${props.order.id}/shipment`, {
+        shipping_carrier: shipment.value.shipping_carrier || null,
+        tracking_code: shipment.value.tracking_code || null,
+    }, {
+        preserveScroll: true,
+        onStart: () => (savingShipment.value = true),
+        onFinish: () => (savingShipment.value = false),
+    });
+}
+const historyTypeLabel = { kiot: "KIOT", payment: "Thanh toán", shipment: "Vận đơn" };
 function updatePayment() {
     router.patch(`/admin/orders/${props.order.id}/payment-status`, {
         payment_status: newPayStatus.value,
@@ -82,6 +98,7 @@ function formatDate(d) {
 const statusLabel = {
     pending: "Chờ xử lý",
     confirmed: "Đã xác nhận",
+    processing: "Đang xử lý",
     shipping: "Đang giao",
     delivered: "Đã giao",
     cancelled: "Đã hủy",
@@ -247,6 +264,33 @@ const remaining = computed(() =>
                 </div>
             </div>
         </div>
+        <div class="bg-slate-900 rounded-lg border border-slate-800/60 p-4 mb-6 text-sm">
+            <p class="text-slate-200 font-semibold mb-2">Vận chuyển</p>
+            <p class="text-slate-400 mb-3">
+                <span v-if="order.shipped_at">Bắt đầu giao {{ formatDate(order.shipped_at) }}. </span>
+                <span v-if="order.delivered_at" class="text-emerald-400">Đã giao {{ formatDate(order.delivered_at) }}.</span>
+            </p>
+            <form @submit.prevent="updateShipment" class="grid gap-3 sm:grid-cols-3">
+                <input
+                    v-model="shipment.shipping_carrier"
+                    maxlength="100"
+                    placeholder="Đơn vị vận chuyển (GHN, Viettel Post...)"
+                    class="border border-slate-700/50 rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                    v-model="shipment.tracking_code"
+                    maxlength="100"
+                    placeholder="Mã vận đơn"
+                    class="border border-slate-700/50 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                    :disabled="savingShipment"
+                    class="px-3 py-2 bg-cyan-600 text-white rounded-lg text-sm hover:bg-cyan-700 disabled:opacity-50"
+                >
+                    Lưu vận đơn
+                </button>
+            </form>
+        </div>
         <div
             v-if="order.affiliate"
             class="bg-amber-500/5 rounded-lg border border-amber-500/30 p-4 mb-6 flex flex-wrap items-center justify-between gap-3 text-sm"
@@ -340,13 +384,13 @@ const remaining = computed(() =>
         >
             <p class="text-sm text-slate-300 font-semibold mb-2">Lịch sử đơn hàng</p>
             <ol class="space-y-2 text-sm">
-                <li v-for="h in order.histories" :key="h.id" class="flex flex-wrap gap-x-2 border-l-2 pl-3" :class="h.type === 'kiot' ? 'border-cyan-700' : 'border-slate-600'">
+                <li v-for="h in order.histories" :key="h.id" class="flex flex-wrap gap-x-2 border-l-2 pl-3" :class="h.type === 'kiot' ? 'border-cyan-700' : h.type === 'payment' ? 'border-emerald-700' : 'border-slate-600'">
                     <span class="text-slate-500">{{ formatDate(h.created_at) }}</span>
                     <span class="text-slate-400">{{ h.actor_label }}</span>
                     <span v-if="h.type === 'status'" class="text-slate-200">
                         {{ h.from_status ? `${historyStatusLabel(h.from_status)} → ` : "Tạo đơn: " }}{{ historyStatusLabel(h.to_status) }}
                     </span>
-                    <span v-else class="text-cyan-300">KIOT</span>
+                    <span v-else :class="h.type === 'payment' ? 'text-emerald-300' : 'text-cyan-300'">{{ historyTypeLabel[h.type] || h.type }}</span>
                     <span v-if="h.message" class="text-slate-400 w-full">{{ h.message }}</span>
                 </li>
             </ol>

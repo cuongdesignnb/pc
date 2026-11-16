@@ -32,6 +32,7 @@ use App\Http\Controllers\Admin\SeoSlugController;
 use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\StoreActivityController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\WebhookController;
 use App\Http\Controllers\CatalogFeedController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\SeoController;
@@ -105,6 +106,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
     Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.updateStatus');
     Route::patch('orders/{order}/payment-status', [OrderController::class, 'updatePaymentStatus'])->name('orders.updatePaymentStatus');
     Route::post('orders/{order}/resend-kiot', [OrderController::class, 'resendToKiot'])->name('orders.resendKiot');
+    Route::patch('orders/{order}/shipment', [OrderController::class, 'updateShipment'])->name('orders.updateShipment');
 
     // Cộng tác viên (CTV)
     Route::get('affiliates', [AffiliateController::class, 'index'])->name('affiliates.index');
@@ -212,6 +214,11 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
         Route::get('api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
         Route::post('api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
         Route::delete('api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
+        Route::get('webhooks', [WebhookController::class, 'index'])->name('webhooks.index');
+        Route::put('webhooks', [WebhookController::class, 'update'])->name('webhooks.update');
+        Route::post('webhooks/secret', [WebhookController::class, 'secret'])->name('webhooks.secret');
+        Route::post('webhooks/test', [WebhookController::class, 'test'])->name('webhooks.test');
+        Route::post('webhooks/deliveries/{delivery}/retry', [WebhookController::class, 'retry'])->name('webhooks.deliveries.retry');
     });
     Route::middleware('permission:settings.edit')->group(function () {
         Route::post('integrations/kiot/pair', [KiotIntegrationController::class, 'pair'])->name('integrations.kiot.pair');
@@ -219,6 +226,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
         Route::post('integrations/kiot/import-environment', [KiotIntegrationController::class, 'importEnvironment'])->name('integrations.kiot.import-environment');
         Route::post('integrations/kiot/test-connection', [KiotIntegrationController::class, 'testConnection'])->name('integrations.kiot.test-connection');
         Route::patch('integrations/kiot/flags', [KiotIntegrationController::class, 'updateFlags'])->name('integrations.kiot.flags');
+        Route::patch('integrations/kiot/fulfillment', [KiotIntegrationController::class, 'updateFulfillment'])->name('integrations.kiot.fulfillment');
         Route::post('integrations/kiot/disconnect', [KiotIntegrationController::class, 'disconnect'])->name('integrations.kiot.disconnect');
         Route::post('integrations/kiot/dry-run', [KiotIntegrationController::class, 'dryRun'])->name('integrations.kiot.dry-run');
         Route::post('integrations/kiot/test-one', [KiotIntegrationController::class, 'testSku'])->name('integrations.kiot.test-one');

@@ -86,3 +86,8 @@ Schedule::command('affiliate:create-payouts')
     ->dailyAt('08:00')
     ->withoutOverlapping()
     ->onOneServer();
+
+Schedule::command('webhooks:retry')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();

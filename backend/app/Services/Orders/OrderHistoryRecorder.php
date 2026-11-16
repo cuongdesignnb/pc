@@ -57,6 +57,18 @@ class OrderHistoryRecorder
         ]);
     }
 
+    /**
+     * A payment or shipment line ("payment", "shipment") written by whoever is
+     * acting now (staff, API token, SePay), with its own message.
+     */
+    public static function note(Order|int $order, string $type, string $message): void
+    {
+        OrderHistory::create(['message' => mb_substr($message, 0, 1000)] + self::context() + [
+            'order_id' => $order instanceof Order ? $order->id : $order,
+            'type' => $type,
+        ]);
+    }
+
     public static function kiot(Order|int $order, string $message, string $actorType = 'system'): void
     {
         OrderHistory::create([

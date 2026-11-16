@@ -65,6 +65,7 @@ class HandleInertiaRequests extends Middleware
                 'feed_url' => fn () => $request->session()->pull('feed_url'),
                 'feed_subset_urls' => fn () => $request->session()->pull('feed_subset_urls'),
                 'api_token' => fn () => $request->session()->pull('api_token'),
+                'webhook_secret' => fn () => $request->session()->pull('webhook_secret'),
             ],
         ];
     }

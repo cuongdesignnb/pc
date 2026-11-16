@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\MediaController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminApiController;
 use App\Http\Controllers\Api\AdminApiOrderController;
+use App\Http\Controllers\Api\AdminApiOrderWriteController;
 use App\Http\Controllers\Api\AffiliateController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BannerController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\CheckoutQuoteController;
+use App\Http\Controllers\Api\ContactMessageController;
 use App\Http\Controllers\Api\HomepageController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MenuController;
@@ -134,6 +136,7 @@ Route::prefix('v1')->group(function () {
 
     // CTV links: ?ref=CODE visits
     Route::post('/affiliate/clicks', [AffiliateController::class, 'click'])->middleware('throttle:30,1');
+    Route::post('/contact-messages', [ContactMessageController::class, 'store'])->middleware('throttle:contact-messages');
 
     // Sepay webhook
     Route::post('/sepay/callback', [OrderController::class, 'sepayCallback']);
@@ -211,6 +214,11 @@ Route::prefix('v1/admin-api')->middleware(['auth:sanctum', 'throttle:120,1'])->n
     Route::middleware('admin.api:'.AdminApiTokens::ORDERS_READ)->group(function () {
         Route::get('orders', [AdminApiOrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [AdminApiOrderController::class, 'show'])->whereNumber('order')->name('orders.show');
+    });
+    Route::middleware('admin.api:'.AdminApiTokens::ORDERS_WRITE)->group(function () {
+        Route::patch('orders/{order}/status', [AdminApiOrderWriteController::class, 'status'])->whereNumber('order')->name('orders.status');
+        Route::post('orders/{order}/payments', [AdminApiOrderWriteController::class, 'payments'])->whereNumber('order')->name('orders.payments');
+        Route::patch('orders/{order}/shipment', [AdminApiOrderWriteController::class, 'shipment'])->whereNumber('order')->name('orders.shipment');
     });
     Route::middleware('admin.api:'.AdminApiTokens::WRITE)->group(function () {
         Route::patch('products/{product}', [AdminApiController::class, 'updateProduct'])->name('products.update');
