@@ -354,6 +354,16 @@ class Product extends Model
     }
 
     /**
+     * A product made on the website (e.g. WEB-NEW-...) that is not a KIOT product
+     * and has no KIOT code linked: KIOT creates it on the first order, without a
+     * cost price, and blocks the invoice until the shop enters one.
+     */
+    public function isWebOnlyForKiot(): bool
+    {
+        return $this->inventory_source !== 'kiot' && blank($this->kiot_code);
+    }
+
+    /**
      * Return the regular storefront price after resolving the price fields
      * owned by the product provider. KIOT products keep both the selected
      * website price and the retail fallback, while local products use the

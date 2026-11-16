@@ -270,7 +270,7 @@ const remaining = computed(() =>
             >
         </div>
         <div
-            v-if="order.utm_source || order.utm_medium || order.utm_campaign || order.utm_content || order.video_code || order.landing_page"
+            v-if="order.utm_source || order.utm_medium || order.utm_campaign || order.utm_content || order.utm_term || order.gclid || order.fbclid || order.video_code || order.landing_page"
             class="bg-slate-900 rounded-lg border border-slate-800/60 p-4 mb-6 text-sm"
         >
             <p class="text-slate-200 font-semibold mb-2">Nguồn đơn</p>
@@ -279,6 +279,9 @@ const remaining = computed(() =>
                 <div><dt class="text-slate-500">utm_medium</dt><dd class="text-slate-200 break-all">{{ order.utm_medium || "—" }}</dd></div>
                 <div><dt class="text-slate-500">utm_campaign</dt><dd class="text-slate-200 break-all">{{ order.utm_campaign || "—" }}</dd></div>
                 <div><dt class="text-slate-500">utm_content</dt><dd class="text-slate-200 break-all">{{ order.utm_content || "—" }}</dd></div>
+                <div><dt class="text-slate-500">utm_term</dt><dd class="text-slate-200 break-all">{{ order.utm_term || "—" }}</dd></div>
+                <div v-if="order.gclid"><dt class="text-slate-500">gclid (Google Ads)</dt><dd class="text-slate-200 break-all">{{ order.gclid }}</dd></div>
+                <div v-if="order.fbclid"><dt class="text-slate-500">fbclid (Facebook)</dt><dd class="text-slate-200 break-all">{{ order.fbclid }}</dd></div>
                 <div><dt class="text-slate-500">Mã video</dt><dd class="text-slate-200 break-all">{{ order.video_code || "—" }}</dd></div>
                 <div class="sm:col-span-4"><dt class="text-slate-500">Trang vào đầu tiên</dt><dd class="text-slate-200 break-all">{{ order.landing_page || "—" }}</dd></div>
             </dl>

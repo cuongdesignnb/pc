@@ -101,6 +101,9 @@ class KiotRejectedOrderTest extends TestCase
         $this->actingAs($admin)->get("/admin/orders/{$order->id}")->assertOk()
             ->assertInertia(fn ($page) => $page->where('kiot.can_resend', true)
                 ->where('kiot.unlinked_products.0.sku', 'WEB-NEW-DC15250-I5-16T'));
+        $this->actingAs($admin)->get('/admin/orders')->assertOk()
+            ->assertInertia(fn ($page) => $page->where('orders.data.0.kiot_sync_status', 'rejected')
+                ->where('orders.data.0.has_web_only_products', true));
 
         $product->update(['kiot_code' => 'DC15250']);
         $this->actingAs($admin)->post("/admin/orders/{$order->id}/resend-kiot")->assertRedirect();

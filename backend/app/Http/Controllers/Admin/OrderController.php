@@ -19,7 +19,7 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Order::with(['user', 'items', 'affiliate.user:id,name'])
+        $query = Order::with(['user', 'items.product', 'affiliate.user:id,name'])
             ->latest();
 
         if ($request->search) {
@@ -51,6 +51,11 @@ class OrderController extends Controller
         }
 
         $orders = $query->paginate(20)->withQueryString();
+        // Badge "Chưa có giá vốn": KIOT creates website-only products without a cost price.
+        $orders->getCollection()->each(fn (Order $order) => $order->setAttribute(
+            'has_web_only_products',
+            $order->items->contains(fn ($item) => $item->product && $item->product->isWebOnlyForKiot()),
+        ));
 
         return Inertia::render('Admin/Orders/Index', [
             'orders' => $orders,
@@ -78,7 +83,7 @@ class OrderController extends Controller
                 'auto_resend_max' => count(ResendUnsyncedKiotOrdersCommand::DELAYS),
                 // Products of this order that KIOT does not know yet and have no KIOT code linked.
                 'unlinked_products' => $order->items
-                    ->filter(fn ($item) => $item->product && $item->product->inventory_source !== 'kiot' && blank($item->product->kiot_code))
+                    ->filter(fn ($item) => $item->product && $item->product->isWebOnlyForKiot())
                     ->map(fn ($item) => ['id' => $item->product->id, 'name' => $item->product->name, 'sku' => $item->product->sku])
                     ->unique('id')->values(),
                 'order_sync_enabled' => $orderSyncEnabled,

@@ -106,15 +106,18 @@ class LaptopPlusBatchSevenTest extends TestCase
             'notes' => 'Giao giờ hành chính',
             'utm_source' => 'tiktok', 'utm_medium' => 'video', 'utm_campaign' => 'thang11', 'utm_content' => 'review-dell', 'video_code' => 'V123',
             'landing_page' => '/chuot/chuot-logitech?utm_source=tiktok',
+            'utm_term' => 'chuot khong day', 'gclid' => 'Cj0KCQiA<script>_abc-123', 'fbclid' => 'IwAR0xyz_9',
         ])->assertCreated();
 
         $order = Order::latest('id')->first();
         $this->assertSame(['tiktok', 'video', 'thang11', 'review-dell', 'V123', '/chuot/chuot-logitech?utm_source=tiktok'],
             [$order->utm_source, $order->utm_medium, $order->utm_campaign, $order->utm_content, $order->video_code, $order->landing_page]);
+        // Ad click ids keep only URL-safe characters.
+        $this->assertSame(['chuot khong day', 'Cj0KCQiAscript_abc-123', 'IwAR0xyz_9'], [$order->utm_term, $order->gclid, $order->fbclid]);
 
         $payload = (fn () => $this->createPayload($order->load('items'), 0))->call(app(KiotOrderService::class));
         $this->assertStringStartsWith('Giao giờ hành chính', $payload['note']);
-        $this->assertStringContainsString("Nguồn: Website {$order->order_number} (utm_source=tiktok, utm_medium=video, utm_campaign=thang11, utm_content=review-dell)", $payload['note']);
+        $this->assertStringContainsString("Nguồn: Website {$order->order_number} (utm_source=tiktok, utm_medium=video, utm_campaign=thang11, utm_content=review-dell, utm_term=chuot khong day, gclid=có, fbclid=có)", $payload['note']);
         $this->assertStringContainsString('Mã video: V123', $payload['note']);
         // KIOT picks the warranty package lasting this many months.
         $this->assertSame($order->items->first()->warranty_months, $payload['items'][0]['warranty_months']);

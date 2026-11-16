@@ -79,8 +79,10 @@ class AdminApiOrdersTest extends TestCase
         $order = $this->order([
             'utm_source' => 'tiktok', 'utm_medium' => 'video', 'utm_campaign' => 'thang11', 'utm_content' => 'review-dell',
             'video_code' => 'V123', 'landing_page' => '/laptop/dell-7420?utm_source=tiktok',
+            'utm_term' => 'dell 7420', 'gclid' => 'Cj0KCQ', 'fbclid' => 'IwAR0',
             'affiliate_id' => $affiliate->id, 'referral_code' => 'CTV007', 'referral_discount' => 200_000,
         ]);
+        $order->forceFill(['kiot_sync_status' => 'rejected', 'kiot_sync_error_message' => 'Chưa vào KIOT: SKU không tồn tại', 'kiot_auto_resend_count' => 2])->saveQuietly();
         AffiliateCommission::create([
             'affiliate_id' => $affiliate->id, 'order_id' => $order->id, 'base_amount' => 9_000_000, 'amount' => 450_000,
             'status' => 'pending', 'approve_after' => now()->addDays(7),
@@ -95,6 +97,14 @@ class AdminApiOrdersTest extends TestCase
             ->assertJsonPath('data.utm_content', 'review-dell')
             ->assertJsonPath('data.video_code', 'V123')
             ->assertJsonPath('data.landing_page', '/laptop/dell-7420?utm_source=tiktok')
+            ->assertJsonPath('data.utm_term', 'dell 7420')
+            ->assertJsonPath('data.gclid', 'Cj0KCQ')
+            ->assertJsonPath('data.fbclid', 'IwAR0')
+            ->assertJsonPath('data.kiot_sync_status', 'rejected')
+            ->assertJsonPath('data.kiot_sync_status_label', 'Chưa vào KIOT (KIOT từ chối)')
+            ->assertJsonPath('data.kiot_error', 'Chưa vào KIOT: SKU không tồn tại')
+            ->assertJsonPath('data.kiot_auto_resend_count', 2)
+            ->assertJsonPath('data.has_web_only_products', false)
             ->assertJsonPath('data.affiliate_id', $affiliate->id)
             ->assertJsonPath('data.affiliate_code', 'CTV007')
             ->assertJsonPath('data.referral_discount', 200000)
