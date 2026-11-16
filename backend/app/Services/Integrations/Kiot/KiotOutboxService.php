@@ -3,6 +3,7 @@
 namespace App\Services\Integrations\Kiot;
 
 use App\Exceptions\KiotIntegrationException;
+use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Jobs\Integrations\Kiot\SyncKiotProductsBySku;
 use App\Models\IntegrationOutboxEvent;
 use App\Models\Order;
@@ -18,6 +19,9 @@ class KiotOutboxService
         'UNKNOWN_SKU', 'DUPLICATE_SKU_IN_KIOT', 'PRODUCT_INACTIVE', 'PRODUCT_NOT_SELLABLE',
         'INSUFFICIENT_AVAILABLE_STOCK', 'ORDER_TOTAL_MISMATCH', 'ORDER_ALREADY_INVOICED',
         'ORDER_NOT_CANCELLABLE', 'ORDER_ALREADY_CANCELLED',
+        // Invoice (deliver) and receipt (payments) for an order already in KIOT.
+        'SERIAL_NOT_ALLOCATED', 'COST_PENDING', 'ORDER_NOT_PROCESSABLE', 'ORDER_NOT_FOUND',
+        'OVERPAYMENT', 'CUSTOMER_REQUIRED',
     ];
 
     private const FATAL_CONFLICTS = ['EXTERNAL_ORDER_CONFLICT', 'IDEMPOTENCY_KEY_CONFLICT'];
@@ -39,6 +43,10 @@ class KiotOutboxService
             return;
         }
 
+        if ($this->waitsForEarlierFulfillment($eventId)) {
+            return;
+        }
+
         $event = $this->claim($eventId, $runtime->outboxMaxAttempts);
         if (! $event) {
             return;
@@ -46,9 +54,12 @@ class KiotOutboxService
 
         $started = microtime(true);
         try {
-            $response = $event->event_type === 'order.cancel'
-                ? $this->client->cancelOrder($event->aggregate_id, $event->raw_body, $event->idempotency_key)
-                : $this->client->createOrder($event->raw_body, $event->idempotency_key);
+            $response = match ($event->event_type) {
+                'order.cancel' => $this->client->cancelOrder($event->aggregate_id, $event->raw_body, $event->idempotency_key),
+                KiotFulfillmentService::EVENT_DELIVER => $this->client->deliverOrder($event->aggregate_id, $event->raw_body, $event->idempotency_key),
+                KiotFulfillmentService::EVENT_PAYMENT => $this->client->recordOrderPayment($event->aggregate_id, $event->raw_body, $event->idempotency_key),
+                default => $this->client->createOrder($event->raw_body, $event->idempotency_key),
+            };
 
             if ($response->successful()) {
                 $this->markSent($event, $response);
@@ -87,6 +98,11 @@ class KiotOutboxService
             $attempt = $event->attempt_count + 1;
             if ($attempt > $maxAttempts) {
                 $event->update(['status' => 'dead_letter', 'locked_at' => null, 'last_error_code' => 'MAX_ATTEMPTS_EXCEEDED']);
+                if (self::isFulfillment($event)) {
+                    OrderHistoryRecorder::kiot((int) $event->aggregate_id, self::fulfillmentLabel($event)." chưa gửi được sang KIOT sau {$maxAttempts} lần thử, dừng tự gửi.");
+
+                    return null;
+                }
                 Order::whereKey($event->aggregate_id)->update(['kiot_sync_status' => 'failed', 'kiot_sync_error_code' => 'MAX_ATTEMPTS_EXCEEDED']);
                 OrderHistoryRecorder::kiot((int) $event->aggregate_id, "Chưa vào KIOT: đã thử gửi {$maxAttempts} lần không thành công, dừng tự gửi.");
 
@@ -94,6 +110,10 @@ class KiotOutboxService
             }
 
             $event->update(['status' => 'processing', 'attempt_count' => $attempt, 'locked_at' => now(), 'last_attempt_at' => now()]);
+            // Invoices and receipts belong to an order already in KIOT: its sync status stays "synced".
+            if (self::isFulfillment($event)) {
+                return $event->fresh();
+            }
             Order::whereKey($event->aggregate_id)->update([
                 'kiot_sync_status' => $event->event_type === 'order.cancel' ? 'cancel_pending' : 'sending',
                 'kiot_sync_attempt_count' => $attempt, 'kiot_last_attempt_at' => now(),
@@ -114,7 +134,9 @@ class KiotOutboxService
                 'last_error_code' => null, 'last_error_message' => null, 'sent_at' => now(),
             ]);
 
-            if ($event->event_type === 'order.cancel') {
+            if (self::isFulfillment($event)) {
+                OrderHistoryRecorder::kiot($order, $this->fulfillmentSentMessage($event, $response->data()), 'kiot');
+            } elseif ($event->event_type === 'order.cancel') {
                 $order->update([
                     'order_status' => 'cancelled', 'kiot_sync_status' => 'cancelled',
                     'kiot_sync_error_code' => null, 'kiot_sync_error_message' => null,
@@ -138,9 +160,94 @@ class KiotOutboxService
             $this->payments->reconcileOrder($result['order']);
         }
 
-        if ($this->resolver->resolve()->productSyncEnabled) {
+        if ($event->event_type !== KiotFulfillmentService::EVENT_PAYMENT && $this->resolver->resolve()->productSyncEnabled) {
             SyncKiotProductsBySku::dispatch($result['skus'])->afterCommit();
         }
+        if ($event->event_type === KiotFulfillmentService::EVENT_PAYMENT) {
+            $this->processNextFulfillment($event);
+        }
+    }
+
+    /** Receipts go before the invoice: a later event for the same order waits for earlier ones. */
+    private function waitsForEarlierFulfillment(int $eventId): bool
+    {
+        $event = IntegrationOutboxEvent::find($eventId, ['id', 'event_type', 'aggregate_id']);
+        if (! $event || ! self::isFulfillment($event)) {
+            return false;
+        }
+
+        return IntegrationOutboxEvent::where('integration', 'kiot')
+            ->where('aggregate_id', $event->aggregate_id)
+            ->whereIn('event_type', KiotFulfillmentService::EVENT_TYPES)
+            ->where('id', '<', $event->id)
+            ->whereIn('status', ['pending', 'retrying', 'processing'])
+            ->exists();
+    }
+
+    private function processNextFulfillment(IntegrationOutboxEvent $event): void
+    {
+        $next = IntegrationOutboxEvent::where('integration', 'kiot')
+            ->where('aggregate_id', $event->aggregate_id)
+            ->whereIn('event_type', KiotFulfillmentService::EVENT_TYPES)
+            ->where('id', '>', $event->id)
+            ->where('status', 'pending')
+            ->orderBy('id')
+            ->value('id');
+        if ($next) {
+            ProcessKiotOutboxEvent::dispatch($next)->afterCommit();
+        }
+    }
+
+    private static function isFulfillment(IntegrationOutboxEvent $event): bool
+    {
+        return in_array($event->event_type, KiotFulfillmentService::EVENT_TYPES, true);
+    }
+
+    private static function fulfillmentLabel(IntegrationOutboxEvent $event): string
+    {
+        return $event->event_type === KiotFulfillmentService::EVENT_DELIVER
+            ? 'Hoá đơn KIOT (đơn đã giao)'
+            : 'Phiếu thu KIOT '.self::money((int) data_get($event->payload, 'amount'));
+    }
+
+    private static function money(int $amount): string
+    {
+        return number_format($amount, 0, ',', '.').'đ';
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function fulfillmentSentMessage(IntegrationOutboxEvent $event, array $data): string
+    {
+        if ($event->event_type === KiotFulfillmentService::EVENT_DELIVER) {
+            $invoice = $data['kiot_invoice_code'] ?? null;
+
+            return $invoice ? "KIOT đã tạo hoá đơn {$invoice}." : 'KIOT đã ghi nhận đơn đã giao.';
+        }
+        $code = $data['cash_flow_code'] ?? null;
+        $message = 'KIOT đã ghi phiếu thu'.($code ? " {$code}" : '').' '.self::money((int) data_get($event->payload, 'amount'));
+        if (isset($data['amount_paid_total'])) {
+            $message .= ' (tổng đã thu '.self::money((int) $data['amount_paid_total']).')';
+        }
+
+        return $message.'.';
+    }
+
+    private function fulfillmentRejectedMessage(IntegrationOutboxEvent $event, string $code, string $message): string
+    {
+        $what = $event->event_type === KiotFulfillmentService::EVENT_DELIVER
+            ? 'KIOT chưa tạo hoá đơn'
+            : 'KIOT chưa ghi phiếu thu '.self::money((int) data_get($event->payload, 'amount'));
+        $reason = match ($code) {
+            'SERIAL_NOT_ALLOCATED' => 'cần chọn Serial/IMEI trong KIOT',
+            'COST_PENDING' => 'sản phẩm chưa có giá vốn trong KIOT',
+            'ORDER_NOT_PROCESSABLE' => 'phiếu đặt hàng KIOT không còn xử lý được',
+            'ORDER_NOT_FOUND' => 'KIOT không tìm thấy phiếu đặt hàng của đơn',
+            'OVERPAYMENT' => 'số tiền vượt quá số còn phải thu',
+            'CUSTOMER_REQUIRED' => 'phiếu đặt hàng chưa có khách hàng',
+            default => null,
+        };
+
+        return mb_substr($what.': '.($reason ? "{$reason} ({$code}: {$message})" : "{$code}: {$message}"), 0, 900);
     }
 
     private function markFailure(
@@ -158,6 +265,12 @@ class KiotOutboxService
             $locked = IntegrationOutboxEvent::lockForUpdate()->findOrFail($event->id);
             $order = Order::lockForUpdate()->findOrFail($event->aggregate_id);
             $terminal = in_array($classification, ['business_rejection', 'authentication_failure', 'configuration_failure', 'fatal_conflict'], true);
+
+            if (self::isFulfillment($event)) {
+                $this->markFulfillmentFailure($locked, $order, $code, $message, $status, $body, $classification, $maxAttempts);
+
+                return;
+            }
 
             if ($classification === 'retryable' && $locked->attempt_count < $maxAttempts) {
                 $locked->update([
@@ -196,6 +309,33 @@ class KiotOutboxService
                 OrderHistoryRecorder::kiot($order, "Chưa vào KIOT ({$code}): {$reason}");
             }
         }, 3);
+    }
+
+    /** Receipts and invoices: 4xx is final (rejected), connection/5xx/429 retry; the order's sync status is left alone. */
+    private function markFulfillmentFailure(IntegrationOutboxEvent $locked, Order $order, string $code, string $message, ?int $status, ?array $body, string $classification, int $maxAttempts): void
+    {
+        if ($classification === 'retryable' && $locked->attempt_count < $maxAttempts) {
+            $locked->update([
+                'status' => 'retrying', 'locked_at' => null,
+                'next_attempt_at' => now()->addSeconds($this->backoffSeconds($locked->attempt_count))->ceilSecond(),
+                'last_error_code' => $code, 'last_error_message' => $message,
+                'response_status' => $status, 'response_body' => $body,
+            ]);
+            OrderHistoryRecorder::kiot($order, self::fulfillmentLabel($locked)." lần {$locked->attempt_count} lỗi ({$code}: {$message}), hệ thống sẽ tự thử lại.");
+
+            return;
+        }
+
+        $rejected = $classification === 'business_rejection' || ($status !== null && $status >= 400 && $status < 500 && $status !== 429);
+        $locked->update([
+            'status' => $rejected ? 'rejected' : 'dead_letter', 'locked_at' => null, 'next_attempt_at' => null,
+            'last_error_code' => $code, 'last_error_message' => $message,
+            'response_status' => $status, 'response_body' => $body,
+        ]);
+        OrderHistoryRecorder::kiot($order, $this->fulfillmentRejectedMessage($locked, $code, $message));
+        if ($locked->event_type === KiotFulfillmentService::EVENT_PAYMENT) {
+            $this->processNextFulfillment($locked);
+        }
     }
 
     /** KIOT's message plus the SKUs it names, e.g. "SKU không có trong KIOT: WEB-NEW-1". */

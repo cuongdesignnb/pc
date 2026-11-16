@@ -36,6 +36,11 @@ const flagsForm = useForm({
     order_sync_enabled: props.configuration.order_sync_enabled,
     confirm_order_sync: false,
 });
+const fulfillmentForm = useForm({ enabled: !!props.configuration.auto_fulfillment_enabled });
+watch(() => props.configuration.auto_fulfillment_enabled, (enabled) => { fulfillmentForm.enabled = !!enabled; });
+function submitFulfillment() {
+    fulfillmentForm.patch('/admin/integrations/kiot/fulfillment', { preserveScroll: true });
+}
 const skuForm = useForm({ sku: '' });
 const disconnectForm = useForm({ confirm_disconnect: false });
 
@@ -222,6 +227,21 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     </div>
                     <button :disabled="flagsForm.processing || (flagsForm.order_sync_enabled && !configuration.order_sync_enabled && !flagsForm.confirm_order_sync)" class="mt-5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Lưu feature flags</button>
                 </form>
+
+                <form @submit.prevent="submitFulfillment" class="rounded-lg border border-slate-800 bg-slate-900 p-5" aria-labelledby="fulfillment-title">
+                    <h4 id="fulfillment-title" class="font-semibold text-slate-100">Hoá đơn và phiếu thu KIOT</h4>
+                    <label class="mt-4 flex items-center justify-between gap-4 text-sm text-slate-300">
+                        <span>Tự tạo hoá đơn KIOT khi đơn web Đã giao và phiếu thu khi Đã thanh toán</span>
+                        <input v-model="fulfillmentForm.enabled" type="checkbox">
+                    </label>
+                    <p class="mt-3 rounded-md border border-slate-700/60 bg-slate-800/40 p-3 text-xs text-slate-400">
+                        Chỉ áp dụng cho đơn đã vào KIOT và khi "Đồng bộ đơn hàng" đang bật. Tiền ghi nhận trên web (nhân viên bấm Đã thanh toán, API, SePay)
+                        được gửi sang KIOT thành phiếu thu, mỗi khoản một lần. Khi đơn chuyển "Đã giao hàng", KIOT tạo hoá đơn từ phiếu đặt hàng (một lần).
+                        Nếu KIOT chưa tạo được (ví dụ chưa chọn Serial/IMEI), lý do ghi vào lịch sử đơn; sửa trong KIOT rồi bấm Retry ở bảng lỗi bên dưới.
+                    </p>
+                    <p v-if="fulfillmentForm.enabled && !configuration.order_sync_enabled" class="mt-2 text-xs text-amber-300">"Đồng bộ đơn hàng" đang tắt nên chưa có gì được gửi.</p>
+                    <button :disabled="fulfillmentForm.processing || fulfillmentForm.enabled === !!configuration.auto_fulfillment_enabled" class="mt-5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Lưu</button>
+                </form>
             </div>
 
             <div class="rounded-lg border border-slate-800 bg-slate-900 p-5">
@@ -317,7 +337,7 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <table class="min-w-full divide-y divide-slate-800 text-sm">
                         <thead class="bg-slate-800/40 text-left text-xs uppercase text-slate-500"><tr><th class="px-4 py-3">Event</th><th class="px-4 py-3">Order</th><th class="px-4 py-3">Lỗi</th><th class="px-4 py-3">Attempt</th><th class="px-4 py-3"></th></tr></thead>
                         <tbody class="divide-y divide-slate-800">
-                            <tr v-for="event in recentErrors" :key="event.id"><td class="px-4 py-3 text-slate-300">{{ event.event_type }}</td><td class="px-4 py-3 text-slate-300">#{{ event.aggregate_id }}</td><td class="px-4 py-3"><p class="font-mono text-xs text-amber-300">{{ event.last_error_code }}</p><p class="mt-1 max-w-xl truncate text-slate-400">{{ event.last_error_message }}</p></td><td class="px-4 py-3 text-slate-400">{{ event.attempt_count }}</td><td class="px-4 py-3 text-right"><button v-if="['retrying', 'dead_letter'].includes(event.status)" :disabled="!canOrderRetry" @click="submit(`/admin/integrations/kiot/events/${event.id}/retry`)" class="text-cyan-400 disabled:cursor-not-allowed disabled:opacity-40">Retry</button><span v-else class="text-xs text-slate-500">Không retry</span></td></tr>
+                            <tr v-for="event in recentErrors" :key="event.id"><td class="px-4 py-3 text-slate-300">{{ event.event_type }}</td><td class="px-4 py-3 text-slate-300">#{{ event.aggregate_id }}</td><td class="px-4 py-3"><p class="font-mono text-xs text-amber-300">{{ event.last_error_code }}</p><p class="mt-1 max-w-xl truncate text-slate-400">{{ event.last_error_message }}</p></td><td class="px-4 py-3 text-slate-400">{{ event.attempt_count }}</td><td class="px-4 py-3 text-right"><button v-if="['retrying', 'dead_letter'].includes(event.status) || (event.status === 'rejected' && ['order.deliver', 'order.payment'].includes(event.event_type))" :disabled="!canOrderRetry" @click="submit(`/admin/integrations/kiot/events/${event.id}/retry`)" class="text-cyan-400 disabled:cursor-not-allowed disabled:opacity-40">Retry</button><span v-else class="text-xs text-slate-500">Không retry</span></td></tr>
                             <tr v-if="!recentErrors.length"><td colspan="5" class="px-4 py-8 text-center text-slate-500">Chưa có lỗi đồng bộ.</td></tr>
                         </tbody>
                     </table>

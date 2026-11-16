@@ -32,7 +32,9 @@ class ApiTokenController extends Controller
         ], ['name.regex' => 'Tên token không được chứa dấu hai chấm.']);
 
         if (! $this->tokens->mayIssue($request->user(), $validated['type'])) {
-            return back()->withErrors(['type' => 'Bạn cần quyền xem đơn hàng để tạo token Đơn hàng.']);
+            return back()->withErrors(['type' => $validated['type'] === 'orders_write'
+                ? 'Bạn cần quyền xem và sửa đơn hàng để tạo token cập nhật đơn hàng.'
+                : 'Bạn cần quyền xem đơn hàng để tạo token Đơn hàng.']);
         }
 
         $token = $this->tokens->issue($request->user(), $validated['name'], $validated['type'], $validated['expires_in_days'] ?? null);

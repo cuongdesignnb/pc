@@ -12,6 +12,7 @@ use App\Services\Integrations\Kiot\KiotConfigurationResolver;
 use App\Services\Integrations\Kiot\KiotOrderCancellationService;
 use App\Services\Integrations\Kiot\KiotOrderService;
 use App\Services\Orders\OrderHistoryRecorder;
+use App\Services\Orders\OrderWriteService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -134,6 +135,18 @@ class OrderController extends Controller
         }
 
         return back()->with('success', 'Cập nhật trạng thái đơn hàng thành công');
+    }
+
+    /** Carrier and tracking code, typed by staff on the order page. */
+    public function updateShipment(Request $request, Order $order, OrderWriteService $orders)
+    {
+        $validated = $request->validate([
+            'tracking_code' => 'nullable|string|max:100',
+            'shipping_carrier' => 'nullable|string|max:100',
+        ]);
+        OrderHistoryRecorder::actingAs('admin', null, fn () => $orders->updateShipment($order, $validated));
+
+        return back()->with('success', 'Đã lưu thông tin vận đơn.');
     }
 
     public function updatePaymentStatus(Request $request, Order $order)

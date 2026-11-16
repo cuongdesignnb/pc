@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Services\Affiliate\CommissionService;
+use App\Services\Integrations\Kiot\KiotFulfillmentService;
 use App\Services\Orders\OrderHistoryRecorder;
+use App\Services\Webhooks\WebhookDispatcher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -74,6 +76,10 @@ class Order extends Model
         'kiot_sync_error_code',
         'kiot_sync_error_message',
         'kiot_response',
+        'tracking_code',
+        'shipping_carrier',
+        'kiot_paid_synced_amount',
+        'kiot_delivery_synced_at',
     ];
 
     protected $casts = [
@@ -94,6 +100,8 @@ class Order extends Model
         'kiot_synced_at' => 'datetime',
         'kiot_auto_resend_at' => 'datetime',
         'kiot_response' => 'array',
+        'kiot_paid_synced_amount' => 'decimal:0',
+        'kiot_delivery_synced_at' => 'datetime',
     ];
 
     public function user(): BelongsTo
@@ -119,6 +127,12 @@ class Order extends Model
             if ($order->affiliate_id && $order->wasChanged('order_status')) {
                 app(CommissionService::class)->syncWithOrder($order);
             }
+            // Delivered or paid on the website (admin, API, SePay): send the
+            // invoice/receipt to KIOT when that switch is on. Never breaks the update.
+            if ($order->wasChanged(['order_status', 'amount_paid', 'kiot_sync_status'])) {
+                app(KiotFulfillmentService::class)->syncSafely($order);
+            }
+            app(WebhookDispatcher::class)->orderUpdated($order);
         });
     }
 

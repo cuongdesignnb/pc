@@ -51,6 +51,7 @@ function formatDate(value) {
                 <select v-model="form.type" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
                     <option v-for="t in types" :key="t.value" :value="t.value">{{ t.label }}</option>
                 </select>
+                <p v-if="form.errors.type" class="text-xs text-red-400 mt-1">{{ form.errors.type }}</p>
             </div>
             <div>
                 <label class="block text-sm text-slate-300 mb-1">Hết hạn sau (ngày, để trống = không hết hạn)</label>
@@ -62,6 +63,7 @@ function formatDate(value) {
                 <p>Địa chỉ API: <code class="break-all">{{ apiBase }}</code></p>
                 <p>Đọc: <code>GET /products</code>, <code>/products/{id}</code>, <code>/categories</code>, <code>/posts</code>, <code>/posts/{id}</code>, <code>/media</code>.</p>
                 <p>Ghi (token Nội dung): <code>PATCH /products/{id}</code> (meta_title, meta_description, short_description, description, images[].alt), <code>POST/PATCH /categories</code>, <code>POST/PATCH /posts</code>, <code>POST /media</code> (files[]), <code>PATCH /media/{id}</code>. Không sửa được giá, tồn kho, danh mục sản phẩm và slug.</p>
+                <p>Đơn hàng: <code>GET /orders</code>, <code>/orders/{id}</code>. Token "Đơn hàng – đọc + cập nhật" có thêm <code>PATCH /orders/{id}/status</code>, <code>POST /orders/{id}/payments</code> (bắt buộc header <code>Idempotency-Key</code>), <code>PATCH /orders/{id}/shipment</code>.</p>
             </div>
         </form>
 

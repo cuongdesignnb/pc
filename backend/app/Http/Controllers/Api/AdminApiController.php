@@ -60,12 +60,25 @@ class AdminApiController extends Controller
 
     public function updateProduct(Request $request, Product $product): JsonResponse
     {
-        $pricesEditable = self::apiMayEditPrices($product);
+        $lockReason = self::priceLockedReason($product);
+        $priceLocked = $lockReason !== null
+            ? 'API không sửa được :attribute của sản phẩm này: '.self::PRICE_LOCK_REASONS[$lockReason].' (price_locked_reason = '.$lockReason.').'
+            : '';
         $request->validate(array_filter([
-            'price' => $pricesEditable ? null : 'prohibited',
-            'sale_price' => $pricesEditable ? null : 'prohibited',
+            'price' => $lockReason ? 'prohibited' : null,
+            'sale_price' => $lockReason ? 'prohibited' : null,
             'stock_quantity' => 'prohibited', 'category_id' => 'prohibited', 'is_active' => 'prohibited', 'slug' => 'prohibited',
-        ]), ['prohibited' => 'API không được sửa :attribute (giá chỉ sửa được với sản phẩm web có SKU bắt đầu bằng '.self::API_PRICE_SKU_PREFIX.'; tồn kho, danh mục, hiển thị và slug chỉ sửa trên trang admin).']);
+        ]), [
+            'price.prohibited' => $priceLocked,
+            'sale_price.prohibited' => $priceLocked,
+            'prohibited' => 'API không được sửa :attribute (tồn kho, danh mục, hiển thị và slug chỉ sửa trên trang admin).',
+        ]);
+        // "12.000.000", "12,000,000", "12 000 000đ" → 12000000.
+        foreach (['price', 'sale_price'] as $field) {
+            if ($request->has($field)) {
+                $request->merge([$field => self::normalizeMoney($request->input($field))]);
+            }
+        }
         // Accept {"CPU": "i5"} as well as [{"label": "CPU", "value": "i5"}].
         $specifications = $request->input('specifications');
         if (is_array($specifications) && ! array_is_list($specifications)) {
@@ -87,6 +100,9 @@ class AdminApiController extends Controller
             'specifications.*.label' => 'required|string|max:255',
             'specifications.*.value' => 'nullable|string|max:2000',
             'instant_key_url' => 'sometimes|nullable|url:https|max:2048',
+        ], [
+            'price.integer' => 'Giá phải là số nguyên (đồng), ví dụ 12000000. Cũng nhận "12.000.000", "12,000,000" hoặc "12000000đ".',
+            'sale_price.integer' => 'Giá khuyến mãi phải là số nguyên (đồng), ví dụ 11500000.',
         ]);
 
         $fields = collect($validated)->except(['images', 'specifications'])->all();
@@ -113,13 +129,49 @@ class AdminApiController extends Controller
 
     public const API_PRICE_SKU_PREFIX = 'WEB-NEW-';
 
+    public const PRICE_LOCK_REASONS = [
+        'sku_not_web_new' => 'giá chỉ sửa qua API được với sản phẩm web có SKU bắt đầu bằng '.self::API_PRICE_SKU_PREFIX,
+        'kiot_product' => 'sản phẩm đã liên kết KIOT (nguồn tồn kho hoặc nhà cung cấp là KIOT), giá lấy từ KIOT',
+        'has_variants' => 'sản phẩm có biến thể, giá từng biến thể sửa trên trang admin',
+    ];
+
     /** Only web-only products (not from KIOT) with a WEB-NEW- SKU may have prices set by API. */
     public static function apiMayEditPrices(Product $product): bool
     {
-        return str_starts_with((string) $product->sku, self::API_PRICE_SKU_PREFIX)
-            && $product->inventory_source !== 'kiot'
-            && $product->provider !== 'kiot'
-            && ! ($product->variants_exists ?? $product->variants()->exists());
+        return self::priceLockedReason($product) === null;
+    }
+
+    /** Why the API may not set this product's price: null, sku_not_web_new, kiot_product or has_variants. */
+    public static function priceLockedReason(Product $product): ?string
+    {
+        if (! str_starts_with(strtoupper(trim((string) $product->sku)), self::API_PRICE_SKU_PREFIX)) {
+            return 'sku_not_web_new';
+        }
+        if ($product->inventory_source === 'kiot' || $product->provider === 'kiot') {
+            return 'kiot_product';
+        }
+        if ($product->variants_exists ?? $product->variants()->exists()) {
+            return 'has_variants';
+        }
+
+        return null;
+    }
+
+    /** Money sent as text: "12.000.000", "12,000,000", "12 000 000đ", "12000000 VND" → 12000000. */
+    public static function normalizeMoney(mixed $value): mixed
+    {
+        if (! is_string($value)) {
+            return $value;
+        }
+        $clean = preg_replace('/\s+|vnđ|vnd|đ|₫/iu', '', trim($value));
+        if ($clean !== null && preg_match('/^\d{1,3}([.,]\d{3})+$/', $clean)) {
+            return (int) preg_replace('/[.,]/', '', $clean);
+        }
+        if ($clean !== null && preg_match('/^\d+$/', $clean)) {
+            return (int) $clean;
+        }
+
+        return $value;
     }
 
     // ---- Categories -----------------------------------------------------
@@ -264,7 +316,10 @@ class AdminApiController extends Controller
             'category' => $product->category?->only(['id', 'name', 'slug']),
             'price' => (float) $product->price,
             'sale_price' => $product->sale_price !== null ? (float) $product->sale_price : null,
-            'price_editable' => self::apiMayEditPrices($product),
+            'price_editable' => ($lockReason = self::priceLockedReason($product)) === null,
+            // Why price/sale_price are refused: null, sku_not_web_new, kiot_product or has_variants.
+            'price_locked_reason' => $lockReason,
+            'price_locked_message' => $lockReason ? self::PRICE_LOCK_REASONS[$lockReason] : null,
             // What the website sells now (0 when sold out or hidden).
             'stock_quantity' => (int) $product->stock_quantity,
             // Ready to sell: KIOT units not under repair and not reserved.

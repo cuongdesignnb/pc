@@ -5,6 +5,7 @@ namespace App\Services\Payments;
 use App\Models\Order;
 use App\Models\SepayPaymentEvent;
 use App\Models\Transaction;
+use App\Services\Integrations\Kiot\KiotFulfillmentService;
 use App\Services\Orders\OrderHistoryRecorder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -118,7 +119,10 @@ class SepayPaymentService
             $updates['order_status'] = 'confirmed';
         }
 
-        OrderHistoryRecorder::actingAs('payment', 'SePay báo đã nhận '.number_format((int) $event->amount, 0, ',', '.').'đ', fn () => $order->update($updates));
+        KiotFulfillmentService::withPayment(
+            ['method' => 'sepay', 'reference' => $event->reference_code, 'paid_at' => $event->received_at?->toIso8601String()],
+            fn () => OrderHistoryRecorder::actingAs('payment', 'SePay báo đã nhận '.number_format((int) $event->amount, 0, ',', '.').'đ', fn () => $order->update($updates)),
+        );
         Transaction::create([
             'order_id' => $order->id,
             'sepay_transaction_id' => $event->external_transaction_id,
