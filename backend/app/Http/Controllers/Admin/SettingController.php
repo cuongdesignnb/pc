@@ -93,7 +93,8 @@ class SettingController extends Controller
             if ($setting && $setting->key === 'payment_deposit_province_rules') {
                 $item['value'] = json_encode((object) DepositRules::normaliseProvinces($item['value'] ?? null), JSON_UNESCAPED_UNICODE);
             }
-            if ($setting && $setting->key === 'shipping_ahamove_province_codes') {
+            // Province code lists: Ahamove area, provinces exempt from the required deposit.
+            if ($setting && in_array($setting->key, ['shipping_ahamove_province_codes', 'payment_deposit_exempt_provinces'], true)) {
                 $codes = is_string($item['value'] ?? null) ? json_decode($item['value'], true) : ($item['value'] ?? []);
                 $item['value'] = json_encode(array_values(array_unique(array_filter(
                     array_map(fn ($code): string => trim((string) $code), is_array($codes) ? $codes : []),

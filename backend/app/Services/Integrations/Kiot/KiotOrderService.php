@@ -31,6 +31,7 @@ class KiotOrderService
         private readonly WarrantyPackages $warranties,
         private readonly AffiliateCheckoutService $affiliates,
         private readonly LaptopCategories $laptops,
+        private readonly PaymentMethodAvailability $paymentAvailability,
     ) {}
 
     public function create(array $data, ?int $userId): array
@@ -153,17 +154,29 @@ class KiotOrderService
                 );
                 $discount = $referral['discount'];
                 $total = $subtotal - $discount + $shippingFee;
+                // Delivery outside the exempt provinces must pay a deposit by transfer first.
+                $requiredDeposit = $this->paymentAvailability->requiredDeposit($total, $orderLines, $ruleProvince, $shippingMethod);
+                if ($data['payment_method'] === 'cod' && $requiredDeposit !== null) {
+                    throw ValidationException::withMessages(['payment_method' => PaymentMethodAvailability::DEPOSIT_REQUIRED_MESSAGE]);
+                }
                 $paymentOption = $data['payment_method'] === 'sepay' ? ($data['payment_option'] ?? 'full') : null;
                 $depositAmount = $paymentOption === 'deposit'
-                    ? $this->deposits->amountForOrder($total, $orderLines, $ruleProvince)
+                    ? ($requiredDeposit ?? $this->deposits->amountForOrder($total, $orderLines, $ruleProvince))
                     : null;
+                // With "Bắt buộc đặt cọc" on, a bank-transfer order ("Chờ cọc" /
+                // "Chờ thanh toán") reaches KIOT only once SePay confirms the
+                // deposit or the full amount (queueAfterPayment), or when staff
+                // send it by hand. It is never cancelled automatically.
+                $prepay = $paymentOption !== null && $this->deposits->requiredEnabled();
+                $kiotStatus = ! $enabled ? 'not_required' : ($prepay ? 'waiting_payment' : 'pending');
+                $queueNow = $kiotStatus === 'pending';
                 if ($paymentOption === 'deposit' && $depositAmount === null) {
                     throw ValidationException::withMessages([
                         'payment_option' => 'Đơn hàng này không áp dụng đặt cọc, vui lòng chọn chuyển khoản toàn bộ.',
                     ]);
                 }
-                $eventId = $enabled ? (string) Str::uuid() : null;
-                $idempotencyKey = $enabled ? (string) Str::uuid() : null;
+                $eventId = $queueNow ? (string) Str::uuid() : null;
+                $idempotencyKey = $queueNow ? (string) Str::uuid() : null;
                 $order = Order::create([
                     'order_number' => Order::generateOrderNumber(),
                     'user_id' => $userId,
@@ -187,6 +200,7 @@ class KiotOrderService
                     'payment_method' => $data['payment_method'],
                     'payment_option' => $paymentOption,
                     'deposit_amount' => $depositAmount,
+                    'requires_prepayment' => $prepay,
                     'checkout_mode' => $data['checkout_mode'] ?? 'cart',
                     'payment_status' => 'unpaid',
                     'order_status' => 'pending',
@@ -202,7 +216,7 @@ class KiotOrderService
                     'order_access_token_hash' => Order::hashAccessToken($data['order_access_token']),
                     'kiot_event_id' => $eventId,
                     'kiot_idempotency_key' => $idempotencyKey,
-                    'kiot_sync_status' => $enabled ? 'pending' : 'not_required',
+                    'kiot_sync_status' => $kiotStatus,
                 ]);
 
                 foreach ($snapshots as $snapshot) {
@@ -210,7 +224,7 @@ class KiotOrderService
                 }
                 $this->affiliates->recordOrder($order, $referral);
 
-                $outbox = $enabled ? $this->queueCreateEvent($order, $weight) : null;
+                $outbox = $queueNow ? $this->queueCreateEvent($order, $weight) : null;
 
                 return ['order' => $order, 'outbox_id' => $outbox?->id, 'duplicate' => false];
             }, 3);
@@ -282,6 +296,37 @@ class KiotOrderService
             $weight = (int) $order->items->sum(fn ($item) => (int) ($item->product?->weight ?? 0) * $item->quantity);
 
             return $this->queueCreateEvent($order, $weight)->id;
+        }, 3);
+    }
+
+    /**
+     * A "Chờ cọc"/"Chờ thanh toán" order whose deposit (or full amount) has
+     * just been confirmed: queue it for KIOT now. The money already received
+     * follows as a KIOT receipt once KIOT has the order
+     * (KiotFulfillmentService::sendPrepaid). Returns the outbox event id to
+     * process, or null when nothing has to be sent.
+     */
+    public function queueAfterPayment(Order $order): ?int
+    {
+        return DB::transaction(function () use ($order) {
+            $locked = Order::with('items.product')->lockForUpdate()->find($order->id);
+            if (! $locked || $locked->kiot_sync_status !== 'waiting_payment' || $locked->order_status === 'cancelled') {
+                return null;
+            }
+            $runtime = $this->resolver->resolve();
+            if (! ($runtime->enabled && $runtime->orderSyncEnabled)) {
+                $locked->update(['kiot_sync_status' => 'not_required']);
+
+                return null;
+            }
+            $locked->update([
+                'kiot_event_id' => (string) Str::uuid(),
+                'kiot_idempotency_key' => (string) Str::uuid(),
+                'kiot_sync_status' => 'pending',
+            ]);
+            $weight = (int) $locked->items->sum(fn ($item) => (int) ($item->product?->weight ?? 0) * $item->quantity);
+
+            return $this->queueCreateEvent($locked, $weight)->id;
         }, 3);
     }
 
@@ -376,6 +421,11 @@ class KiotOrderService
         ];
         if ($order->payment_option === 'deposit' && (int) $order->deposit_amount > 0) {
             $lines[] = 'Đặt cọc: '.number_format((int) $order->deposit_amount, 0, ',', '.').'đ';
+        }
+        if ((int) $order->amount_paid > 0) {
+            // Money SePay confirmed before the order reached KIOT; it follows as a receipt.
+            $lines[] = 'Đã chuyển khoản: '.number_format((int) $order->amount_paid, 0, ',', '.').'đ, còn lại thu khi giao: '
+                .number_format($order->remainingAmount(), 0, ',', '.').'đ';
         }
         if (filled($order->video_code)) {
             $lines[] = 'Mã video: '.$order->video_code;

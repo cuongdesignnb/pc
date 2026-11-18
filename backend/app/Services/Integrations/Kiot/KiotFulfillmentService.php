@@ -156,6 +156,63 @@ class KiotFulfillmentService
     }
 
     /**
+     * Money confirmed on the website before KIOT had the order (the deposit
+     * or full transfer of a "Chờ cọc"/"Chờ thanh toán" order) goes to KIOT as
+     * one receipt right after KIOT creates the order, whatever the auto
+     * receipt switch: the KIOT order then shows the deposit and the rest to
+     * collect (total − deposit). kiot_paid_synced_amount covers it afterwards,
+     * so the automatic receipts never send the same money twice.
+     */
+    /** Called from the Order "updated" hook: failures are logged, never thrown. */
+    public function sendPrepaidSafely(Order $order): void
+    {
+        try {
+            $this->sendPrepaid($order);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    public function sendPrepaid(Order $order): ?int
+    {
+        if (! $order->requires_prepayment) {
+            return null;
+        }
+        $runtime = $this->resolver->resolve();
+        if (! $runtime->enabled || ! $runtime->orderSyncEnabled) {
+            return null;
+        }
+
+        $eventId = DB::transaction(function () use ($order) {
+            $locked = Order::lockForUpdate()->find($order->id);
+            if (! $locked || $locked->kiot_sync_status !== 'synced' || ! $locked->kiot_order_id || $locked->order_status === 'cancelled') {
+                return null;
+            }
+            $delta = (int) $locked->amount_paid - (int) $locked->kiot_paid_synced_amount;
+            if ($delta <= 0) {
+                return null;
+            }
+            $transaction = $locked->transactions()->latest('id')->first();
+            $id = $this->enqueue($locked, self::EVENT_PAYMENT, [
+                'amount' => $delta,
+                'paid_at' => ($locked->deposit_paid_at ?? $locked->paid_at ?? now())->toIso8601String(),
+                'method' => $this->method($locked, null),
+                'reference' => filled($transaction?->reference_code) ? mb_substr((string) $transaction->reference_code, 0, 100) : null,
+            ]);
+            Order::whereKey($locked->id)->update(['kiot_paid_synced_amount' => (int) $locked->amount_paid]);
+            OrderHistoryRecorder::kiot($locked, 'Gửi tiền đã cọc/đã trả '.number_format($delta, 0, ',', '.').'đ sang KIOT (phiếu thu cho đơn).', 'kiot');
+
+            return $id;
+        }, 3);
+
+        if ($eventId) {
+            ProcessKiotOutboxEvent::dispatch($eventId)->afterCommit();
+        }
+
+        return $eventId;
+    }
+
+    /**
      * A refused receipt or invoice (e.g. no Serial/IMEI chosen in KIOT yet)
      * is final. After fixing it in KIOT, staff send a fresh event.
      */

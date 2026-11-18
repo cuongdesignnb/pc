@@ -19,7 +19,8 @@ class KiotOrderCancellationService
             return $order;
         }
 
-        if ($order->kiot_sync_status === 'not_required') {
+        // Never sent to KIOT (sync off, or a "Chờ cọc" order still waiting for the money).
+        if (in_array($order->kiot_sync_status, ['not_required', 'waiting_payment'], true)) {
             $order->update(['order_status' => 'cancelled', 'kiot_sync_status' => 'cancelled']);
 
             return $order->fresh();

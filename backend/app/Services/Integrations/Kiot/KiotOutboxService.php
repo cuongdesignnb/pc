@@ -157,6 +157,8 @@ class KiotOutboxService
         }, 3);
 
         if ($event->event_type === 'order.create') {
+            // The deposit SePay confirmed before the order went to KIOT.
+            app(KiotFulfillmentService::class)->sendPrepaid($result['order']);
             $this->payments->reconcileOrder($result['order']);
         }
 

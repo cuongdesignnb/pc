@@ -35,7 +35,7 @@ defineProps({
             </template>
         </div>
         <p class="mt-1 text-xs text-slate-500">
-            {{ modelValue.type ? 'Áp dụng khi bật "Cho phép đặt cọc"; ưu tiên hơn mức theo tỉnh và mức chung (trừ tỉnh đặt "Không cọc").' : inheritHint }}
+            {{ modelValue.type ? 'Áp dụng khi bật "Cho phép đặt cọc" hoặc "Bắt buộc đặt cọc"; ưu tiên hơn mức theo tỉnh và mức chung (trừ tỉnh đặt "Không cọc"). "Không cọc": hàng thuộc đây không cần cọc, đơn chỉ có hàng này không bị bắt buộc cọc.' : inheritHint }}
         </p>
         <template v-for="(msg, key) in errors" :key="key">
             <p v-if="String(key).startsWith('deposit_rule')" class="text-red-400 text-xs mt-1">{{ msg }}</p>

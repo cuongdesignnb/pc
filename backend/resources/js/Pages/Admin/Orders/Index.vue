@@ -32,6 +32,7 @@ const payColor = { unpaid: 'bg-yellow-100 text-yellow-700', deposited: 'bg-blue-
             <select v-model="status" @change="applyFilters()" class="border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
                 <option value="">Tất cả trạng thái</option>
                 <option v-for="s in statuses" :value="s">{{ statusLabel[s] || s }}</option>
+                <option value="awaiting_prepayment">Chờ cọc / chờ thanh toán</option>
             </select>
             <select v-model="paymentStatus" @change="applyFilters()" class="border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
                 <option value="">Thanh toán</option>
@@ -59,7 +60,7 @@ const payColor = { unpaid: 'bg-yellow-100 text-yellow-700', deposited: 'bg-blue-
                     <td class="px-4 py-3 text-sm font-medium text-cyan-500">{{ o.order_number || o.order_code }}<div v-if="o.affiliate" class="text-xs text-amber-400">Khách của CTV: {{ o.affiliate.user?.name }} – {{ o.affiliate.code }}</div><div v-if="['rejected', 'failed'].includes(o.kiot_sync_status) || o.has_web_only_products" class="mt-1 flex flex-wrap gap-1"><span v-if="['rejected', 'failed'].includes(o.kiot_sync_status)" class="rounded bg-red-500/15 px-1.5 py-0.5 text-[11px] font-medium text-red-400" :title="o.kiot_sync_error_message">Chưa vào KIOT</span><span v-if="o.has_web_only_products" class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-400" title="Có hàng tạo trên web chưa gắn mã KIOT: KIOT tạo hàng này chưa có giá vốn, cần nhập giá vốn trước khi xuất hoá đơn">Chưa có giá vốn</span></div></td>
                     <td class="px-4 py-3 text-sm text-slate-200">{{ o.shipping_name || o.customer_name || o.user?.name || '—' }}<div v-if="o.shipping_method && o.shipping_method !== 'standard'" class="text-xs text-slate-400">{{ o.shipping_method_label }}</div></td>
                     <td class="px-4 py-3 text-sm text-slate-200 text-right font-medium">{{ formatPrice(o.total) }}</td>
-                    <td class="px-4 py-3 text-center"><span :class="statusColor[o.order_status || o.status] || 'bg-slate-800/60 text-slate-400'" class="px-2 py-0.5 rounded-full text-xs font-medium">{{ statusLabel[o.order_status || o.status] || o.order_status || o.status }}</span></td>
+                    <td class="px-4 py-3 text-center"><span :class="statusColor[o.order_status || o.status] || 'bg-slate-800/60 text-slate-400'" class="px-2 py-0.5 rounded-full text-xs font-medium">{{ statusLabel[o.order_status || o.status] || o.order_status || o.status }}</span><div v-if="o.payment_stage_label" class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/15 text-orange-400" title="Chưa nhận tiền cọc qua SePay, chưa gửi KIOT. Đơn không tự huỷ: gọi khách để xác nhận.">{{ o.payment_stage_label }}</span></div></td>
                     <td class="px-4 py-3 text-center"><span :class="payColor[o.payment_status] || 'bg-slate-800/60 text-slate-400'" class="px-2 py-0.5 rounded-full text-xs font-medium">{{ payLabel[o.payment_status] || o.payment_status }}</span></td>
                     <td class="px-4 py-3 text-sm text-slate-400">{{ formatDate(o.created_at) }}</td>
                     <td class="px-4 py-3 text-right">

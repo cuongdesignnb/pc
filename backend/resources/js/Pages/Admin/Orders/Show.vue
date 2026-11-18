@@ -29,6 +29,7 @@ function resendToKiot() {
 
 const kiotStatusLabel = {
     not_required: "Chưa gửi (lúc đặt đơn đồng bộ đang tắt)",
+    waiting_payment: "Chưa gửi: chờ khách chuyển khoản cọc/thanh toán",
     pending: "Đang chờ gửi",
     sending: "Đang gửi",
     retrying: "Đang thử gửi lại",
@@ -42,7 +43,7 @@ const kiotStatusClass = computed(() => {
     const status = props.kiot?.status;
     if (status === "synced") return "text-emerald-400";
     if (["failed", "rejected"].includes(status)) return "text-red-400";
-    if (status === "not_required") return "text-amber-400";
+    if (["not_required", "waiting_payment"].includes(status)) return "text-amber-400";
     return "text-slate-300";
 });
 
@@ -236,6 +237,9 @@ const remaining = computed(() =>
                             · {{ paymentOptionLabel[order.payment_option] || order.payment_option }}</span
                         >
                     </p>
+                    <p v-if="order.payment_stage_label" class="text-orange-400 font-medium">
+                        {{ order.payment_stage_label }} — chưa nhận tiền qua SePay
+                    </p>
                     <p v-if="order.deposit_amount">
                         <span class="text-slate-500">Tiền cọc yêu cầu:</span>
                         {{ formatPrice(order.deposit_amount) }}
@@ -351,6 +355,9 @@ const remaining = computed(() =>
                     class="text-slate-400"
                 >
                     Lỗi: {{ kiot.error_message }}
+                </p>
+                <p v-if="kiot.status === 'waiting_payment'" class="text-amber-300">
+                    Đơn tự gửi sang KIOT (kèm phiếu thu tiền cọc) khi SePay báo đã nhận đủ tiền cọc. Đơn không tự huỷ: gọi khách, rồi bấm "Gửi lại sang KIOT" nếu muốn giao không cần cọc.
                 </p>
                 <p v-if="['failed', 'rejected'].includes(kiot.status)" class="text-amber-300">
                     Đơn vẫn giữ trên web, chưa vào KIOT. Shop xử lý tay hoặc bấm "Gửi lại sang KIOT".
