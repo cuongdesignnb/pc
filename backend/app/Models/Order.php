@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Jobs\Integrations\Kiot\ProcessKiotOutboxEvent;
 use App\Services\Affiliate\CommissionService;
 use App\Services\Integrations\Kiot\KiotFulfillmentService;
+use App\Services\Integrations\Kiot\KiotOrderService;
 use App\Services\Orders\OrderHistoryRecorder;
 use App\Services\Webhooks\WebhookDispatcher;
 use Illuminate\Database\Eloquent\Model;
@@ -43,6 +45,7 @@ class Order extends Model
         'discount',
         'shipping_fee',
         'shipping_method',
+        'requires_prepayment',
         'total',
         'payment_status',
         'payment_method',
@@ -90,6 +93,7 @@ class Order extends Model
         'shipping_fee' => 'decimal:0',
         'total' => 'decimal:0',
         'deposit_amount' => 'decimal:0',
+        'requires_prepayment' => 'boolean',
         'amount_paid' => 'decimal:0',
         'paid_at' => 'datetime',
         'deposit_paid_at' => 'datetime',
@@ -132,6 +136,19 @@ class Order extends Model
             // invoice/receipt to KIOT when that switch is on. Never breaks the update.
             if ($order->wasChanged(['order_status', 'amount_paid', 'kiot_sync_status'])) {
                 app(KiotFulfillmentService::class)->syncSafely($order);
+            }
+            // A deposit order already in KIOT (e.g. sent by staff before the money came):
+            // its transfers still become KIOT receipts, whatever the auto-receipt switch.
+            if ($order->requires_prepayment && $order->wasChanged('amount_paid')) {
+                app(KiotFulfillmentService::class)->sendPrepaidSafely($order);
+            }
+            // "Chờ cọc" order paid (SePay, admin or API): send it to KIOT now.
+            if ($order->wasChanged('payment_status') && in_array($order->payment_status, ['deposited', 'paid'], true)
+                && $order->kiot_sync_status === 'waiting_payment') {
+                $eventId = app(KiotOrderService::class)->queueAfterPayment($order);
+                if ($eventId) {
+                    ProcessKiotOutboxEvent::dispatch($eventId)->afterCommit();
+                }
             }
             app(WebhookDispatcher::class)->orderUpdated($order);
         });
@@ -189,7 +206,31 @@ class Order extends Model
     {
         // An order KIOT has not taken yet ("rejected"/"failed") is still a valid
         // website order the shop handles by hand, so the customer may pay it.
-        return in_array($this->kiot_sync_status, ['synced', 'not_required', 'rejected', 'failed'], true);
+        // "waiting_payment": a "Chờ cọc" order is paid before it goes to KIOT.
+        return in_array($this->kiot_sync_status, ['synced', 'not_required', 'rejected', 'failed', 'waiting_payment'], true);
+    }
+
+    /**
+     * "Chờ cọc" / "Chờ thanh toán": a bank-transfer order taken while deposits
+     * are required, whose deposit (or full amount) SePay has not confirmed yet.
+     * It is kept (never cancelled automatically) so staff can call the customer.
+     */
+    public function paymentStage(): ?string
+    {
+        if (! $this->requires_prepayment || $this->payment_status !== 'unpaid' || $this->order_status === 'cancelled') {
+            return null;
+        }
+
+        return $this->payment_option === 'deposit' ? 'awaiting_deposit' : 'awaiting_payment';
+    }
+
+    public function paymentStageLabel(): ?string
+    {
+        return match ($this->paymentStage()) {
+            'awaiting_deposit' => 'Chờ cọc',
+            'awaiting_payment' => 'Chờ thanh toán',
+            default => null,
+        };
     }
 
     public function remainingAmount(): int
@@ -215,7 +256,8 @@ class Order extends Model
 
     public function canResendToKiot(): bool
     {
-        return in_array($this->kiot_sync_status, ['not_required', 'failed', 'rejected'], true)
+        // Staff may also send a "Chờ cọc" order after calling the customer.
+        return in_array($this->kiot_sync_status, ['not_required', 'failed', 'rejected', 'waiting_payment'], true)
             && $this->order_status !== 'cancelled';
     }
 

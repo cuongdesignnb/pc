@@ -75,13 +75,6 @@ class CheckoutQuoteService
             $issues[] = $this->issue('shipping_method', 'SHIPPING_METHOD_UNAVAILABLE', $shipping['disabled_reason']);
         }
 
-        $paymentMethod = $this->nullableString($data['payment_method'] ?? null);
-        if ($paymentMethod !== null && ! $this->paymentAvailability->isAvailable($paymentMethod, $ruleProvince)) {
-            $issues[] = $this->issue('payment_method', 'PAYMENT_METHOD_UNAVAILABLE', $paymentMethod === 'cod' && $this->paymentAvailability->isAvailable('cod')
-                ? PaymentMethodAvailability::COD_PROVINCE_MESSAGE
-                : 'Phương thức thanh toán này hiện không khả dụng.');
-        }
-
         $hasDestination = $location !== null || $isPickup;
         $shippingFee = $hasDestination && $shipping['available'] && $calculated['summary']['total_quantity'] > 0
             ? $shipping['fee']
@@ -107,10 +100,26 @@ class CheckoutQuoteService
         if ($summary['total_quantity'] === 0) {
             $issues[] = $this->issue('items', 'EMPTY_CHECKOUT', 'Không có sản phẩm hợp lệ để thanh toán.');
         }
+        // Deposit the order must pay first (delivery outside the exempt provinces), see DepositPolicy.
+        $requiredDeposit = $this->paymentAvailability->requiredDeposit(
+            $summary['total'],
+            $this->depositLines($calculated['lines']),
+            $ruleProvince,
+            $shippingMethod,
+        );
+        $paymentMethod = $this->nullableString($data['payment_method'] ?? null);
+        if ($paymentMethod !== null && ! $this->paymentAvailability->isAvailable($paymentMethod, $ruleProvince, $requiredDeposit !== null)) {
+            $issues[] = $this->issue('payment_method', 'PAYMENT_METHOD_UNAVAILABLE', match (true) {
+                $paymentMethod !== 'cod' || ! $this->paymentAvailability->isAvailable('cod') => 'Phương thức thanh toán này hiện không khả dụng.',
+                $requiredDeposit !== null => PaymentMethodAvailability::DEPOSIT_REQUIRED_MESSAGE,
+                default => PaymentMethodAvailability::COD_PROVINCE_MESSAGE,
+            });
+        }
         $paymentMethods = $this->paymentAvailability->checkoutMethods(
             $summary['total'],
             $this->depositLines($calculated['lines']),
             $ruleProvince,
+            $requiredDeposit,
         );
         $shippingMethods = array_map(fn (array $method): array => [
             'code' => $method['code'],
@@ -145,6 +154,8 @@ class CheckoutQuoteService
             // The method the totals use (the first enabled one when none was sent).
             'shipping_method' => $shippingMethod,
             'payment_methods' => $paymentMethods,
+            // Set when this order must pay a deposit by transfer before the shop handles it.
+            'required_deposit' => $requiredDeposit,
             'coupon' => null,
             // Never blocks the order: a wrong code just means no discount.
             'referral' => [
@@ -159,7 +170,7 @@ class CheckoutQuoteService
                 'marketing_subscription' => false,
             ],
             'issues' => array_values($issues),
-            'can_place_order' => $this->canPlaceOrder($summary, $issues, $paymentMethod, $ruleProvince),
+            'can_place_order' => $this->canPlaceOrder($summary, $issues, $paymentMethod, $ruleProvince, $requiredDeposit !== null),
         ];
 
         Cache::put($this->cacheKey($quoteId), [
@@ -395,12 +406,12 @@ class CheckoutQuoteService
     }
 
     /** @param array<int, array<string, string>> $issues */
-    private function canPlaceOrder(array $summary, array $issues, ?string $paymentMethod, ?string $provinceCode): bool
+    private function canPlaceOrder(array $summary, array $issues, ?string $paymentMethod, ?string $provinceCode, bool $depositRequired): bool
     {
         return $summary['total_quantity'] > 0
             && $issues === []
             && $paymentMethod !== null
-            && $this->paymentAvailability->isAvailable($paymentMethod, $provinceCode);
+            && $this->paymentAvailability->isAvailable($paymentMethod, $provinceCode, $depositRequired);
     }
 
     /** @return array<int, array{product_id: int, quantity: int, line_total: int}> */

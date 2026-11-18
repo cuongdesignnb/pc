@@ -7,6 +7,8 @@ use App\Services\Payments\DepositPolicy;
 
 class PaymentMethodAvailability
 {
+    public const DEPOSIT_REQUIRED_MESSAGE = 'Đơn giao đến tỉnh/thành này cần đặt cọc trước.';
+
     public const COD_PROVINCE_MESSAGE = 'Đơn giao đến tỉnh/thành này cần chuyển khoản đặt cọc hoặc thanh toán trước, không áp dụng COD.';
 
     public function __construct(private readonly DepositPolicy $deposits) {}
@@ -44,17 +46,17 @@ class PaymentMethodAvailability
      * @param  array<int, array{product_id: int, quantity: int, line_total: int}>  $lines
      * @return array<int, array{code: string, label: string, description: string, available: bool, disabled_reason: string|null, deposit_amount?: int|null}>
      */
-    public function checkoutMethods(?int $total = null, array $lines = [], ?string $provinceCode = null): array
+    public function checkoutMethods(?int $total = null, array $lines = [], ?string $provinceCode = null, ?int $requiredDeposit = null): array
     {
         $methods = [];
         if ($this->codAvailable()) {
-            $codAllowed = $this->deposits->codAllowed($provinceCode);
+            $codAllowed = $this->deposits->codAllowed($provinceCode) && $requiredDeposit === null;
             $methods[] = [
                 'code' => 'cod',
                 'label' => 'Thanh toán khi nhận hàng (COD)',
                 'description' => 'Thanh toán bằng tiền mặt khi nhận hàng.',
                 'available' => $codAllowed,
-                'disabled_reason' => $codAllowed ? null : self::COD_PROVINCE_MESSAGE,
+                'disabled_reason' => $codAllowed ? null : ($requiredDeposit !== null ? self::DEPOSIT_REQUIRED_MESSAGE : self::COD_PROVINCE_MESSAGE),
             ];
         }
         if ($this->sepayAvailable()) {
@@ -64,18 +66,40 @@ class PaymentMethodAvailability
                 'description' => 'Quét mã QR sau khi đơn hàng được ghi nhận.',
                 'available' => true,
                 'disabled_reason' => null,
-                'deposit_amount' => $total === null ? null : $this->deposits->amountForOrder($total, $lines, $provinceCode),
+                'deposit_amount' => $requiredDeposit
+                    ?? ($total === null ? null : $this->deposits->amountForOrder($total, $lines, $provinceCode)),
+                // The customer must pay this deposit (or everything) by transfer; COD is closed.
+                'deposit_required' => $requiredDeposit !== null,
             ];
         }
 
         return $methods;
     }
 
-    /** $provinceCode: the delivery province, for the "no COD" province rule. */
-    public function isAvailable(string $method, ?string $provinceCode = null): bool
+    /**
+     * The deposit this order must pay before the shop handles it, or null
+     * (see DepositPolicy::requiredAmount). Never required while SePay transfer
+     * is not set up, since the customer could not pay it.
+     *
+     * @param  array<int, array{product_id: int, quantity: int, line_total: int}>  $lines
+     */
+    public function requiredDeposit(?int $total, array $lines, ?string $provinceCode, string $shippingMethod): ?int
+    {
+        if ($total === null || ! $this->sepayAvailable()) {
+            return null;
+        }
+
+        return $this->deposits->requiredAmount($total, $lines, $provinceCode, $shippingMethod);
+    }
+
+    /**
+     * $provinceCode: the delivery province, for the "no COD" province rule;
+     * $depositRequired: COD is closed when the order must pay a deposit first.
+     */
+    public function isAvailable(string $method, ?string $provinceCode = null, bool $depositRequired = false): bool
     {
         return match ($method) {
-            'cod' => $this->codAvailable() && $this->deposits->codAllowed($provinceCode),
+            'cod' => $this->codAvailable() && $this->deposits->codAllowed($provinceCode) && ! $depositRequired,
             'sepay' => $this->sepayAvailable(),
             default => false,
         };

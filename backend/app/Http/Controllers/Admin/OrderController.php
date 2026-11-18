@@ -32,7 +32,10 @@ class OrderController extends Controller
             });
         }
 
-        if ($request->status) {
+        if ($request->status === 'awaiting_prepayment') {
+            // "Chờ cọc"/"Chờ thanh toán": deposit required, money not confirmed yet (see Order::paymentStage()).
+            $query->where('requires_prepayment', true)->where('payment_status', 'unpaid')->where('order_status', '!=', 'cancelled');
+        } elseif ($request->status) {
             $query->where('order_status', $request->status);
         }
 
@@ -57,7 +60,8 @@ class OrderController extends Controller
         $orders->getCollection()->each(fn (Order $order) => $order->setAttribute(
             'has_web_only_products',
             $order->items->contains(fn ($item) => $item->product && $item->product->isWebOnlyForKiot()),
-        )->setAttribute('shipping_method_label', ShippingCalculator::label($order->shipping_method)));
+        )->setAttribute('shipping_method_label', ShippingCalculator::label($order->shipping_method))
+            ->setAttribute('payment_stage_label', $order->paymentStageLabel()));
 
         return Inertia::render('Admin/Orders/Index', [
             'orders' => $orders,
@@ -73,6 +77,7 @@ class OrderController extends Controller
     {
         $order->load(['user', 'items.product', 'transactions', 'affiliate.user:id,name', 'affiliateCommission', 'histories']);
         $order->setAttribute('shipping_method_label', ShippingCalculator::label($order->shipping_method));
+        $order->setAttribute('payment_stage_label', $order->paymentStageLabel());
         $runtime = $resolver->resolve();
         $orderSyncEnabled = $runtime->enabled && $runtime->orderSyncEnabled;
 

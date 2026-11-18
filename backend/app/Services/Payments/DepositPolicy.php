@@ -11,8 +11,9 @@ use App\Models\Setting;
  * (Cài đặt → Thanh toán). Null means a deposit is not offered for that order
  * and it has to be paid in full (or by COD).
  *
- * "Cho phép đặt cọc" (payment_deposit_enabled) is the master switch. With it
- * on, the deposit of an order is worked out in this order:
+ * "Cho phép đặt cọc" (payment_deposit_enabled) or "Bắt buộc đặt cọc"
+ * (payment_deposit_required, see requiredAmount()) turns deposits on. The
+ * deposit of an order is worked out in this order:
  *
  *  1. Province rule "Không cọc" (e.g. Hà Nội) → no deposit for the order.
  *  2. Order total under "Không cọc với đơn dưới" → no deposit.
@@ -98,9 +99,55 @@ class DepositPolicy
         return $this->provinceRule($provinceCode)['cod'] ?? true;
     }
 
+    /** Deposits are worked out when "Cho phép đặt cọc" or "Bắt buộc đặt cọc" is on. */
     public function enabled(): bool
     {
-        return filter_var(Setting::get('payment_deposit_enabled', false), FILTER_VALIDATE_BOOLEAN);
+        return filter_var(Setting::get('payment_deposit_enabled', false), FILTER_VALIDATE_BOOLEAN)
+            || $this->requiredEnabled();
+    }
+
+    /**
+     * "Bắt buộc đặt cọc với đơn giao đi tỉnh" (payment_deposit_required). When on,
+     * bank-transfer orders also wait for the money before going to KIOT.
+     */
+    public function requiredEnabled(): bool
+    {
+        return filter_var(Setting::get('payment_deposit_required', false), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /** "Tỉnh miễn cọc": delivery there never requires a deposit (default Hà Nội). */
+    public function exemptProvinces(): array
+    {
+        $codes = Setting::get('payment_deposit_exempt_provinces', ['01']);
+        if (is_string($codes)) {
+            $codes = json_decode($codes, true);
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map(fn ($code): string => trim((string) $code), is_array($codes) ? $codes : []),
+            fn (string $code): bool => $code !== '',
+        )));
+    }
+
+    /**
+     * The deposit an order MUST pay before the shop handles it, or null when
+     * none is required (COD and the other options stay open). Required when
+     * the switch is on, the order is delivered (not store pickup) to a
+     * province that is not exempt, and the deposit worked out above (total at
+     * least the minimum, lines of "Không cọc" categories/products left out)
+     * is above 0. Used by both the checkout quote and order creation.
+     *
+     * @param  array<int, array{product_id: int, quantity: int, line_total: int}>  $lines
+     */
+    public function requiredAmount(int $total, array $lines, ?string $provinceCode, string $shippingMethod): ?int
+    {
+        $province = trim((string) $provinceCode);
+        if (! $this->requiredEnabled() || $shippingMethod === 'pickup' || $province === ''
+            || in_array($province, $this->exemptProvinces(), true)) {
+            return null;
+        }
+
+        return $this->amountForOrder($total, $lines, $province);
     }
 
     /** @return array{type: string|null, value: float, cod: bool}|null */

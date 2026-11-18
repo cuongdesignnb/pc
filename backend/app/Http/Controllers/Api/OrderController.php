@@ -144,7 +144,7 @@ class OrderController extends Controller
 
         if (($validated['checkout_mode'] ?? 'cart') === 'cart'
             && ! $result['duplicate']
-            && in_array($order->kiot_sync_status, ['synced', 'retrying', 'not_required', 'rejected', 'failed'], true)) {
+            && in_array($order->kiot_sync_status, ['synced', 'retrying', 'not_required', 'rejected', 'failed', 'waiting_payment'], true)) {
             $this->clearCart($request);
         }
 
@@ -155,6 +155,9 @@ class OrderController extends Controller
         // and the shop confirms it by phone.
         $message = match ($order->kiot_sync_status) {
             'retrying' => 'Đơn hàng đã được ghi nhận và đang chờ hệ thống kho xác nhận.',
+            'waiting_payment' => $order->payment_option === 'deposit'
+                ? 'Đơn hàng đã được ghi nhận. Vui lòng chuyển khoản tiền cọc để shop xác nhận và giao hàng.'
+                : 'Đơn hàng đã được ghi nhận. Vui lòng chuyển khoản để shop xác nhận và giao hàng.',
             'rejected', 'failed' => 'Đơn hàng đã được ghi nhận. Shop sẽ gọi điện xác nhận với bạn trước khi giao.',
             default => 'Đặt hàng thành công',
         };
@@ -179,6 +182,8 @@ class OrderController extends Controller
             'kiot_sync_status' => $order->kiot_sync_status, 'kiot_order_code' => $order->kiot_order_code,
             'kiot_sync_error_code' => $order->kiot_sync_error_code,
             'can_pay' => $order->canPay(), 'can_cancel' => $order->canCancel(),
+            // "awaiting_deposit" (Chờ cọc) / "awaiting_payment" (Chờ thanh toán) until SePay confirms the money.
+            'payment_stage' => $order->paymentStage(), 'payment_stage_label' => $order->paymentStageLabel(),
             'payment' => $order->canPay() && $this->paymentAvailability->sepayAvailable()
                 ? $this->generateSepayPaymentData($order)
                 : null,
@@ -248,6 +253,8 @@ class OrderController extends Controller
             'kiot_order_code' => $order->kiot_order_code,
             'kiot_sync_error_code' => $order->kiot_sync_error_code,
             'can_pay' => $order->canPay(), 'can_cancel' => $order->canCancel(),
+            // "awaiting_deposit" (Chờ cọc) / "awaiting_payment" (Chờ thanh toán) until SePay confirms the money.
+            'payment_stage' => $order->paymentStage(), 'payment_stage_label' => $order->paymentStageLabel(),
         ];
         if ($order->relationLoaded('items')) {
             $result['items'] = $order->items->map(fn ($item) => [

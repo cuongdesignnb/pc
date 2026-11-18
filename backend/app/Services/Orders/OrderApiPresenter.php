@@ -51,6 +51,9 @@ class OrderApiPresenter
             'payment_method' => $order->payment_method,
             'payment_option' => $order->payment_option,
             'deposit_amount' => (int) $order->deposit_amount,
+            // "Chờ cọc"/"Chờ thanh toán": deposit required, SePay has not confirmed the money yet.
+            'payment_stage' => $order->paymentStage(),
+            'payment_stage_label' => $order->paymentStageLabel(),
             'amount_paid' => (int) $order->amount_paid,
             'paid_at' => $order->paid_at?->toIso8601String(),
             // Shipment, set by staff on the admin order page or with an orders_write token.
@@ -98,6 +101,7 @@ class OrderApiPresenter
         return match ($status) {
             null => null,
             'not_required' => 'Không cần đồng bộ',
+            'waiting_payment' => 'Chờ cọc/thanh toán rồi mới gửi KIOT',
             'pending', 'retrying' => 'Đang gửi sang KIOT',
             'cancel_pending' => 'Đang huỷ bên KIOT',
             'deleted' => 'Đã xoá bên KIOT',

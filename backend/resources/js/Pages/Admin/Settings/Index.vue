@@ -115,6 +115,10 @@ const ahamoveProvinces = ref(parseList(formData.value.shipping_ahamove_province_
 watch(ahamoveProvinces, rows => {
     formData.value.shipping_ahamove_province_codes = JSON.stringify(rows.map(row => row.code).filter(Boolean));
 }, { deep: true });
+const exemptProvinces = ref(parseList(formData.value.payment_deposit_exempt_provinces).map(code => ({ code: String(code) })));
+watch(exemptProvinces, rows => {
+    formData.value.payment_deposit_exempt_provinces = JSON.stringify(rows.map(row => row.code).filter(Boolean));
+}, { deep: true });
 const categoryOptions = computed(() => {
     const byParent = {};
     for (const category of props.categories) (byParent[category.parent_id || 0] ||= []).push(category);
@@ -355,10 +359,23 @@ function sendSmtpTest() {
                                         </div>
                                         <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="provinceDepositRules.push({ code: '', type: '', value: '', cod: true })">+ Thêm tỉnh/thành</button>
                                         <p class="text-xs text-slate-500">
-                                            Chỉ áp dụng khi bật "Cho phép đặt cọc". Thứ tự ưu tiên: tỉnh "Không cọc" (ví dụ Hà Nội) → đơn dưới mức tối thiểu không cọc → mức cọc riêng của sản phẩm → của danh mục gần nhất (gồm danh mục con) → mức của tỉnh → mức chung.
+                                            Áp dụng khi bật "Cho phép đặt cọc" hoặc "Bắt buộc đặt cọc". "Không cọc" ở đây là không có tiền cọc nào (khác "Tỉnh miễn cọc" chỉ bỏ bắt buộc). Thứ tự ưu tiên: tỉnh "Không cọc" (ví dụ Hà Nội) → đơn dưới mức tối thiểu không cọc → mức cọc riêng của sản phẩm → của danh mục gần nhất (gồm danh mục con) → mức của tỉnh → mức chung.
                                             Đơn có nhiều sản phẩm: cộng tiền cọc của từng dòng (phần còn lại của đơn, kể cả phí ship, theo mức tỉnh/mức chung). Phần % được làm tròn lên hàng nghìn.
                                             Bỏ chọn "Cho COD" để khách ở tỉnh đó phải chuyển khoản (cọc hoặc toàn bộ). Đơn nhận tại cửa hàng không theo quy tắc tỉnh.
                                         </p>
+                                    </div>
+
+                                    <!-- Provinces exempt from the required deposit -->
+                                    <div v-else-if="item.key === 'payment_deposit_exempt_provinces'" class="space-y-2">
+                                        <div v-for="(row, index) in exemptProvinces" :key="index" class="flex items-center gap-2">
+                                            <select v-model="row.code" class="flex-1 border border-slate-700/50 rounded-lg px-3 py-2 text-sm">
+                                                <option value="">— Chọn tỉnh/thành —</option>
+                                                <option v-for="province in provinces" :key="province.code" :value="province.code">{{ province.name }}</option>
+                                            </select>
+                                            <button type="button" class="text-xs text-red-400 hover:text-red-300" @click="exemptProvinces.splice(index, 1)">Xóa</button>
+                                        </div>
+                                        <button type="button" class="text-xs text-cyan-500 hover:text-cyan-400" @click="exemptProvinces.push({ code: '' })">+ Thêm tỉnh miễn cọc</button>
+                                        <p class="text-xs text-slate-500">Đơn giao trong các tỉnh này (mặc định Hà Nội) và đơn nhận tại cửa hàng không bắt buộc cọc: khách vẫn chọn được COD, đặt cọc hoặc chuyển khoản toàn bộ.</p>
                                     </div>
 
                                     <!-- Ahamove delivery area -->
@@ -479,7 +496,8 @@ function sendSmtpTest() {
                                     <p v-else-if="item.key === 'storefront_warranty_information'" class="text-xs text-slate-500 mt-1">Nhập từng chính sách trên một dòng; có thể dùng ✅ hoặc dấu gạch đầu dòng. Không cần nhập HTML.</p>
                                     <p v-else-if="item.key === 'ai_product_research_official_domains'" class="text-xs text-slate-500 mt-1">Mỗi dòng một thương hiệu: <code class="text-slate-300">NVIDIA=nvidia.com</code>. Chỉ URL thuộc domain này mới được lưu làm nguồn kiểm chứng.</p>
                                     <p v-else-if="item.key === 'contact_map_embed_url'" class="text-xs text-slate-500 mt-1">Trên Google Maps chọn Chia sẻ → Nhúng bản đồ → Sao chép HTML rồi dán vào đây (dán cả thẻ iframe cũng được). Bản đồ hiện ở trang Liên hệ và cột "Bản đồ cửa hàng" ở chân trang; để trống để ẩn.</p>
-                                    <p v-else-if="item.key === 'payment_deposit_min_total'" class="text-xs text-slate-500 mt-1">Đơn có tổng tiền dưới mức này không có lựa chọn đặt cọc: khách chuyển khoản toàn bộ hoặc trả COD (nếu tỉnh cho COD). 0 = không giới hạn.</p>
+                                    <p v-else-if="item.key === 'payment_deposit_min_total'" class="text-xs text-slate-500 mt-1">Áp dụng đặt cọc cho đơn từ mức này. Đơn dưới mức không có lựa chọn đặt cọc và không bắt buộc cọc: khách chuyển khoản toàn bộ hoặc trả COD (nếu tỉnh cho COD). 0 = mọi đơn.</p>
+                                    <p v-else-if="item.key === 'payment_deposit_required'" class="text-xs text-slate-500 mt-1">Khi bật: đơn giao đến tỉnh không nằm trong "Tỉnh miễn cọc", tổng tiền từ mức ở trên và có tiền cọc &gt; 0 (danh mục/sản phẩm đặt "Không cọc" không tính) thì khách không chọn được COD. Bấm Đặt hàng là tới ngay mã QR cọc (theo mức cọc ở trên, % hoặc số tiền), phần còn lại thu khi giao; khách vẫn có thể chọn chuyển khoản toàn bộ. Đơn chuyển khoản ở trạng thái "Chờ cọc"/"Chờ thanh toán", chưa gửi sang KIOT, không bao giờ tự huỷ; khi SePay báo đã nhận đủ tiền cọc thì đơn thành "Đã cọc" và tự gửi sang KIOT kèm phiếu thu tiền cọc. Nhân viên vẫn có thể bấm "Gửi lại sang KIOT" sau khi gọi khách. Tắt: giữ như trước.</p>
                                     <p v-else-if="item.key === 'sepay_webhook_api_key'" class="text-xs text-slate-500 mt-1">Trong SePay → Tích hợp WebHooks: URL nhận <code class="text-slate-300">https://&lt;tên miền backend&gt;/api/v1/sepay/callback</code>, kiểu chứng thực "API Key", dán cùng một key vào đây. SePay gửi header <code class="text-slate-300">Authorization: Apikey &lt;key&gt;</code>; nội dung chuyển khoản phải chứa mã đơn (DH…). Để trống thì dùng SEPAY_WEBHOOK_API_KEY trong .env.</p>
                                     <p v-else-if="item.key === 'sepay_gateway_secret_key'" class="text-xs text-slate-500 mt-1">Chỉ cần khi dùng cổng thanh toán SePay (IPN <code class="text-slate-300">/payment/ipn</code>, header X-Secret-Key). Chuyển khoản quét mã QR chỉ cần API Key webhook ở trên. Để trống thì dùng SEPAY_SECRET_KEY trong .env.</p>
                                     <p v-else-if="item.key === 'shipping_free_laptop_min_subtotal'" class="text-xs text-slate-500 mt-1">Đơn có tiền laptop (theo "Danh mục laptop" ở mục Cộng tác viên, gồm danh mục con) từ mức này được miễn phí ship với mọi cách giao hàng. Ví dụ 5000000.</p>
