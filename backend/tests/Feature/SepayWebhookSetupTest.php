@@ -31,6 +31,32 @@ class SepayWebhookSetupTest extends TestCase
         Setting::clearCache();
     }
 
+    public function test_bank_account_fields_exist_in_admin_and_decide_whether_transfer_is_offered(): void
+    {
+        config()->set('services.sepay.bank_account', '');
+        config()->set('services.sepay.account_name', '');
+        foreach (['payment_bank_name', 'payment_bank_account', 'payment_bank_holder'] as $key) {
+            DB::table('settings')->where('key', $key)->delete();
+        }
+        $migration = require database_path('migrations/2026_11_19_000002_add_sepay_bank_account_settings.php');
+        $migration->up();
+
+        foreach (['payment_bank_name', 'payment_bank_account', 'payment_bank_holder'] as $key) {
+            $this->assertSame('payment', DB::table('settings')->where('key', $key)->value('group'));
+        }
+        $this->getJson('/api/v1/settings')->assertJsonPath('payment_sepay_enabled', false);
+
+        Setting::set('payment_bank_name', 'MB');
+        Setting::set('payment_bank_account', '036092013838');
+        Setting::set('payment_bank_holder', 'LAPTOP PLUS');
+        Setting::clearCache();
+        $this->getJson('/api/v1/settings')->assertJsonPath('payment_sepay_enabled', true);
+
+        // Running it again keeps what the shop typed.
+        $migration->up();
+        $this->assertSame('036092013838', Setting::get('payment_bank_account'));
+    }
+
     public function test_unconfigured_webhook_and_ipn_say_what_is_missing(): void
     {
         $this->postJson('/api/v1/sepay/callback', ['id' => 1, 'transferAmount' => 1000, 'content' => 'DH202611170001'])
