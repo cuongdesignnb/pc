@@ -14,6 +14,7 @@ const props = defineProps({
     recentErrors: Array,
     history: Array,
     skuPreview: Object,
+    attentionProducts: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -42,6 +43,14 @@ function submitFulfillment() {
     fulfillmentForm.patch('/admin/integrations/kiot/fulfillment', { preserveScroll: true });
 }
 const skuForm = useForm({ sku: '' });
+const attentionReasons = { error: 'Lỗi đồng bộ', stale: 'Chưa lên web / tồn cũ', unlinked: 'Chưa ghép mã KIOT' };
+const resyncing = ref('');
+function resync(skus, key) {
+    if (!skus.length) return;
+    resyncing.value = key;
+    router.post('/admin/integrations/kiot/sync-many', { skus }, { preserveScroll: true, onFinish: () => { resyncing.value = ''; } });
+}
+const resyncableSkus = computed(() => (props.attentionProducts || []).filter(item => item.can_resync && item.sku).map(item => item.sku));
 const disconnectForm = useForm({ confirm_disconnect: false });
 
 watch(() => props.configuration, (configuration) => {
@@ -290,6 +299,33 @@ const capabilityLabel = (enabled) => enabled ? 'Có' : 'Không';
                     <button :disabled="!disconnectForm.confirm_disconnect || disconnectForm.processing" @click="disconnectForm.post('/admin/integrations/kiot/disconnect', { preserveScroll: true, onFinish: () => disconnectForm.reset() })" class="mt-3 rounded-lg border border-red-500/40 px-4 py-2 text-sm text-red-300 disabled:cursor-not-allowed disabled:opacity-40">Ngắt kết nối</button>
                 </div>
             </div>
+
+            <section v-if="attentionProducts.length" class="overflow-hidden rounded-lg border border-amber-500/30 bg-slate-900" aria-labelledby="attention-title">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+                    <div>
+                        <h4 id="attention-title" class="font-semibold text-slate-200">Sản phẩm cần xử lý ({{ attentionProducts.length }})</h4>
+                        <p class="mt-1 text-xs text-slate-500">"Gửi lại" lấy lại mã đó từ KIOT ngay (chạy nền, kết quả ở lịch sử bên dưới). Sản phẩm "chưa ghép mã" cần nhập mã KIOT trong trang sửa sản phẩm.</p>
+                    </div>
+                    <button :disabled="!canProductWrite || !resyncableSkus.length || resyncing !== ''" @click="resync(resyncableSkus, 'all')" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">{{ resyncing === 'all' ? 'Đang gửi…' : `Gửi lại tất cả (${resyncableSkus.length})` }}</button>
+                </div>
+                <div class="max-h-[28rem] overflow-auto">
+                    <table class="min-w-full divide-y divide-slate-800 text-sm">
+                        <thead class="sticky top-0 bg-slate-800 text-left text-xs uppercase text-slate-400"><tr><th class="px-4 py-3">SKU</th><th class="px-4 py-3">Sản phẩm</th><th class="px-4 py-3">Vấn đề</th><th class="px-4 py-3">Đồng bộ lần cuối</th><th class="px-4 py-3"></th></tr></thead>
+                        <tbody class="divide-y divide-slate-800">
+                            <tr v-for="item in attentionProducts" :key="item.id">
+                                <td class="px-4 py-3 font-mono text-xs text-slate-200">{{ item.sku }}</td>
+                                <td class="px-4 py-3 text-slate-300">{{ item.name }}</td>
+                                <td class="px-4 py-3"><span :class="item.reason === 'error' ? 'text-red-300' : 'text-amber-300'">{{ attentionReasons[item.reason] }}</span><div class="text-xs text-slate-500">{{ item.detail }}</div></td>
+                                <td class="px-4 py-3 text-slate-400">{{ formatTime(item.kiot_synced_at) }}</td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <button v-if="item.can_resync" :disabled="!canProductWrite || resyncing !== ''" @click="resync([item.sku], item.sku)" class="rounded-lg border border-cyan-500/40 px-3 py-1 text-xs text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40">{{ resyncing === item.sku ? 'Đang gửi…' : 'Gửi lại' }}</button>
+                                    <Link v-else :href="`/admin/products/${item.id}/edit`" class="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-200">Nhập mã KIOT</Link>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
             <section class="overflow-hidden rounded-lg border border-slate-800 bg-slate-900" aria-labelledby="sync-runs-title">
                 <div class="border-b border-slate-800 px-5 py-4">

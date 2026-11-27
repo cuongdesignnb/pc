@@ -15,6 +15,7 @@ use App\Models\ProductSpecification;
 use App\Models\ProductVariant;
 use App\Models\SpecificationKey;
 use App\Services\Affiliate\CommissionRules;
+use App\Services\Catalog\ProductPromotions;
 use App\Services\Catalog\WarrantyPackages;
 use App\Services\Payments\DepositRules;
 use App\Services\Seo\SlugRedirectService;
@@ -37,6 +38,7 @@ class ProductController extends Controller
         'is_refurbished' => 'nullable|boolean',
         'warning_info' => 'nullable|string|max:5000',
         'usage_instructions' => 'nullable|string|max:10000',
+        'promotion_text' => 'nullable|string|max:5000',
     ];
 
     /** "Lấy key ngay": an outside page that hands out a licence key at once. */
@@ -143,6 +145,9 @@ class ProductController extends Controller
             'relations.*.sort_order' => 'nullable|integer|min:0',
         ], $this->variantSkuRules($request, false), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES, self::EXTERNAL_BUY_RULES, SeoOverrides::rules()), $this->productValidationMessages() + SeoOverrides::messages(), $this->productValidationAttributes());
         $validated = SeoOverrides::normalizeInput($validated);
+        if (array_key_exists('promotion_text', $validated)) {
+            $validated['promotion_text'] = ProductPromotions::forStorage($validated['promotion_text']);
+        }
 
         try {
             // A slug made from a very long product name is cut at a word
@@ -316,6 +321,9 @@ class ProductController extends Controller
             'relations.*.sort_order' => 'nullable|integer|min:0',
         ], $this->variantSkuRules($request, true), CommissionRules::validationRules(), DepositRules::validationRules(), self::COMPLIANCE_RULES, self::INSTANT_KEY_RULES, self::EXTERNAL_BUY_RULES, SeoOverrides::rules(), WarrantyPackages::validationRules()), $this->productValidationMessages() + SeoOverrides::messages(), $this->productValidationAttributes());
         $validated = SeoOverrides::normalizeInput($validated);
+        if (array_key_exists('promotion_text', $validated)) {
+            $validated['promotion_text'] = ProductPromotions::forStorage($validated['promotion_text']);
+        }
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }

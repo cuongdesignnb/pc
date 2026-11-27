@@ -76,6 +76,7 @@ class Product extends Model
         'slug_source',
         'slug_policy_version',
         'slug_locked_at',
+        'promotion_text',
     ];
 
     protected $appends = ['quantity', 'is_purchasable', 'availability_label'];

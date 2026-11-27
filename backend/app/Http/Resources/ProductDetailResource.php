@@ -91,6 +91,8 @@ class ProductDetailResource extends JsonResource
             'warranty_months' => $this->warranty_months,
             'catalog_content_id' => $this->catalogContentId(),
             'warranty_packages' => app(\App\Services\Catalog\WarrantyPackages::class)->forProduct($this->resource),
+            // "Khuyến mại" lines: the product's own, else its category's (nearest parent first).
+            'promotions' => app(\App\Services\Catalog\ProductPromotions::class)->forProduct($this->resource),
             'compliance' => app(\App\Services\Catalog\ProductCompliance::class)->forProduct($this->resource),
             // schema.org Product/Offer fields (condition, seller, warranty, returns, shipping, reviews).
             'structured_data' => app(\App\Services\Seo\ProductStructuredData::class)->forProduct($this->resource, (int) $displayPrice),

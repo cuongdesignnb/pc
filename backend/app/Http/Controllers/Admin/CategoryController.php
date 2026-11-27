@@ -9,10 +9,12 @@ use App\Models\Filter;
 use App\Models\Page;
 use App\Models\Product;
 use App\Services\Affiliate\CommissionRules;
+use App\Services\Catalog\ProductPromotions;
 use App\Services\Catalog\WarrantyPackages;
 use App\Services\Payments\DepositRules;
 use App\Services\Seo\SlugRedirectService;
 use App\Services\Seo\VietnameseSlugNormalizer;
+use App\Support\SeoOverrides;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -24,6 +26,7 @@ class CategoryController extends Controller
         'is_refurbished' => 'boolean',
         'warning_info' => 'nullable|string|max:5000',
         'usage_instructions' => 'nullable|string|max:10000',
+        'promotion_text' => 'nullable|string|max:5000',
     ];
 
     public function index()
@@ -79,7 +82,11 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
-        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + DepositRules::validationRules() + self::COMPLIANCE_RULES);
+        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + DepositRules::validationRules() + self::COMPLIANCE_RULES + SeoOverrides::rules(), SeoOverrides::messages());
+        $validated = SeoOverrides::normalizeInput($validated);
+        if (array_key_exists('promotion_text', $validated)) {
+            $validated['promotion_text'] = ProductPromotions::forStorage($validated['promotion_text']);
+        }
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }
@@ -157,7 +164,11 @@ class CategoryController extends Controller
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string',
             'technical_heading' => 'nullable|in:auto,configuration,specifications',
-        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + DepositRules::validationRules() + self::COMPLIANCE_RULES);
+        ] + WarrantyPackages::validationRules() + CommissionRules::validationRules() + DepositRules::validationRules() + self::COMPLIANCE_RULES + SeoOverrides::rules(), SeoOverrides::messages());
+        $validated = SeoOverrides::normalizeInput($validated);
+        if (array_key_exists('promotion_text', $validated)) {
+            $validated['promotion_text'] = ProductPromotions::forStorage($validated['promotion_text']);
+        }
         if (array_key_exists('warranty_packages', $validated)) {
             $validated['warranty_packages'] = WarrantyPackages::forStorage($validated['warranty_packages']);
         }

@@ -109,7 +109,7 @@ class WarrantyPackageTest extends TestCase
 
         // 5% of 14,010,000 = 700,500 → rounded up to 701,000.
         $this->getJson('/api/v1/products/'.$product->slug)
-            ->assertJsonPath('product.warranty_packages', [['months' => 3, 'price' => 701000, 'percent' => 5], ['months' => 12, 'price' => 1500000, 'percent' => null]]);
+            ->assertJsonPath('product.warranty_packages', [['months' => 3, 'price' => 701000, 'percent' => 5, 'label' => null], ['months' => 12, 'price' => 1500000, 'percent' => null, 'label' => null]]);
 
         $admin = User::factory()->create(['role' => 'admin']);
         $this->actingAs($admin)->put("/admin/products/{$product->id}", [
@@ -120,7 +120,7 @@ class WarrantyPackageTest extends TestCase
         $this->assertEquals([['months' => 1, 'price' => 0], ['months' => 3, 'percent' => 2.5], ['months' => 6, 'price' => 1000000]], $product->fresh()->warranty_packages);
 
         $this->getJson('/api/v1/products/'.$product->slug)
-            ->assertJsonPath('product.warranty_packages', [['months' => 1, 'price' => 0, 'percent' => null], ['months' => 3, 'price' => 351000, 'percent' => 2.5], ['months' => 6, 'price' => 1000000, 'percent' => null]]);
+            ->assertJsonPath('product.warranty_packages', [['months' => 1, 'price' => 0, 'percent' => null, 'label' => null], ['months' => 3, 'price' => 351000, 'percent' => 2.5, 'label' => null], ['months' => 6, 'price' => 1000000, 'percent' => null, 'label' => null]]);
 
         $this->withHeader('X-Cart-Session', 'warranty-product')
             ->postJson('/api/v1/orders', $this->order(['checkout_mode' => 'buy_now', 'items' => [['product_id' => $product->id, 'quantity' => 1, 'warranty_months' => 3]]]))
@@ -154,7 +154,7 @@ class WarrantyPackageTest extends TestCase
     /** The API adds the percentage (null for fixed packages) so the page can reprice variants. */
     private static function offered(array $packages): array
     {
-        return array_map(fn (array $package): array => $package + ['percent' => null], $packages);
+        return array_map(fn (array $package): array => $package + ['percent' => null, 'label' => null], $packages);
     }
 
     private function product(bool $child = false): Product

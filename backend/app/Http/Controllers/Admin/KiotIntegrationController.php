@@ -15,6 +15,7 @@ use App\Models\IntegrationSyncRun;
 use App\Models\IntegrationSyncState;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\Catalog\CatalogProductProjectionService;
 use App\Services\Integrations\Kiot\KiotClient;
 use App\Services\Integrations\Kiot\KiotConfigurationAuditService;
 use App\Services\Integrations\Kiot\KiotConfigurationResolver;
@@ -110,7 +111,57 @@ class KiotIntegrationController extends Controller
                 ->limit(50)
                 ->get(['id', 'integration_connection_id', 'event', 'actor_id', 'metadata', 'created_at']),
             'skuPreview' => $request->session()->get('kiot_preview'),
+            'attentionProducts' => $this->attentionProducts($runtime->productStaleAfterMinutes),
         ]);
+    }
+
+    /**
+     * Products staff should look at, each with why: a KIOT sync error, stock
+     * not confirmed by KIOT recently, or a website-only product (WEB-NEW-…)
+     * with no KIOT code linked yet.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function attentionProducts(int $staleAfterMinutes): array
+    {
+        $columns = ['id', 'sku', 'name', 'kiot_code', 'kiot_synced_at', 'kiot_sync_error_code', 'kiot_sync_error_message', 'inventory_source'];
+        $row = fn (Product $product, string $reason, string $detail): array => [
+            'id' => $product->id,
+            'sku' => $product->sku,
+            'name' => $product->name,
+            'reason' => $reason,
+            'detail' => $detail,
+            'kiot_synced_at' => $product->kiot_synced_at,
+            'can_resync' => $reason !== 'unlinked',
+        ];
+        $rows = collect();
+
+        Product::whereNotNull('kiot_sync_error_code')->orderBy('id')->limit(100)->get($columns)
+            ->each(function (Product $product) use ($rows, $row): void {
+                $rows->put($product->id, $row($product, 'error', trim($product->kiot_sync_error_code.': '.$product->kiot_sync_error_message, ': ')));
+            });
+
+        $threshold = now()->subMinutes($staleAfterMinutes);
+        Product::where('inventory_source', 'kiot')
+            ->where(fn ($query) => $query->whereNull('kiot_synced_at')->orWhere('kiot_synced_at', '<', $threshold))
+            ->orderBy('kiot_synced_at')->limit(100)->get($columns)
+            ->each(function (Product $product) use ($rows, $row): void {
+                if (! $rows->has($product->id)) {
+                    $rows->put($product->id, $row($product, 'stale', $product->kiot_synced_at ? 'Tồn kho chưa được KIOT xác nhận lại' : 'Chưa đồng bộ lần nào'));
+                }
+            });
+
+        Product::where('sku', 'like', CatalogProductProjectionService::LOCAL_SKU_PREFIX.'%')
+            ->where(fn ($query) => $query->whereNull('inventory_source')->orWhere('inventory_source', '!=', 'kiot'))
+            ->where(fn ($query) => $query->whereNull('kiot_code')->orWhere('kiot_code', ''))
+            ->orderBy('id')->limit(100)->get($columns)
+            ->each(function (Product $product) use ($rows, $row): void {
+                if (! $rows->has($product->id)) {
+                    $rows->put($product->id, $row($product, 'unlinked', 'Sản phẩm tạo trên web, chưa nhập mã KIOT'));
+                }
+            });
+
+        return $rows->values()->take(150)->all();
     }
 
     /**
@@ -285,6 +336,26 @@ class KiotIntegrationController extends Controller
         $this->recordOperation($runtime->databaseConnectionId, 'product.targeted_sync_requested', $request, ['sku' => $data['sku']]);
 
         return back()->with('success', 'Đã đưa SKU vào hàng đợi đồng bộ.');
+    }
+
+    /** "Gửi lại" for one or more SKUs from the list of products that need attention. */
+    public function syncMany(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'skus' => ['required', 'array', 'min:1', 'max:150'],
+            'skus.*' => ['required', 'string', 'max:255', 'regex:/^[^\x00-\x1F\x7F]+$/'],
+        ]);
+
+        try {
+            $runtime = $this->client->assertProductSyncEnabled();
+        } catch (KiotIntegrationException $exception) {
+            return $this->domainError($exception);
+        }
+        $skus = array_values(array_unique($data['skus']));
+        SyncKiotProductsBySku::dispatch($skus, requestedBy: $request->user()?->id);
+        $this->recordOperation($runtime->databaseConnectionId, 'product.targeted_sync_requested', $request, ['skus' => $skus]);
+
+        return back()->with('success', 'Đã đưa '.count($skus).' SKU vào hàng đợi đồng bộ lại với KIOT.');
     }
 
     public function sync(Request $request): RedirectResponse

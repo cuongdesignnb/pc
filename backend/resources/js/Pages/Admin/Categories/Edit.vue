@@ -6,6 +6,8 @@ import MediaPicker from '@/Components/MediaPicker.vue';
 import AffiliateCommissionField, { commissionForm } from '@/Components/AffiliateCommissionField.vue';
 import DepositRuleField, { depositRuleForm } from '@/Components/DepositRuleField.vue';
 import ProductComplianceFields from '@/Components/ProductComplianceFields.vue';
+import PromotionTextField from '@/Components/PromotionTextField.vue';
+import SeoRobotsCanonicalFields from '@/Components/SeoRobotsCanonicalFields.vue';
 import WarrantyPackagesField, { warrantyRows, warrantyPayload } from '@/Components/WarrantyPackagesField.vue';
 
 const props = defineProps({ category: Object, categories: Array, componentTypes: Array });
@@ -13,7 +15,7 @@ const form = useForm({
     name: props.category.name, slug: props.category.slug, parent_id: props.category.parent_id || '',
     component_type_id: props.category.component_type_id || '', description: props.category.description || '',
     image: props.category.image || '', icon: props.category.icon || '', sort_order: props.category.sort_order || 0,
-    is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '', technical_heading: props.category.technical_heading || 'auto',
+    is_active: props.category.is_active ?? true, show_on_pc_website: props.category.show_on_pc_website ?? true, meta_title: props.category.meta_title || '', meta_description: props.category.meta_description || '', meta_robots: props.category.meta_robots || '', canonical_url: props.category.canonical_url || '', promotion_text: props.category.promotion_text || '', technical_heading: props.category.technical_heading || 'auto',
     warranty_packages: warrantyRows(props.category.warranty_packages),
     affiliate_commission: commissionForm(props.category.affiliate_commission),
     deposit_rule: depositRuleForm(props.category.deposit_rule),
@@ -50,7 +52,14 @@ function submit() { form.transform(data => ({ ...data, warranty_packages: warran
             <WarrantyPackagesField v-model="form.warranty_packages" :errors="form.errors" hint="Áp dụng cho sản phẩm thuộc danh mục này và danh mục con chưa có gói riêng. Để trống thì dùng gói mặc định trong Cài đặt → Bảo hành." />
             <AffiliateCommissionField v-model="form.affiliate_commission" :errors="form.errors" />
             <DepositRuleField v-model="form.deposit_rule" :errors="form.errors" />
+            <PromotionTextField v-model="form.promotion_text" :error="form.errors.promotion_text" hint="Áp dụng cho sản phẩm thuộc danh mục này và danh mục con chưa có khuyến mại riêng." />
             <ProductComplianceFields :form="form" category />
+            <div class="border-t border-slate-800 pt-4 space-y-4">
+                <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">SEO</h4>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta title</label><input v-model="form.meta_title" maxlength="255" placeholder="Để trống = tên danh mục" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.meta_title" class="text-red-400 text-xs mt-1">{{ form.errors.meta_title }}</div></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta description</label><textarea v-model="form.meta_description" rows="2" placeholder="Để trống = đoạn đầu của mô tả (đã bỏ thẻ HTML)" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
+                <SeoRobotsCanonicalFields :form="form" />
+            </div>
 
             <div class="flex justify-end gap-3 pt-2">
                 <Link href="/admin/categories" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>

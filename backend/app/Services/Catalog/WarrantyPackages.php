@@ -18,7 +18,7 @@ use App\Models\Setting;
  */
 final class WarrantyPackages
 {
-    /** @return list<array{months: int, price: int, percent: float|null}> */
+    /** @return list<array{months: int, price: int, percent: float|null, label: string|null}> */
     public function forProduct(?Product $product, ?int $basePrice = null): array
     {
         if (! $product) {
@@ -31,6 +31,8 @@ final class WarrantyPackages
             'price' => self::priceFor($package, $basePrice),
             // Lets the product page reprice a percent package for a variant.
             'percent' => $package['percent'],
+            // Name shown on the package button instead of "N tháng (+price)".
+            'label' => $package['label'],
         ], $this->rulesFor($product));
     }
 
@@ -55,7 +57,7 @@ final class WarrantyPackages
         throw new InvalidWarrantyPackage;
     }
 
-    /** @return list<array{months: int, price: int, percent: float|null}> */
+    /** @return list<array{months: int, price: int, percent: float|null, label: string|null}> */
     private function rulesFor(Product $product): array
     {
         if ($packages = self::normalise($product->warranty_packages)) {
@@ -86,9 +88,9 @@ final class WarrantyPackages
 
     /**
      * Stored form: [{months, price}] for a fixed amount or [{months, percent}]
-     * for a share of the price.
+     * for a share of the price, each with an optional display label.
      *
-     * @return list<array{months: int, price: int, percent: float|null}>
+     * @return list<array{months: int, price: int, percent: float|null, label: string|null}>
      */
     public static function normalise(mixed $packages): array
     {
@@ -98,11 +100,13 @@ final class WarrantyPackages
                 $percent = isset($package['percent']) && $package['percent'] !== '' && $package['percent'] !== null
                     ? min(100, max(-100, (float) $package['percent']))
                     : null;
+                $label = is_string($package['label'] ?? null) ? mb_substr(trim($package['label']), 0, 80) : '';
 
                 return [
                     'months' => (int) $package['months'],
                     'price' => $percent === null ? (int) ($package['price'] ?? 0) : 0,
                     'percent' => $percent,
+                    'label' => $label !== '' ? $label : null,
                 ];
             })
             ->unique('months')
@@ -115,9 +119,10 @@ final class WarrantyPackages
     public static function forStorage(mixed $packages): ?array
     {
         $packages = array_map(
-            fn (array $package): array => $package['percent'] === null
+            fn (array $package): array => ($package['percent'] === null
                 ? ['months' => $package['months'], 'price' => $package['price']]
-                : ['months' => $package['months'], 'percent' => $package['percent']],
+                : ['months' => $package['months'], 'percent' => $package['percent']])
+                + ($package['label'] !== null ? ['label' => $package['label']] : []),
             self::normalise($packages),
         );
 
@@ -132,6 +137,7 @@ final class WarrantyPackages
             "{$field}.*.months" => 'required|integer|min:1|max:120|distinct',
             "{$field}.*.price" => 'nullable|integer|min:-1000000000|max:1000000000',
             "{$field}.*.percent" => 'nullable|numeric|min:-100|max:100',
+            "{$field}.*.label" => 'nullable|string|max:80',
         ];
     }
 }

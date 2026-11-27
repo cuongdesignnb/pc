@@ -251,6 +251,7 @@ Route::prefix('admin')->middleware(['web', 'admin.auth'])->name('admin.')->group
         Route::post('integrations/kiot/dry-run', [KiotIntegrationController::class, 'dryRun'])->name('integrations.kiot.dry-run');
         Route::post('integrations/kiot/test-one', [KiotIntegrationController::class, 'testSku'])->name('integrations.kiot.test-one');
         Route::post('integrations/kiot/sync-one', [KiotIntegrationController::class, 'syncOne'])->name('integrations.kiot.sync-one');
+        Route::post('integrations/kiot/sync-many', [KiotIntegrationController::class, 'syncMany'])->name('integrations.kiot.sync-many');
         Route::post('integrations/kiot/sync', [KiotIntegrationController::class, 'sync'])->name('integrations.kiot.sync');
         Route::post('integrations/kiot/incremental', [KiotIntegrationController::class, 'incremental'])->name('integrations.kiot.incremental');
         Route::get('integrations/kiot/runs/{run}', [KiotIntegrationController::class, 'showRun'])->name('integrations.kiot.runs.show');
