@@ -40,6 +40,9 @@ class Category extends Model
         'is_refurbished',
         'warning_info',
         'usage_instructions',
+        'promotion_text',
+        'meta_robots',
+        'canonical_url',
     ];
 
     protected $casts = [

@@ -114,6 +114,7 @@ class SitemapExportService
     {
         return Category::query()
             ->visibleOnStorefront()
+            ->where(fn (Builder $query) => SeoOverrides::scopeIndexable($query))
             ->orderBy('id')
             ->get(['id', 'slug', 'updated_at'])
             ->map(function (Category $category): ?array {

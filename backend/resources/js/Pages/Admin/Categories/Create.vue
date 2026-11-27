@@ -3,9 +3,11 @@ import { useForm, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import RichEditor from '@/Components/RichEditor.vue';
 import MediaPicker from '@/Components/MediaPicker.vue';
+import PromotionTextField from '@/Components/PromotionTextField.vue';
+import SeoRobotsCanonicalFields from '@/Components/SeoRobotsCanonicalFields.vue';
 
 const props = defineProps({ categories: Array, componentTypes: Array });
-const form = useForm({ name: '', slug: '', parent_id: '', component_type_id: '', description: '', image: '', icon: '', sort_order: 0, is_active: true, show_on_pc_website: true, meta_title: '', meta_description: '', technical_heading: 'auto' });
+const form = useForm({ name: '', slug: '', parent_id: '', component_type_id: '', description: '', image: '', icon: '', sort_order: 0, is_active: true, show_on_pc_website: true, meta_title: '', meta_description: '', meta_robots: '', canonical_url: '', promotion_text: '', technical_heading: 'auto' });
 
 function genSlug() { form.slug = form.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
 function submit() { form.post('/admin/categories'); }
@@ -36,6 +38,13 @@ function submit() { form.post('/admin/categories'); }
                 </div>
             </div>
             <div><label class="block text-sm font-medium text-slate-300 mb-1">Tiêu đề phần thông tin kỹ thuật</label><select v-model="form.technical_heading" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><option value="auto">Tự động</option><option value="configuration">Cấu hình chi tiết</option><option value="specifications">Thông số kỹ thuật</option></select><p class="mt-1 text-xs text-slate-500">Dùng cho phần thông tin kỹ thuật trên trang sản phẩm thuộc danh mục này.</p></div>
+            <PromotionTextField v-model="form.promotion_text" :error="form.errors.promotion_text" hint="Áp dụng cho sản phẩm thuộc danh mục này và danh mục con chưa có khuyến mại riêng." />
+            <div class="border-t border-slate-800 pt-4 space-y-4">
+                <h4 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">SEO</h4>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta title</label><input v-model="form.meta_title" maxlength="255" placeholder="Để trống = tên danh mục" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"><div v-if="form.errors.meta_title" class="text-red-400 text-xs mt-1">{{ form.errors.meta_title }}</div></div>
+                <div><label class="block text-sm font-medium text-slate-300 mb-1">Meta description</label><textarea v-model="form.meta_description" rows="2" placeholder="Để trống = đoạn đầu của mô tả (đã bỏ thẻ HTML)" class="w-full border border-slate-700/50 rounded-lg px-3 py-2 text-sm"></textarea></div>
+                <SeoRobotsCanonicalFields :form="form" />
+            </div>
             <div class="flex justify-end gap-3 pt-2">
                 <Link href="/admin/categories" class="px-4 py-2 text-sm text-slate-300 hover:bg-slate-800/60 rounded-lg">Hủy</Link>
                 <button type="submit" :disabled="form.processing" class="px-6 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-medium disabled:opacity-50">Tạo danh mục</button>

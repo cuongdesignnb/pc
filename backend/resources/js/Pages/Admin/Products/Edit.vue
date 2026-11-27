@@ -10,6 +10,7 @@ import ProductPdpContentFields from '@/Components/ProductPdpContentFields.vue';
 import ProductFormErrors from '@/Components/ProductFormErrors.vue';
 import ProductComplianceFields from '@/Components/ProductComplianceFields.vue';
 import SeoRobotsCanonicalFields from '@/Components/SeoRobotsCanonicalFields.vue';
+import PromotionTextField from '@/Components/PromotionTextField.vue';
 import WarrantyPackagesField, { warrantyRows, warrantyPayload } from '@/Components/WarrantyPackagesField.vue';
 import AffiliateCommissionField, { commissionForm } from '@/Components/AffiliateCommissionField.vue';
 import DepositRuleField, { depositRuleForm } from '@/Components/DepositRuleField.vue';
@@ -55,6 +56,7 @@ const form = useForm({
     is_refurbished: props.product.is_refurbished ?? null,
     warning_info: props.product.warning_info || '',
     usage_instructions: props.product.usage_instructions || '',
+    promotion_text: props.product.promotion_text || '',
     affiliate_commission: commissionForm(props.product.affiliate_commission),
     deposit_rule: depositRuleForm(props.product.deposit_rule),
     warranty_packages: warrantyRows(props.product.warranty_packages),
@@ -304,6 +306,7 @@ function removeVariant(index) {
                 <AffiliateCommissionField v-model="form.affiliate_commission" :errors="form.errors" inherit-hint="Để trống thì dùng mức hoa hồng của danh mục." />
                 <DepositRuleField v-model="form.deposit_rule" :errors="form.errors" inherit-hint="Để trống thì dùng mức cọc của danh mục, rồi mức theo tỉnh / mức chung trong Cài đặt → Thanh toán." />
                 <WarrantyPackagesField v-model="form.warranty_packages" :errors="form.errors" hint="Gói riêng cho sản phẩm này. Để trống thì dùng gói của danh mục, rồi gói mặc định trong Cài đặt → Bảo hành." />
+                <PromotionTextField v-model="form.promotion_text" :error="form.errors.promotion_text" hint="Riêng cho sản phẩm này. Để trống thì dùng khuyến mại của danh mục (ví dụ nhập một lần ở danh mục Laptop)." />
                 <ProductComplianceFields :form="form" />
                 <dl v-if="isKiot" class="grid grid-cols-2 gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm md:grid-cols-4">
                     <div><dt class="text-slate-500">Barcode</dt><dd class="mt-1 text-slate-200">{{ product.barcode || '—' }}</dd></div>

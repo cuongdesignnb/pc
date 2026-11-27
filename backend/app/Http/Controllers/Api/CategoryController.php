@@ -16,11 +16,13 @@ use App\Services\Seo\PublicUrlResolver;
 use App\Services\Seo\SlugRedirectService;
 use App\Support\FaqExtractor;
 use App\Support\PublicAssetUrl;
+use App\Support\SeoOverrides;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class CategoryController extends Controller
 {
@@ -581,7 +583,25 @@ class CategoryController extends Controller
             'meta_description' => $category->meta_description,
             'canonical_path' => $urls->categoryPath($category),
             'canonical_url' => $urls->categoryUrl($category),
+            // What goes into <title>, meta description, robots and canonical:
+            // the admin SEO fields, else the description as plain text.
+            'seo' => [
+                'title' => filled($category->meta_title) ? trim((string) $category->meta_title) : null,
+                'description' => self::plainText(filled($category->meta_description) ? $category->meta_description : $category->description),
+                'robots' => SeoOverrides::robots($category->meta_robots),
+                'canonical_url' => SeoOverrides::canonicalUrl($category->canonical_url, $urls->categoryUrl($category)),
+            ],
         ];
+    }
+
+    /** HTML description as one plain line for meta tags (at most 160 characters). */
+    private static function plainText(?string $html): ?string
+    {
+        $text = preg_replace('/<(br|\/p|\/li|\/h[1-6])\b[^>]*>/i', ' ', (string) $html) ?? '';
+        $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = trim(preg_replace('/\s+/u', ' ', str_replace("\u{A0}", ' ', $text)) ?? '');
+
+        return $text === '' ? null : Str::limit($text, 157, '...');
     }
 
     private function categoryBanner(string $categorySlug): ?array
